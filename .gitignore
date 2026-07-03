@@ -1,0 +1,25 @@
+# Build trees
+/build/
+/cmake-build-*/
+/out/
+
+# CMake / Ninja artifacts
+CMakeCache.txt
+CMakeFiles/
+compile_commands.json
+.ninja_deps
+.ninja_log
+
+# Objects / binaries
+*.o
+*.a
+*.so
+
+# Measurement output
+*.csv
+*.hist.csv
+
+# Editor / tooling
+.cache/
+.idea/
+*.swp
