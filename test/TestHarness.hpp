@@ -41,5 +41,6 @@ inline int summary(const char* name) {
 }  // namespace abt::test
 
 #define CHECK(cond)      ::abt::test::record((cond), #cond, __FILE__, __LINE__)
-#define CHECK_EQ(a, b)   ::abt::test::record_eq((std::uint64_t)(a), (std::uint64_t)(b), \
+#define CHECK_EQ(a, b)   ::abt::test::record_eq(static_cast<std::uint64_t>(a),          \
+                                                static_cast<std::uint64_t>(b),          \
                                                 #a " == " #b, __FILE__, __LINE__)

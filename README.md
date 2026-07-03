@@ -35,12 +35,15 @@ Built incrementally. Current state:
 |---|---|
 | Project scaffold (C++20, CMake, Ninja presets) | ✅ |
 | ITCH 5.0 wire layer (12 core messages, zero-copy overlay) | ✅ tested |
-| OUCH 5.0 wire layer | ⏳ next |
-| Limit order book / matching engine | ⏳ |
-| MoldUDP64 / SoupBinTCP framing | ⏳ |
-| DPDK exchange-simulator venue loop | ⏳ |
-| Synthetic order-flow generator | ⏳ |
-| ef_vi DUT + HW-timestamped t2t harness | ⏳ |
+| OUCH 5.0 wire layer (9 core messages + TagValue appendages) | ✅ tested |
+| Limit order book / matching engine (price-time, O(1) hot path) | ✅ tested |
+| Venue glue: OUCH ↔ matching engine ↔ ITCH/OUCH events | ✅ tested |
+| MoldUDP64 (market data) + SoupBinTCP (order entry) framing | ✅ tested |
+| ExchangeSession: full SoupBin ⇄ OUCH ⇄ match ⇄ ITCH ⇄ MoldUDP64 loop | ✅ tested |
+| Synthetic order-flow generator (deterministic) | ✅ tested |
+| **← simulator complete & runnable in software (loopback)** | |
+| DPDK NIC transport (Eth/IP/UDP frames, EAL, Rx/Tx) | ⏳ hardware |
+| ef_vi DUT + HW-timestamped t2t harness | ⏳ hardware |
 
 ## Layout
 

@@ -25,5 +25,20 @@ add_library(abt::protocol ALIAS abt_protocol)
 target_include_directories(abt_protocol INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_compile_features(abt_protocol INTERFACE cxx_std_20)
 
+# ---------------------------------------------------------------------------
+# abt_lob : header-only limit order book / matching engine.
+# ---------------------------------------------------------------------------
+add_library(abt_lob INTERFACE)
+add_library(abt::lob ALIAS abt_lob)
+target_include_directories(abt_lob INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_compile_features(abt_lob INTERFACE cxx_std_20)
+
+# ---------------------------------------------------------------------------
+# abt_sim : header-only venue glue (OUCH <-> matching engine <-> ITCH/OUCH).
+# ---------------------------------------------------------------------------
+add_library(abt_sim INTERFACE)
+add_library(abt::sim ALIAS abt_sim)
+target_link_libraries(abt_sim INTERFACE abt_protocol abt_lob)
+
 enable_testing()
 add_subdirectory(test)
