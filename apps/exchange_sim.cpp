@@ -26,18 +26,18 @@ int main(int argc, char** argv) {
     std::signal(SIGINT, onSignal);
     std::signal(SIGTERM, onSignal);
 
-    using Session = sim::ExchangeSession<sim::IoMode::Socket>;
+    using Session = ExchangeSession<IoMode::Socket>;
     Session ex{};
     ex.prepareSocketIo(oePort, mdHost, mdPort);
     fmt::print(stderr, "exchange-sim: publishing market data to udp/{}:{}\n", mdHost, mdPort);
 
-    sim::FlowGenerator<Session> gen(ex, {});
-    ex.sessionEvent(itch::SystemEventCode::StartOfMarketHours, util::nsSinceMidnightUtc());
-    gen.run(200, util::nsSinceMidnightUtc(), 0);
+    FlowGenerator<Session> gen(ex, {});
+    ex.sessionEvent(itch::SystemEventCode::StartOfMarketHours, nsSinceMidnightUtc());
+    gen.run(200, nsSinceMidnightUtc(), 0);
 
     ex.run(g_stop, [&](std::uint64_t ts) { gen.step(ts); });
 
-    ex.sessionEvent(itch::SystemEventCode::EndOfMarketHours, util::nsSinceMidnightUtc());
+    ex.sessionEvent(itch::SystemEventCode::EndOfMarketHours, nsSinceMidnightUtc());
     fmt::print(stderr, "exchange-sim: shut down.\n");
     return 0;
 }

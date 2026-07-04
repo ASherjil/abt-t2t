@@ -8,23 +8,21 @@
 #include "TestHarness.hpp"
 
 using namespace abt;
-using lob::Side;
-
 namespace {
 
 struct Rec {
-    std::vector<lob::Trade> trades;
-    void onTrade(const lob::Trade& t) { trades.push_back(t); }
+    std::vector<Trade> trades;
+    void onTrade(const Trade& t) { trades.push_back(t); }
 };
 
-lob::Quantity filled(const Rec& r) {
-    lob::Quantity q = 0;
+Quantity filled(const Rec& r) {
+    Quantity q = 0;
     for (const auto& t : r.trades) q += t.qty;
     return q;
 }
 
 void test_rest_only_no_cross() {
-    lob::OrderBook book(1, 1000);
+    OrderBook book(1, 1000);
     Rec sink;
     book.add(1, Side::Buy, 50, 100, sink);
     book.add(2, Side::Buy, 49, 200, sink);
@@ -40,10 +38,10 @@ void test_rest_only_no_cross() {
 }
 
 void test_full_aggressor_fill() {
-    lob::OrderBook book(1, 1000);
+    OrderBook book(1, 1000);
     Rec sink;
     book.add(1, Side::Sell, 52, 100, sink);
-    const lob::Handle rem = book.add(99, Side::Buy, 52, 100, sink);
+    const Handle rem = book.add(99, Side::Buy, 52, 100, sink);
 
     CHECK_EQ(sink.trades.size(), 1u);
     CHECK_EQ(sink.trades[0].restingId, 1u);
@@ -51,13 +49,13 @@ void test_full_aggressor_fill() {
     CHECK_EQ(sink.trades[0].price, 52);
     CHECK_EQ(sink.trades[0].qty, 100u);
     CHECK(sink.trades[0].restingFilled);
-    CHECK(rem == lob::kNilHandle);
-    CHECK_EQ(book.bestAsk(), lob::kNoPrice);
+    CHECK(rem == kNilHandle);
+    CHECK_EQ(book.bestAsk(), kNoPrice);
     CHECK(book.empty());
 }
 
 void test_price_time_priority() {
-    lob::OrderBook book(1, 1000);
+    OrderBook book(1, 1000);
     Rec sink;
     book.add(1, Side::Sell, 52, 100, sink);
     book.add(2, Side::Sell, 52, 100, sink);
@@ -75,7 +73,7 @@ void test_price_time_priority() {
 }
 
 void test_multilevel_sweep_price_improvement() {
-    lob::OrderBook book(1, 1000);
+    OrderBook book(1, 1000);
     Rec sink;
     book.add(1, Side::Sell, 52, 100, sink);
     book.add(2, Side::Sell, 53, 100, sink);
@@ -92,35 +90,35 @@ void test_multilevel_sweep_price_improvement() {
 }
 
 void test_aggressor_partial_rests() {
-    lob::OrderBook book(1, 1000);
+    OrderBook book(1, 1000);
     Rec sink;
     book.add(1, Side::Sell, 52, 100, sink);
-    const lob::Handle rem = book.add(99, Side::Buy, 52, 150, sink);
+    const Handle rem = book.add(99, Side::Buy, 52, 150, sink);
 
     CHECK_EQ(sink.trades.size(), 1u);
     CHECK_EQ(sink.trades[0].qty, 100u);
-    CHECK(rem != lob::kNilHandle);
-    CHECK_EQ(book.bestAsk(), lob::kNoPrice);
+    CHECK(rem != kNilHandle);
+    CHECK_EQ(book.bestAsk(), kNoPrice);
     CHECK_EQ(book.bestBid(), 52);
     CHECK_EQ(book.volumeAt(Side::Buy, 52), 50u);
     CHECK_EQ(book.order(rem).qty, 50u);
 }
 
 void test_cancel_and_best_update() {
-    lob::OrderBook book(1, 1000);
-    const lob::Handle h = book.add(1, Side::Buy, 50, 100);
+    OrderBook book(1, 1000);
+    const Handle h = book.add(1, Side::Buy, 50, 100);
     CHECK_EQ(book.bestBid(), 50);
     CHECK_EQ(book.cancel(h), 100u);
     CHECK_EQ(book.volumeAt(Side::Buy, 50), 0u);
-    CHECK_EQ(book.bestBid(), lob::kNoPrice);
+    CHECK_EQ(book.bestBid(), kNoPrice);
     CHECK(book.empty());
     CHECK_EQ(book.cancel(h), 0u);
 }
 
 void test_cancel_middle_of_fifo() {
-    lob::OrderBook book(1, 1000);
+    OrderBook book(1, 1000);
     book.add(1, Side::Sell, 50, 100);
-    const lob::Handle hb = book.add(2, Side::Sell, 50, 100);
+    const Handle hb = book.add(2, Side::Sell, 50, 100);
     book.add(3, Side::Sell, 50, 100);
     CHECK_EQ(book.cancel(hb), 100u);
     CHECK_EQ(book.volumeAt(Side::Sell, 50), 200u);
@@ -134,14 +132,14 @@ void test_cancel_middle_of_fifo() {
 }
 
 void test_reduce() {
-    lob::OrderBook book(1, 1000);
-    const lob::Handle h = book.add(1, Side::Buy, 50, 100);
+    OrderBook book(1, 1000);
+    const Handle h = book.add(1, Side::Buy, 50, 100);
     CHECK_EQ(book.reduce(h, 60), 40u);
     CHECK_EQ(book.volumeAt(Side::Buy, 50), 60u);
     CHECK_EQ(book.reduce(h, 80), 0u);
     CHECK_EQ(book.volumeAt(Side::Buy, 50), 60u);
     CHECK_EQ(book.reduce(h, 0), 60u);
-    CHECK_EQ(book.bestBid(), lob::kNoPrice);
+    CHECK_EQ(book.bestBid(), kNoPrice);
 }
 
 }

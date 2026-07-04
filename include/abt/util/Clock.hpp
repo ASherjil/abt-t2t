@@ -6,7 +6,7 @@
 #include <cstdint>
 #include <ctime>
 
-namespace abt::util {
+namespace abt {
 
 inline std::uint64_t monotonicNs() noexcept {
     timespec ts{};

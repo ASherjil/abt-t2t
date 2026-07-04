@@ -8,7 +8,7 @@
 
 #include "abt/lob/Types.hpp"
 
-namespace abt::lob {
+namespace abt {
 
 class OrderBook {
 public:

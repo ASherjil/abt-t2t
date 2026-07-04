@@ -41,7 +41,7 @@ soup::Packet soupOf(const std::vector<std::byte>& pkt) {
 }
 
 void test_end_to_end() {
-    sim::ExchangeSession<sim::IoMode::Loopback> ex{};
+    ExchangeSession<IoMode::Loopback> ex{};
 
     std::array<std::byte, 256> feed{};
 
@@ -56,7 +56,7 @@ void test_end_to_end() {
     CHECK(soupOf(ex.capturedOrderEntry()[0]).type == soup::Type::LoginAccepted);
     ex.clearCaptured();
 
-    const lob::OrderId synthRef = ex.injectSynthetic(lob::Side::Sell, 5200, 100, 1'500);
+    const OrderId synthRef = ex.injectSynthetic(Side::Sell, 5200, 100, 1'500);
     CHECK_EQ(synthRef, 1u);
     CHECK_EQ(ex.capturedOrderEntry().size(), 0u);
     CHECK_EQ(ex.capturedMarketData().size(), 1u);
@@ -120,11 +120,11 @@ void test_end_to_end() {
         CHECK_EQ(e.executedShares.value(), 100u);
         CHECK_EQ(e.matchNumber.value(), 1u);
     }
-    CHECK_EQ(ex.bestAsk(), lob::kNoPrice);
+    CHECK_EQ(ex.bestAsk(), kNoPrice);
 }
 
 void test_partial_stream() {
-    sim::ExchangeSession<sim::IoMode::Loopback> ex{};
+    ExchangeSession<IoMode::Loopback> ex{};
 
     std::array<std::byte, 256> feed{};
     soup::LoginRequest lr{};

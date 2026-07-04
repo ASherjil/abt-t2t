@@ -72,7 +72,7 @@ void test_socket_roundtrip() {
     setRecvTimeout(oe[1], 2000);
     setRecvTimeout(md[1], 2000);
 
-    sim::ExchangeSession<sim::IoMode::Socket> ex{};
+    ExchangeSession<IoMode::Socket> ex{};
     ex.attachSockets(oe[0], md[0]);
 
     soup::LoginRequest lr{};
@@ -90,7 +90,7 @@ void test_socket_roundtrip() {
         CHECK(pkts[0].type == soup::Type::LoginAccepted);
     }
 
-    ex.injectSynthetic(lob::Side::Sell, 5200, 100, 1'500);
+    ex.injectSynthetic(Side::Sell, 5200, 100, 1'500);
     {
         const auto dg = recvSome(md[1]);
         std::size_t count = 0;
@@ -146,7 +146,7 @@ void test_socket_roundtrip() {
         });
         CHECK_EQ(count, 1u);
     }
-    CHECK_EQ(ex.bestAsk(), lob::kNoPrice);
+    CHECK_EQ(ex.bestAsk(), kNoPrice);
 
     ::close(oe[1]); ::close(md[1]);
 }

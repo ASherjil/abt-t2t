@@ -34,10 +34,11 @@ endif()
 # abt_protocol : header-only wire protocol library (ITCH 5.0 / OUCH 5.0).
 # Everything is zero-cost overlay structs, so this is an INTERFACE target.
 # ---------------------------------------------------------------------------
-add_library(abt_protocol INTERFACE)
+add_library(abt_protocol STATIC src/protocol/MoldUdp64.cpp)
 add_library(abt::protocol ALIAS abt_protocol)
-target_include_directories(abt_protocol INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/include)
-target_compile_features(abt_protocol INTERFACE cxx_std_20)
+target_include_directories(abt_protocol PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_compile_features(abt_protocol PUBLIC cxx_std_20)
+target_link_libraries(abt_protocol PRIVATE abt_flags)
 
 # ---------------------------------------------------------------------------
 # abt_lob : header-only limit order book / matching engine.

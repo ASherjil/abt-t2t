@@ -6,7 +6,7 @@
 #include <cstdint>
 #include <limits>
 
-namespace abt::lob {
+namespace abt {
 
 using Price    = std::int32_t;
 using Quantity = std::uint32_t;

@@ -57,7 +57,7 @@ constexpr std::uint64_t kPx51 = 510000;
 
 void test_enter_rests() {
     RecSink sink;
-    sim::Venue<RecSink> v(sink, "AAPL", 1, 1, 100000, 100);
+    Venue<RecSink> v(sink, "AAPL", 1, 1, 100000, 100);
 
     v.onEnterOrder(makeEnter(1000, 'B', 100, "AAPL", kPx52), 1'000'000);
 
@@ -84,9 +84,9 @@ void test_enter_rests() {
 
 void test_cross_against_synthetic() {
     RecSink sink;
-    sim::Venue<RecSink> v(sink, "AAPL", 1, 1, 100000, 100);
+    Venue<RecSink> v(sink, "AAPL", 1, 1, 100000, 100);
 
-    const auto synthRef = v.injectSynthetic(lob::Side::Sell, 5200, 100, 1'000);
+    const auto synthRef = v.injectSynthetic(Side::Sell, 5200, 100, 1'000);
     CHECK_EQ(synthRef, 1u);
     CHECK_EQ(sink.md.size(), 1u);
     CHECK_EQ(sink.oe.size(), 0u);
@@ -110,12 +110,12 @@ void test_cross_against_synthetic() {
     CHECK_EQ(ie.orderRef.value(), 1u);
     CHECK_EQ(ie.executedShares.value(), 100u);
     CHECK_EQ(ie.matchNumber.value(), 1u);
-    CHECK_EQ(v.bestAsk(), lob::kNoPrice);
+    CHECK_EQ(v.bestAsk(), kNoPrice);
 }
 
 void test_full_cancel() {
     RecSink sink;
-    sim::Venue<RecSink> v(sink, "AAPL", 1, 1, 100000, 100);
+    Venue<RecSink> v(sink, "AAPL", 1, 1, 100000, 100);
     v.onEnterOrder(makeEnter(1000, 'B', 100, "AAPL", kPx52), 1'000);
     sink.clear();
 
@@ -135,12 +135,12 @@ void test_full_cancel() {
     const auto c = decode<ouch::Canceled>(sink.oe[0]);
     CHECK_EQ(c.userRefNum.value(), 1000u);
     CHECK_EQ(c.quantity.value(), 100u);
-    CHECK_EQ(v.bestBid(), lob::kNoPrice);
+    CHECK_EQ(v.bestBid(), kNoPrice);
 }
 
 void test_partial_cancel() {
     RecSink sink;
-    sim::Venue<RecSink> v(sink, "AAPL", 1, 1, 100000, 100);
+    Venue<RecSink> v(sink, "AAPL", 1, 1, 100000, 100);
     v.onEnterOrder(makeEnter(1000, 'B', 100, "AAPL", kPx52), 1'000);
     sink.clear();
 
@@ -156,12 +156,12 @@ void test_partial_cancel() {
     CHECK_EQ(decode<itch::OrderCancel>(sink.md[0]).cancelledShares.value(), 70u);
     CHECK_EQ(sink.oe.size(), 1u);
     CHECK_EQ(decode<ouch::Canceled>(sink.oe[0]).quantity.value(), 70u);
-    CHECK_EQ(v.book().volumeAt(lob::Side::Buy, 5200), 30u);
+    CHECK_EQ(v.book().volumeAt(Side::Buy, 5200), 30u);
 }
 
 void test_replace_noncrossing() {
     RecSink sink;
-    sim::Venue<RecSink> v(sink, "AAPL", 1, 1, 100000, 100);
+    Venue<RecSink> v(sink, "AAPL", 1, 1, 100000, 100);
     v.onEnterOrder(makeEnter(1000, 'B', 100, "AAPL", kPx52), 1'000);
     sink.clear();
 
@@ -194,8 +194,8 @@ void test_replace_noncrossing() {
     CHECK_EQ(iu.shares.value(), 150u);
     CHECK_EQ(iu.price.value(), 510000u);
     CHECK_EQ(v.bestBid(), 5100);
-    CHECK_EQ(v.book().volumeAt(lob::Side::Buy, 5200), 0u);
-    CHECK_EQ(v.book().volumeAt(lob::Side::Buy, 5100), 150u);
+    CHECK_EQ(v.book().volumeAt(Side::Buy, 5200), 0u);
+    CHECK_EQ(v.book().volumeAt(Side::Buy, 5100), 150u);
 }
 
 }

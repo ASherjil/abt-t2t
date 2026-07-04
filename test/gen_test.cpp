@@ -22,12 +22,12 @@ struct CountSink {
 
 void test_generator_book_invariant() {
     CountSink sink;
-    sim::Venue<CountSink> v(sink, "AAPL", 1, 1, 100000, 100);
-    sim::FlowGenerator<sim::Venue<CountSink>> gen(v, {});
+    Venue<CountSink> v(sink, "AAPL", 1, 1, 100000, 100);
+    FlowGenerator<Venue<CountSink>> gen(v, {});
 
     for (int i = 0; i < 2000; ++i) {
         gen.step(1'000'000 + static_cast<std::uint64_t>(i) * 100);
-        if (v.bestBid() != lob::kNoPrice && v.bestAsk() != lob::kNoPrice) {
+        if (v.bestBid() != kNoPrice && v.bestAsk() != kNoPrice) {
             CHECK(v.bestBid() < v.bestAsk());
         }
     }
@@ -37,13 +37,13 @@ void test_generator_book_invariant() {
 
 void test_generator_deterministic() {
     CountSink s1, s2;
-    sim::Venue<CountSink> v1(s1, "AAPL", 1, 1, 100000, 100);
-    sim::Venue<CountSink> v2(s2, "AAPL", 1, 1, 100000, 100);
+    Venue<CountSink> v1(s1, "AAPL", 1, 1, 100000, 100);
+    Venue<CountSink> v2(s2, "AAPL", 1, 1, 100000, 100);
 
-    sim::FlowGenerator<sim::Venue<CountSink>>::Config cfg{};
+    FlowGenerator<Venue<CountSink>>::Config cfg{};
     cfg.seed = 0xABCDEF12345ull;
-    sim::FlowGenerator<sim::Venue<CountSink>> g1(v1, cfg);
-    sim::FlowGenerator<sim::Venue<CountSink>> g2(v2, cfg);
+    FlowGenerator<Venue<CountSink>> g1(v1, cfg);
+    FlowGenerator<Venue<CountSink>> g2(v2, cfg);
 
     g1.run(1500, 0, 100);
     g2.run(1500, 0, 100);
