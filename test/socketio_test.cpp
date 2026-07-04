@@ -12,7 +12,6 @@
 #include <unistd.h>
 #include <vector>
 
-#include "abt/net/SocketIo.hpp"
 #include "abt/protocol/Itch50.hpp"
 #include "abt/protocol/MoldUdp64.hpp"
 #include "abt/protocol/Ouch50.hpp"
@@ -73,8 +72,8 @@ void test_socket_roundtrip() {
     setRecvTimeout(oe[1], 2000);
     setRecvTimeout(md[1], 2000);
 
-    net::SocketIo io{md[0], oe[0]};
-    sim::ExchangeSession<net::SocketIo> ex(io, {});
+    sim::ExchangeSession<sim::IoMode::Socket> ex{};
+    ex.attachSockets(oe[0], md[0]);
 
     soup::LoginRequest lr{};
     lr.username = std::string_view{"USER01"};
@@ -149,7 +148,7 @@ void test_socket_roundtrip() {
     }
     CHECK_EQ(ex.bestAsk(), lob::kNoPrice);
 
-    ::close(oe[0]); ::close(oe[1]); ::close(md[0]); ::close(md[1]);
+    ::close(oe[1]); ::close(md[1]);
 }
 
 }

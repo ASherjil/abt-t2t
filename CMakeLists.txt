@@ -18,6 +18,18 @@ include(cmake/CompilerWarnings.cmake)
 
 find_package(fmt REQUIRED)
 
+# Kernel-bypass transports (DPDK / Verbs / AF_XDP / ef_vi) live in the sibling ABTRDA3
+# repo, which owns all NIC/EAL/hugepage init. OFF by default: enabling it runs ABTRDA3's
+# CMake, which pkg-config-requires DPDK/rdma-core/libxdp. Turn on for the DPDK datapath.
+option(ABT_WITH_TRANSPORT "Fetch ABTRDA3 kernel-bypass transports" OFF)
+if(ABT_WITH_TRANSPORT)
+    include(FetchContent)
+    FetchContent_Declare(abtrda3
+        GIT_REPOSITORY https://github.com/ASherjil/ABTRDA3.git
+        GIT_TAG main)
+    FetchContent_MakeAvailable(abtrda3)
+endif()
+
 # ---------------------------------------------------------------------------
 # abt_protocol : header-only wire protocol library (ITCH 5.0 / OUCH 5.0).
 # Everything is zero-cost overlay structs, so this is an INTERFACE target.
@@ -40,7 +52,7 @@ target_compile_features(abt_lob INTERFACE cxx_std_20)
 # ---------------------------------------------------------------------------
 add_library(abt_sim INTERFACE)
 add_library(abt::sim ALIAS abt_sim)
-target_link_libraries(abt_sim INTERFACE abt_protocol abt_lob)
+target_link_libraries(abt_sim INTERFACE abt_protocol abt_lob fmt::fmt)
 
 add_subdirectory(apps)
 

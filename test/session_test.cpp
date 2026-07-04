@@ -9,7 +9,6 @@
 #include <string_view>
 #include <vector>
 
-#include "abt/net/LoopbackIo.hpp"
 #include "abt/protocol/Itch50.hpp"
 #include "abt/protocol/MoldUdp64.hpp"
 #include "abt/protocol/Ouch50.hpp"
@@ -42,8 +41,7 @@ soup::Packet soupOf(const std::vector<std::byte>& pkt) {
 }
 
 void test_end_to_end() {
-    net::LoopbackIo io;
-    sim::ExchangeSession<net::LoopbackIo> ex(io, {});
+    sim::ExchangeSession<sim::IoMode::Loopback> ex{};
 
     std::array<std::byte, 256> feed{};
 
@@ -54,16 +52,16 @@ void test_end_to_end() {
         const auto pkt = soup::pack(feed.data(), soup::Type::LoginRequest, bytesOf(lr));
         ex.onOrderEntryBytes(pkt, 1'000);
     }
-    CHECK_EQ(io.oe.size(), 1u);
-    CHECK(soupOf(io.oe[0]).type == soup::Type::LoginAccepted);
-    io.clear();
+    CHECK_EQ(ex.capturedOrderEntry().size(), 1u);
+    CHECK(soupOf(ex.capturedOrderEntry()[0]).type == soup::Type::LoginAccepted);
+    ex.clearCaptured();
 
     const lob::OrderId synthRef = ex.injectSynthetic(lob::Side::Sell, 5200, 100, 1'500);
     CHECK_EQ(synthRef, 1u);
-    CHECK_EQ(io.oe.size(), 0u);
-    CHECK_EQ(io.md.size(), 1u);
+    CHECK_EQ(ex.capturedOrderEntry().size(), 0u);
+    CHECK_EQ(ex.capturedMarketData().size(), 1u);
     {
-        const auto msgs = moldMessages(io.md[0]);
+        const auto msgs = moldMessages(ex.capturedMarketData()[0]);
         CHECK_EQ(msgs.size(), 1u);
         CHECK_EQ(msgs[0].size(), sizeof(itch::AddOrder));
         itch::AddOrder a{};
@@ -74,7 +72,7 @@ void test_end_to_end() {
         CHECK_EQ(a.price.value(), 520000u);
         CHECK_EQ(a.orderRef.value(), 1u);
     }
-    io.clear();
+    ex.clearCaptured();
 
     ouch::EnterOrder o{};
     o.type = static_cast<char>(ouch::InType::EnterOrder);
@@ -95,9 +93,9 @@ void test_end_to_end() {
         ex.onOrderEntryBytes(pkt, 2'000);
     }
 
-    CHECK_EQ(io.oe.size(), 2u);
-    const auto acc = soupOf(io.oe[0]);
-    const auto exe = soupOf(io.oe[1]);
+    CHECK_EQ(ex.capturedOrderEntry().size(), 2u);
+    const auto acc = soupOf(ex.capturedOrderEntry()[0]);
+    const auto exe = soupOf(ex.capturedOrderEntry()[1]);
     CHECK(acc.type == soup::Type::SequencedData);
     CHECK(exe.type == soup::Type::SequencedData);
     CHECK(static_cast<char>(acc.payload[0]) == static_cast<char>(ouch::OutType::Accepted));
@@ -111,9 +109,9 @@ void test_end_to_end() {
         CHECK_EQ(e.matchNumber.value(), 1u);
     }
 
-    CHECK_EQ(io.md.size(), 1u);
+    CHECK_EQ(ex.capturedMarketData().size(), 1u);
     {
-        const auto msgs = moldMessages(io.md[0]);
+        const auto msgs = moldMessages(ex.capturedMarketData()[0]);
         CHECK_EQ(msgs.size(), 1u);
         itch::OrderExecuted e{};
         std::memcpy(&e, msgs[0].data(), sizeof e);
@@ -126,8 +124,7 @@ void test_end_to_end() {
 }
 
 void test_partial_stream() {
-    net::LoopbackIo io;
-    sim::ExchangeSession<net::LoopbackIo> ex(io, {});
+    sim::ExchangeSession<sim::IoMode::Loopback> ex{};
 
     std::array<std::byte, 256> feed{};
     soup::LoginRequest lr{};
@@ -135,10 +132,10 @@ void test_partial_stream() {
     const auto pkt = soup::pack(feed.data(), soup::Type::LoginRequest, bytesOf(lr));
 
     ex.onOrderEntryBytes(pkt.subspan(0, 5), 1'000);
-    CHECK_EQ(io.oe.size(), 0u);
+    CHECK_EQ(ex.capturedOrderEntry().size(), 0u);
     ex.onOrderEntryBytes(pkt.subspan(5), 1'000);
-    CHECK_EQ(io.oe.size(), 1u);
-    CHECK(soupOf(io.oe[0]).type == soup::Type::LoginAccepted);
+    CHECK_EQ(ex.capturedOrderEntry().size(), 1u);
+    CHECK(soupOf(ex.capturedOrderEntry()[0]).type == soup::Type::LoginAccepted);
 }
 
 }
