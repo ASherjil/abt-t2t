@@ -41,9 +41,11 @@ Built incrementally. Current state:
 | MoldUDP64 (market data) + SoupBinTCP (order entry) framing | ✅ tested |
 | ExchangeSession: full SoupBin ⇄ OUCH ⇄ match ⇄ ITCH ⇄ MoldUDP64 loop | ✅ tested |
 | Synthetic order-flow generator (deterministic) | ✅ tested |
-| **← simulator complete & runnable in software (loopback)** | |
-| DPDK NIC transport (Eth/IP/UDP frames, EAL, Rx/Tx) | ⏳ hardware |
-| ef_vi DUT + HW-timestamped t2t harness | ⏳ hardware |
+| Kernel-socket transport + runnable `exchange_sim` binary (config 1) | ✅ tested + live smoke |
+| **← exchange simulator runs over real TCP (order entry) + UDP (market data)** | |
+| Manual Ethernet/IPv4/UDP framing (needed for ef_vi/DPDK paths) | ⏳ next — L3/L4 by hand |
+| DUT transports: Onload (TCP) · ef_vi (UDP) · DPDK-sfc (UDP) | ⏳ hardware |
+| HW-timestamped tick-to-trade harness + transport comparison | ⏳ hardware |
 
 ## Layout
 
@@ -64,6 +66,18 @@ ctest --preset release
 
 Requires a C++20 compiler (GCC 13+/Clang 16+), CMake ≥ 3.21, Ninja. Kernel-bypass
 components additionally require DPDK and the corresponding NIC setup (added as they land).
+
+## Run the simulator (config 1: kernel sockets)
+
+```bash
+# exchange_sim [order_entry_tcp_port] [market_data_host] [market_data_udp_port]
+./build/release/apps/exchange_sim 5001 127.0.0.1 5002
+```
+
+It waits for an order-entry client on the TCP port (SoupBinTCP), then publishes ITCH
+market data over MoldUDP64/UDP and runs a synthetic market. Order entry is plain kernel
+TCP with `TCP_NODELAY`; running the same binary under Onload accelerates both sockets
+with no code change (that is the DUT's config-1 path).
 
 ## Design principles
 

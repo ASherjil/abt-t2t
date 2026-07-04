@@ -35,3 +35,8 @@ add_executable(gen_test gen_test.cpp)
 target_include_directories(gen_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(gen_test PRIVATE abt::sim abt::flags)
 add_test(NAME gen_test COMMAND gen_test)
+
+add_executable(socketio_test socketio_test.cpp)
+target_include_directories(socketio_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(socketio_test PRIVATE abt::sim abt::flags)
+add_test(NAME socketio_test COMMAND socketio_test)

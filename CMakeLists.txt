@@ -40,5 +40,7 @@ add_library(abt_sim INTERFACE)
 add_library(abt::sim ALIAS abt_sim)
 target_link_libraries(abt_sim INTERFACE abt_protocol abt_lob)
 
+add_subdirectory(apps)
+
 enable_testing()
 add_subdirectory(test)
