@@ -1,17 +1,8 @@
 #pragma once
 //
-// FlowGenerator.hpp -- synthetic order flow that keeps a realistic two-sided market alive
-// on the ITCH feed, so the DUT sees genuine microstructure even when it isn't trading.
+// Deterministic synthetic order flow that keeps a live two-sided market on the feed.
 //
-// Deterministic: a seeded xorshift64 PRNG (no wall-clock / std::random_device), so a run
-// is fully reproducible from its seed -- important for repeatable latency measurements.
-//
-// Drives any `Market` providing:
-//     lob::OrderId injectSynthetic(lob::Side, lob::Price tick, lob::Quantity, uint64_t ts);
-//     void         cancelSynthetic(lob::OrderId, uint64_t ts);
-//     lob::Price   bestBid() const;  lob::Price bestAsk() const;
-// (both Venue and ExchangeSession satisfy this).
-//
+
 #include <cstddef>
 #include <cstdint>
 #include <vector>
@@ -24,20 +15,19 @@ template <class Market>
 class FlowGenerator {
 public:
     struct Config {
-        lob::Price     midTick    = 5200;   // reference mid (e.g. $52.00 at $0.01 ticks)
-        lob::Price     halfSpread = 1;      // min ticks from mid for a passive order
-        lob::Price     depthTicks = 20;     // passive orders spread over this many ticks
+        lob::Price     midTick    = 5200;
+        lob::Price     halfSpread = 1;
+        lob::Price     depthTicks = 20;
         lob::Quantity  minQty     = 10;
         lob::Quantity  maxQty     = 500;
-        std::uint32_t  cancelPct  = 30;     // % of steps that cancel a live order
-        std::uint32_t  crossPct   = 15;     // % of steps that send a marketable order
+        std::uint32_t  cancelPct  = 30;
+        std::uint32_t  crossPct   = 15;
         std::uint64_t  seed       = 0x9E3779B97F4A7C15ull;
     };
 
     FlowGenerator(Market& market, const Config& cfg)
         : m_market(market), m_cfg(cfg), m_state(cfg.seed ? cfg.seed : 1) {}
 
-    // Perform one action (add / cancel / marketable) at timestamp `ts`.
     void step(std::uint64_t ts) {
         const std::uint32_t roll = static_cast<std::uint32_t>(rng() % 100);
 
@@ -57,7 +47,6 @@ public:
 
         lob::Price tick;
         if (crossing) {
-            // Reach across the spread to generate a trade (rests at mid if no opposite).
             if (buy) tick = m_market.bestAsk() != lob::kNoPrice ? m_market.bestAsk() : m_cfg.midTick;
             else     tick = m_market.bestBid() != lob::kNoPrice ? m_market.bestBid() : m_cfg.midTick;
         } else {
@@ -67,7 +56,7 @@ public:
         }
 
         const lob::OrderId ref = m_market.injectSynthetic(side, tick, qty, ts);
-        if (!crossing) {                       // passive orders are the ones likely resting
+        if (!crossing) {
             m_live.push_back(ref);
             if (m_live.size() > kMaxTracked) {
                 m_live.erase(m_live.begin(),
@@ -99,4 +88,4 @@ private:
     std::vector<lob::OrderId>  m_live;
 };
 
-}  // namespace abt::sim
+}

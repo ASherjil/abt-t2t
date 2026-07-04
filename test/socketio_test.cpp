@@ -1,9 +1,7 @@
 //
-// socketio_test.cpp -- drives ExchangeSession over real kernel sockets (socketpairs, so
-// the test needs no network and can't be flaky), proving the SocketIo write path and the
-// run-loop read path move bytes correctly: a client sends SoupBinTCP, the sim reads it,
-// matches, and the client sees OUCH replies while a market-data socket sees MoldUDP64.
+// Drives ExchangeSession over real kernel sockets (socketpairs) end to end.
 //
+
 #include <array>
 #include <cstddef>
 #include <cstring>
@@ -43,7 +41,6 @@ std::vector<std::byte> recvSome(int fd) {
     return {buf.begin(), buf.begin() + n};
 }
 
-// Parse every complete SoupBinTCP packet in a buffer.
 std::vector<soup::Packet> soupPackets(const std::vector<std::byte>& buf) {
     std::vector<soup::Packet> out;
     std::size_t off = 0;
@@ -57,9 +54,6 @@ std::vector<soup::Packet> soupPackets(const std::vector<std::byte>& buf) {
     return out;
 }
 
-// A TCP stream can deliver a send in pieces, so read until `want` complete packets are
-// buffered (or the recv timeout fires). Returns the accumulated bytes; parse them with
-// soupPackets so the Packet views stay valid in the caller.
 std::vector<std::byte> recvUntilPackets(int fd, std::size_t want) {
     std::vector<std::byte> buf;
     for (int i = 0; i < 200 && soupPackets(buf).size() < want; ++i) {
@@ -73,16 +67,15 @@ std::vector<std::byte> recvUntilPackets(int fd, std::size_t want) {
 void test_socket_roundtrip() {
     int oe[2];
     int md[2];
-    CHECK_EQ(::socketpair(AF_UNIX, SOCK_STREAM, 0, oe), 0);   // order entry (TCP-like)
-    CHECK_EQ(::socketpair(AF_UNIX, SOCK_DGRAM, 0, md), 0);    // market data (UDP-like)
+    CHECK_EQ(::socketpair(AF_UNIX, SOCK_STREAM, 0, oe), 0);
+    CHECK_EQ(::socketpair(AF_UNIX, SOCK_DGRAM, 0, md), 0);
     setRecvTimeout(oe[0], 2000);
     setRecvTimeout(oe[1], 2000);
     setRecvTimeout(md[1], 2000);
 
-    net::SocketIo io{md[0], oe[0]};                           // sim writes to [0], peer reads [1]
+    net::SocketIo io{md[0], oe[0]};
     sim::ExchangeSession<net::SocketIo> ex(io, {});
 
-    // 1. Client logs in.
     soup::LoginRequest lr{};
     lr.username = std::string_view{"USER01"};
     std::array<std::byte, 256> feed{};
@@ -90,7 +83,7 @@ void test_socket_roundtrip() {
         const auto pkt = soup::pack(feed.data(), soup::Type::LoginRequest, bytesOf(lr));
         CHECK(::send(oe[1], pkt.data(), pkt.size(), 0) > 0);
     }
-    ex.onOrderEntryBytes(recvSome(oe[0]), 1'000);            // run loop: read -> feed session
+    ex.onOrderEntryBytes(recvSome(oe[0]), 1'000);
     {
         const auto buf = recvUntilPackets(oe[1], 1);
         const auto pkts = soupPackets(buf);
@@ -98,7 +91,6 @@ void test_socket_roundtrip() {
         CHECK(pkts[0].type == soup::Type::LoginAccepted);
     }
 
-    // 2. A synthetic resting sell -> a MoldUDP64 datagram on the market-data socket.
     ex.injectSynthetic(lob::Side::Sell, 5200, 100, 1'500);
     {
         const auto dg = recvSome(md[1]);
@@ -113,8 +105,6 @@ void test_socket_roundtrip() {
         CHECK_EQ(count, 1u);
     }
 
-    // 3. Client sends a marketable OUCH buy -> Accepted + Executed over the OE socket,
-    //    OrderExecuted over the market-data socket.
     ouch::EnterOrder o{};
     o.type = static_cast<char>(ouch::InType::EnterOrder);
     o.userRefNum = 1000u;
@@ -162,7 +152,7 @@ void test_socket_roundtrip() {
     ::close(oe[0]); ::close(oe[1]); ::close(md[0]); ::close(md[1]);
 }
 
-}  // namespace
+}
 
 int main() {
     test_socket_roundtrip();

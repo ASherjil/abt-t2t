@@ -1,24 +1,8 @@
 #pragma once
 //
-// OrderBook.hpp -- a price-time-priority limit order book / matching engine.
+// Price-time-priority limit order book / matching engine (flat level arrays, O(1) hot path).
 //
-// Design (the canonical low-latency layout):
-//   * Flat per-side arrays of price levels, indexed by (price - minPrice), so best-quote
-//     access and add/cancel at a known price are O(1) -- no std::map on the hot path.
-//   * An intrusive doubly-linked FIFO of orders per level gives price-time priority and
-//     O(1) unlink on cancel.
-//   * A pre-sized order pool with a free list -> zero heap allocation on the hot path.
-//   * Orders are referenced by a dense Handle (pool index), not a pointer, so the pool can
-//     grow without invalidating stored references.
-//
-// Matching is aggressor-driven: add() crosses the incoming order against the opposite side
-// (best price first, FIFO within a level), emitting a Trade per fill via a caller-supplied
-// sink, then rests any remainder. The sink is a template parameter so it inlines fully.
-//
-// Best-quote tracking uses a linear rescan outward when the best level empties -- correct
-// and cache-friendly (usually a single tick). A bitset over occupied levels would make it
-// O(1); noted as a future optimisation.
-//
+
 #include <cstddef>
 #include <vector>
 
@@ -28,7 +12,6 @@ namespace abt::lob {
 
 class OrderBook {
 public:
-    // Construct a book covering the inclusive tick range [minPrice, maxPrice].
     OrderBook(Price minPrice, Price maxPrice, std::size_t poolReserve = 1u << 16)
         : m_minPrice(minPrice),
           m_maxPrice(maxPrice),
@@ -37,10 +20,6 @@ public:
         m_pool.reserve(poolReserve);
     }
 
-    // Submit an order. Matches against the book (best price first, FIFO within a level),
-    // emitting a Trade per fill via `sink`, then rests any unfilled remainder. Returns the
-    // Handle of the resting remainder, or kNilHandle if the order fully filled or was
-    // rejected (zero qty / price out of range).
     template <class Sink>
     Handle add(OrderId id, Side side, Price price, Quantity qty, Sink&& sink) {
         if (qty == 0 || price < m_minPrice || price > m_maxPrice) [[unlikely]] {
@@ -61,20 +40,18 @@ public:
             }
             if (qty > 0) return rest(id, Side::Sell, price, qty);
         }
-        return kNilHandle;  // fully filled
+        return kNilHandle;
     }
 
-    // Convenience overload for callers that don't care about fills.
     Handle add(OrderId id, Side side, Price price, Quantity qty) {
         NullSink sink;
         return add(id, side, price, qty, sink);
     }
 
-    // Fully cancel a resting order by handle. Returns the shares removed (0 if already gone).
     Quantity cancel(Handle h) {
         if (h >= m_pool.size()) [[unlikely]] return 0;
         Order& o = m_pool[h];
-        if (o.qty == 0) return 0;  // already filled/cancelled
+        if (o.qty == 0) return 0;
         const Quantity removed = o.qty;
         const Price p = o.price;
         const Side  s = o.side;
@@ -91,8 +68,6 @@ public:
         return removed;
     }
 
-    // Reduce a resting order to `newQty` shares in place (retains time priority).
-    // Reducing to 0 cancels. Increases are ignored (return 0). Returns shares removed.
     Quantity reduce(Handle h, Quantity newQty) {
         if (h >= m_pool.size()) [[unlikely]] return 0;
         Order& o = m_pool[h];
@@ -104,7 +79,6 @@ public:
         return delta;
     }
 
-    // --- read-only accessors --------------------------------------------------------
     [[nodiscard]] Price bestBid() const noexcept { return m_bestBid; }
     [[nodiscard]] Price bestAsk() const noexcept { return m_bestAsk; }
 
@@ -120,8 +94,8 @@ public:
 private:
     struct Level {
         Quantity      totalQty = 0;
-        Handle        head     = kNilHandle;  // oldest order (executes first)
-        Handle        tail     = kNilHandle;  // newest order
+        Handle        head     = kNilHandle;
+        Handle        tail     = kNilHandle;
         std::uint32_t count    = 0;
     };
 
@@ -149,7 +123,6 @@ private:
         m_freeHead = h;
     }
 
-    // Remove order `h` from its level's FIFO (does not touch totalQty/count).
     void unlink(Level& lvl, Handle h) noexcept {
         Order& o = m_pool[h];
         if (o.prev != kNilHandle) m_pool[o.prev].next = o.next;
@@ -158,7 +131,6 @@ private:
         else                      lvl.tail = o.prev;
     }
 
-    // Consume a level FIFO against an aggressor; returns the aggressor's remaining qty.
     template <class Sink>
     Quantity matchLevel(Level& lvl, OrderId aggId, Side aggSide, Quantity qty, Sink& sink) {
         while (qty > 0 && lvl.head != kNilHandle) {
@@ -181,7 +153,6 @@ private:
         return qty;
     }
 
-    // Rest an unfilled remainder at the tail of its price level (newest = lowest priority).
     Handle rest(OrderId id, Side side, Price price, Quantity qty) {
         const Handle h = alloc();
         Order& o = m_pool[h];
@@ -231,4 +202,4 @@ private:
     Handle m_freeHead = kNilHandle;
 };
 
-}  // namespace abt::lob
+}

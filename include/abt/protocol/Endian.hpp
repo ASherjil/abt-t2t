@@ -1,16 +1,8 @@
 #pragma once
 //
-// Endian.hpp -- zero-cost big-endian field primitives for wire-protocol overlays.
+// Zero-cost big-endian / space-padded field primitives for wire-protocol overlays.
 //
-// Exchange protocols (Nasdaq ITCH/OUCH, MoldUDP64, SoupBinTCP) are big-endian and
-// wire-packed. We model each field as a 1-byte-aligned wrapper holding the raw
-// network-order bytes, with load/store that byteswap on little-endian hosts. Because
-// every wrapper is standard-layout and alignof == 1, a message struct built from them
-// has no padding and can be laid directly over a received frame (a `reinterpret_cast`
-// / `std::memcpy` overlay) with correct decoding and zero copies on the hot path.
-//
-// C++20 has no std::byteswap (that arrived in C++23), so we provide a constexpr one.
-//
+
 #include <array>
 #include <bit>
 #include <cstddef>
@@ -21,7 +13,6 @@
 
 namespace abt::wire {
 
-// --- constexpr byte swap (compiler intrinsics lower to a single BSWAP / MOVBE) -----
 template <std::integral T>
 [[nodiscard]] constexpr T bswap(T v) noexcept {
     if constexpr (sizeof(T) == 1) {
@@ -36,7 +27,6 @@ template <std::integral T>
     }
 }
 
-// --- BigEndian<T> : an integer field stored in network byte order -------------------
 template <std::integral T>
 struct BigEndian {
     std::array<std::byte, sizeof(T)> bytes;
@@ -57,8 +47,8 @@ struct BigEndian {
         std::memcpy(bytes.data(), &v, sizeof(T));
     }
 
-    [[nodiscard]] operator T() const noexcept { return value(); }   // implicit read
-    BigEndian& operator=(T v) noexcept { store(v); return *this; }  // typed write
+    [[nodiscard]] operator T() const noexcept { return value(); }
+    BigEndian& operator=(T v) noexcept { store(v); return *this; }
 };
 static_assert(sizeof(BigEndian<std::uint16_t>) == 2);
 static_assert(sizeof(BigEndian<std::uint32_t>) == 4);
@@ -67,7 +57,6 @@ static_assert(alignof(BigEndian<std::uint64_t>) == 1);
 static_assert(std::is_trivially_copyable_v<BigEndian<std::uint64_t>>);
 static_assert(std::is_standard_layout_v<BigEndian<std::uint64_t>>);
 
-// --- Uint48 : a 48-bit big-endian unsigned (ITCH timestamps = ns since midnight) ----
 struct Uint48 {
     std::array<std::byte, 6> bytes;
 
@@ -90,12 +79,10 @@ struct Uint48 {
 static_assert(sizeof(Uint48) == 6);
 static_assert(alignof(Uint48) == 1);
 
-// --- Alpha<N> : fixed-width ASCII, left-justified and space-padded (ITCH convention)-
 template <std::size_t N>
 struct Alpha {
     std::array<char, N> chars;
 
-    // Trailing-space-trimmed logical value (e.g. "AAPL    " -> "AAPL").
     [[nodiscard]] std::string_view view() const noexcept {
         std::size_t len = N;
         while (len > 0 && chars[len - 1] == ' ') {
@@ -115,9 +102,8 @@ struct Alpha {
 static_assert(sizeof(Alpha<8>) == 8);
 static_assert(alignof(Alpha<8>) == 1);
 
-// --- Convenience aliases used throughout the protocol structs -----------------------
 using u16be = BigEndian<std::uint16_t>;
 using u32be = BigEndian<std::uint32_t>;
 using u64be = BigEndian<std::uint64_t>;
 
-}  // namespace abt::wire
+}

@@ -1,25 +1,8 @@
 #pragma once
 //
-// ExchangeSession.hpp -- the exchange simulator as a session-level server: it ties the
-// SoupBinTCP order-entry stream, the OUCH codec, the matching Venue, and the MoldUDP64
-// market-data feed into one object.
+// Session server: SoupBinTCP <-> OUCH <-> matching <-> ITCH <-> MoldUDP64 over an abstract Io.
 //
-//   inbound  : SoupBinTCP byte stream --parse--> 'U' Unsequenced --OUCH decode--> Venue
-//   outbound : Venue --ITCH--> MoldUDP64 datagram --> marketDataOut
-//              Venue --OUCH--> SoupBinTCP 'S' packet --> orderEntryOut
-//
-// It is templated on an I/O boundary `Io` providing marketDataOut()/orderEntryOut()
-// (see net::LoopbackIo for tests). A concrete NIC adapter -- building Ethernet/IP/UDP
-// frames for market data, handling the TCP order-entry socket, and doing the actual NIC
-// Rx/Tx -- slots in behind this interface; that layer is the hardware boundary.
-//
-// Timestamps are passed in per inbound batch (in the real rig, the NIC RX hardware
-// timestamp) and flow through to the ITCH/OUCH `Timestamp` fields.
-//
-// First-cut scope: single symbol, single client, one MoldUDP64 datagram per inbound
-// event (assumes the resulting ITCH messages fit one datagram). Documented for later
-// MTU-splitting / multi-client work.
-//
+
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -41,10 +24,10 @@ public:
     struct Config {
         std::string   symbol      = "AAPL";
         std::uint16_t stockLocate = 1;
-        std::string   session     = "SIM0000001";   // 10-char MoldUDP64/SoupBin session id
+        std::string   session     = "SIM0000001";
         lob::Price    minTick     = 1;
         lob::Price    maxTick     = 100000;
-        std::uint32_t wirePerTick = 100;             // wire Price units per book tick ($0.01)
+        std::uint32_t wirePerTick = 100;
     };
 
     ExchangeSession(Io& io, const Config& cfg)
@@ -55,8 +38,6 @@ public:
           m_venue(m_sink, cfg.symbol, cfg.stockLocate, cfg.minTick, cfg.maxTick,
                   cfg.wirePerTick) {}
 
-    // Feed received SoupBinTCP bytes (a TCP stream may deliver partial packets; leftover
-    // bytes are buffered until the rest arrives). `ts` is the ingress timestamp.
     void onOrderEntryBytes(std::span<const std::byte> data, std::uint64_t ts) {
         m_rxBuf.insert(m_rxBuf.end(), data.begin(), data.end());
         std::size_t off = 0;
@@ -71,7 +52,6 @@ public:
         if (off) m_rxBuf.erase(m_rxBuf.begin(), m_rxBuf.begin() + static_cast<std::ptrdiff_t>(off));
     }
 
-    // ---- synthetic flow + session lifecycle (each flushes its own MD datagram) ------
     lob::OrderId injectSynthetic(lob::Side side, lob::Price tick, lob::Quantity qty,
                                  std::uint64_t ts) {
         lob::OrderId ref = 0;
@@ -89,7 +69,6 @@ public:
     [[nodiscard]] lob::Price bestAsk() const noexcept { return m_venue.bestAsk(); }
     [[nodiscard]] const lob::OrderBook& book() const noexcept { return m_venue.book(); }
 
-    // Routes Venue output to the wire: ITCH -> MoldUDP64 accumulator, OUCH -> SoupBin 'S'.
     struct VenueSink {
         ExchangeSession* s;
         void marketData(std::span<const std::byte> itch) { s->appendMarketData(itch); }
@@ -114,7 +93,7 @@ private:
         }
         case soup::Type::ClientHeartbeat:
         default:
-            break;   // heartbeats / unexpected types ignored in this cut
+            break;
         }
     }
 
@@ -139,7 +118,6 @@ private:
         }
     }
 
-    // Run a Venue action, then flush any accumulated ITCH as one MoldUDP64 datagram.
     template <class Fn>
     void withMarketData(Fn&& fn) {
         fn();
@@ -151,7 +129,7 @@ private:
             m_packer.reset(m_mdBuf.data(), m_mdBuf.size());
             m_mdOpen = true;
         }
-        if (!m_packer.append(itch)) {            // datagram full: flush and start a new one
+        if (!m_packer.append(itch)) {
             flushMarketData();
             m_packer.reset(m_mdBuf.data(), m_mdBuf.size());
             m_mdOpen = true;
@@ -177,11 +155,11 @@ private:
     mold::Packer      m_packer;
     Venue<VenueSink>  m_venue;
 
-    std::vector<std::byte>       m_rxBuf;            // SoupBin stream reassembly
-    std::array<std::byte, 2048>  m_mdBuf{};          // MoldUDP64 datagram scratch
-    std::array<std::byte, 512>   m_oeBuf{};          // SoupBin packet scratch
+    std::vector<std::byte>       m_rxBuf;
+    std::array<std::byte, 2048>  m_mdBuf{};
+    std::array<std::byte, 512>   m_oeBuf{};
     bool                         m_mdOpen = false;
-    std::uint64_t                m_outSeq = 1;        // next SoupBin Sequenced Data number
+    std::uint64_t                m_outSeq = 1;
 };
 
-}  // namespace abt::sim
+}

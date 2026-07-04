@@ -1,19 +1,8 @@
 #pragma once
 //
-// MoldUdp64.hpp -- MoldUDP64, Nasdaq's UDP transport for sequenced message streams
-// (it carries the ITCH market-data feed).
+// MoldUDP64 market-data framing: sequenced-packet Packer and reader.
 //
-// Downstream packet layout:
-//   [ Session : 10 ][ SequenceNumber : u64 ][ MessageCount : u16 ]  (20-byte header)
-//   then MessageCount blocks, each:  [ MessageLength : u16 ][ MessageData : var ]
-//
-// SequenceNumber is the sequence of the FIRST message in the packet; message i carries
-// SequenceNumber + i. MessageCount == 0 is a heartbeat (carries the next expected seq);
-// MessageCount == 0xFFFF signals end of session. All integers are big-endian.
-//
-// This header provides a zero-copy Packer (build a datagram straight into a TX buffer)
-// and reader helpers (iterate messages out of a received datagram).
-//
+
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -29,7 +18,6 @@ inline constexpr std::size_t   kSessionLen   = 10;
 inline constexpr std::uint16_t kHeartbeat    = 0x0000;
 inline constexpr std::uint16_t kEndOfSession = 0xFFFF;
 
-// Overlay of the fixed header (for readers that want a typed view).
 struct Header {
     wire::Alpha<kSessionLen> session;
     wire::u64be              sequenceNumber;
@@ -38,7 +26,6 @@ struct Header {
 static_assert(sizeof(Header) == kHeaderSize);
 static_assert(alignof(Header) == 1);
 
-// --- little unaligned big-endian scalar helpers -------------------------------------
 inline void putU16(std::byte* p, std::uint16_t v) noexcept {
     wire::u16be t; t = v; std::memcpy(p, t.bytes.data(), 2);
 }
@@ -52,15 +39,12 @@ inline std::uint64_t getU64(const std::byte* p) noexcept {
     wire::u64be t; std::memcpy(t.bytes.data(), p, 8); return t.value();
 }
 
-// Builds one MoldUDP64 datagram in place. Reused across packets; the running sequence
-// number persists so consecutive packets are correctly numbered.
 class Packer {
 public:
     explicit Packer(std::string_view session, std::uint64_t firstSeq = 1) : m_seq(firstSeq) {
         m_session.store(session);
     }
 
-    // Begin a new datagram in [buf, buf+cap). Records the sequence of its first message.
     void reset(std::byte* buf, std::size_t cap) noexcept {
         m_buf = buf;
         m_cap = cap;
@@ -69,9 +53,6 @@ public:
         m_firstSeq = m_seq;
     }
 
-    // Append one message body. Returns false (without modifying the packet) if it would
-    // overflow the buffer or the per-packet message limit -- caller should finalize+flush
-    // and start a new packet.
     [[nodiscard]] bool append(std::span<const std::byte> msg) noexcept {
         const std::size_t need = 2 + msg.size();
         if (m_len + need > m_cap || m_count >= kEndOfSession - 1) return false;
@@ -83,19 +64,16 @@ public:
         return true;
     }
 
-    // Stamp the header and return the finished datagram.
     [[nodiscard]] std::span<const std::byte> finalize() noexcept {
         writeHeader(m_firstSeq, m_count);
         return {m_buf, m_len};
     }
 
-    // A zero-message heartbeat carrying the next expected sequence number.
     [[nodiscard]] std::span<const std::byte> heartbeat(std::byte* buf) noexcept {
         m_buf = buf; m_len = kHeaderSize;
         writeHeader(m_seq, kHeartbeat);
         return {m_buf, kHeaderSize};
     }
-    // End-of-session marker.
     [[nodiscard]] std::span<const std::byte> endOfSession(std::byte* buf) noexcept {
         m_buf = buf; m_len = kHeaderSize;
         writeHeader(m_seq, kEndOfSession);
@@ -122,7 +100,6 @@ private:
     std::uint16_t m_count = 0;
 };
 
-// --- reader helpers -----------------------------------------------------------------
 [[nodiscard]] inline std::string_view sessionOf(std::span<const std::byte> pkt) noexcept {
     const auto* p = reinterpret_cast<const char*>(pkt.data());
     std::size_t n = kSessionLen;
@@ -136,8 +113,6 @@ private:
     return getU16(pkt.data() + 18);
 }
 
-// Invoke fn(sequenceNumber, messageBody) for each message in a datagram. Returns the
-// number of messages delivered; stops cleanly on a truncated/malformed packet.
 template <class Fn>
 std::size_t forEachMessage(std::span<const std::byte> pkt, Fn&& fn) {
     if (pkt.size() < kHeaderSize) return 0;
@@ -159,4 +134,4 @@ std::size_t forEachMessage(std::span<const std::byte> pkt, Fn&& fn) {
     return n;
 }
 
-}  // namespace abt::mold
+}

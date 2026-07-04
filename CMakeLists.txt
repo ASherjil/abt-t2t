@@ -16,6 +16,8 @@ endif()
 # Interface target carrying warning/arch/opt flags (mirrors abtrda3's abtrda3_flags).
 include(cmake/CompilerWarnings.cmake)
 
+find_package(fmt REQUIRED)
+
 # ---------------------------------------------------------------------------
 # abt_protocol : header-only wire protocol library (ITCH 5.0 / OUCH 5.0).
 # Everything is zero-cost overlay structs, so this is an INTERFACE target.

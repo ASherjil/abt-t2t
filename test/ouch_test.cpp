@@ -1,7 +1,7 @@
 //
-// ouch_test.cpp -- verifies OUCH 5.0 message layouts, the 8-byte Price/Timestamp
-// encoding, a zero-copy overlay round-trip, and the TagValue appendage helpers.
+// Verifies OUCH 5.0 wire layouts, 8-byte price/timestamp, and TagValue appendages.
 //
+
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -35,7 +35,6 @@ void test_message_sizes() {
     CHECK_EQ(sizeof(ouch::Rejected), 31u);
 }
 
-// Build an Enter Order and check its exact on-wire byte layout, incl. the 8-byte Price.
 void test_enter_order_layout() {
     ouch::EnterOrder o{};
     o.type               = static_cast<char>(ouch::InType::EnterOrder);
@@ -43,7 +42,7 @@ void test_enter_order_layout() {
     o.side               = static_cast<char>(ouch::Side::Buy);
     o.quantity           = 100u;
     o.symbol             = std::string_view{"AAPL"};
-    o.price              = 1502500u;                    // $150.25 (8-byte, 4 decimals)
+    o.price              = 1502500u;
     o.timeInForce        = static_cast<char>(ouch::TimeInForce::Day);
     o.display            = static_cast<char>(ouch::Display::Visible);
     o.capacity           = static_cast<char>(ouch::Capacity::Agency);
@@ -52,37 +51,35 @@ void test_enter_order_layout() {
     o.clOrdId            = std::string_view{"ORDER-0001"};
     o.appendageLength    = 0u;
 
-    CHECK_EQ(byte_at(o, 0), static_cast<std::uint8_t>('O'));   // type
-    CHECK_EQ(byte_at(o, 1), 0x01u);                            // userRefNum MSB
-    CHECK_EQ(byte_at(o, 4), 0x04u);                            // userRefNum LSB
-    CHECK_EQ(byte_at(o, 5), static_cast<std::uint8_t>('B'));   // side
-    CHECK_EQ(byte_at(o, 9), 100u);                             // quantity LSB (offset 6..9)
-    CHECK_EQ(byte_at(o, 10), static_cast<std::uint8_t>('A'));  // symbol[0] (offset 10..17)
-    CHECK_EQ(byte_at(o, 17), static_cast<std::uint8_t>(' '));  // symbol padding
-    // price 1502500 == 0x0016ED24 -> 8 bytes big-endian at offset 18..25
+    CHECK_EQ(byte_at(o, 0), static_cast<std::uint8_t>('O'));
+    CHECK_EQ(byte_at(o, 1), 0x01u);
+    CHECK_EQ(byte_at(o, 4), 0x04u);
+    CHECK_EQ(byte_at(o, 5), static_cast<std::uint8_t>('B'));
+    CHECK_EQ(byte_at(o, 9), 100u);
+    CHECK_EQ(byte_at(o, 10), static_cast<std::uint8_t>('A'));
+    CHECK_EQ(byte_at(o, 17), static_cast<std::uint8_t>(' '));
     CHECK_EQ(byte_at(o, 18), 0x00u);
     CHECK_EQ(byte_at(o, 21), 0x00u);
     CHECK_EQ(byte_at(o, 23), 0x16u);
     CHECK_EQ(byte_at(o, 24), 0xEDu);
     CHECK_EQ(byte_at(o, 25), 0x24u);
-    CHECK_EQ(byte_at(o, 26), static_cast<std::uint8_t>('0'));  // timeInForce = Day
-    CHECK_EQ(byte_at(o, 27), static_cast<std::uint8_t>('Y'));  // display
-    CHECK_EQ(byte_at(o, 30), static_cast<std::uint8_t>('N'));  // crossType (Continuous)
-    CHECK_EQ(byte_at(o, 31), static_cast<std::uint8_t>('O'));  // clOrdId[0] = "ORDER..."
-    CHECK_EQ(byte_at(o, 45), 0x00u);                           // appendageLength (offset 45..46)
+    CHECK_EQ(byte_at(o, 26), static_cast<std::uint8_t>('0'));
+    CHECK_EQ(byte_at(o, 27), static_cast<std::uint8_t>('Y'));
+    CHECK_EQ(byte_at(o, 30), static_cast<std::uint8_t>('N'));
+    CHECK_EQ(byte_at(o, 31), static_cast<std::uint8_t>('O'));
+    CHECK_EQ(byte_at(o, 45), 0x00u);
     CHECK_EQ(byte_at(o, 46), 0x00u);
 }
 
-// Serialise an Accepted, decode it by overlay (the client's RX path).
 void test_accepted_roundtrip() {
     ouch::Accepted a{};
     a.type                 = static_cast<char>(ouch::OutType::Accepted);
-    a.timestamp            = 34200000000123ull;         // ns since midnight
+    a.timestamp            = 34200000000123ull;
     a.userRefNum           = 777u;
     a.side                 = static_cast<char>(ouch::Side::Sell);
     a.quantity             = 500u;
     a.symbol               = std::string_view{"MSFT"};
-    a.price                = 4207500u;                  // $420.75
+    a.price                = 4207500u;
     a.orderReferenceNumber = 0xCAFED00DBEEFull;
     a.orderState           = static_cast<char>(ouch::OrderState::Live);
     a.clOrdId              = std::string_view{"CID-42"};
@@ -106,17 +103,16 @@ void test_accepted_roundtrip() {
     CHECK(d.clOrdId.view() == "CID-42");
 }
 
-// Write a MinQty TagValue into an appendage buffer and iterate it back.
 void test_appendage_tlv() {
     std::array<std::byte, 32> buf{};
 
     wire::u32be minQty{};
-    minQty = 100u;                                      // MinQty is a 4-byte Integer
+    minQty = 100u;
     const std::size_t n = ouch::writeOption(
         buf, ouch::OptionTag::MinQty,
         std::span<const std::byte>{minQty.bytes.data(), minQty.bytes.size()});
-    CHECK_EQ(n, 6u);                                    // 1 len + 1 tag + 4 value
-    CHECK_EQ(byte_at(buf[0], 0), 5u);                   // remaining length = tag + 4 value
+    CHECK_EQ(n, 6u);
+    CHECK_EQ(byte_at(buf[0], 0), 5u);
     CHECK_EQ(byte_at(buf[1], 0), static_cast<std::uint8_t>(ouch::OptionTag::MinQty));
 
     int seen = 0;
@@ -134,7 +130,7 @@ void test_appendage_tlv() {
     CHECK_EQ(decoded, 100u);
 }
 
-}  // namespace
+}
 
 int main() {
     test_message_sizes();

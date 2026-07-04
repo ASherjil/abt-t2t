@@ -1,21 +1,14 @@
 //
-// exchange_sim.cpp -- the runnable exchange simulator (config 1: kernel sockets).
+// Runnable exchange simulator (config 1): TCP order entry + UDP market data via kernel sockets.
 //
-//   order entry : TCP listener; accepts one client (the DUT), speaks SoupBinTCP.
-//   market data : connected UDP socket; publishes MoldUDP64/ITCH to the DUT.
-//
-// A synthetic flow generator keeps a live two-sided market; the poll loop interleaves
-// draining inbound order entry with driving the generator. This is plain BSD sockets --
-// the kernel provides TCP/UDP; running it under Onload accelerates both with no change.
-//
-// Usage: exchange_sim [order_entry_port] [md_host] [md_port]   (defaults 5001 127.0.0.1 5002)
-//
+
 #include <array>
+#include <cerrno>
+#include <csignal>
 #include <cstddef>
 #include <cstdint>
-#include <cstdio>
 #include <cstdlib>
-#include <csignal>
+#include <cstring>
 #include <span>
 
 #include <arpa/inet.h>
@@ -24,6 +17,8 @@
 #include <poll.h>
 #include <sys/socket.h>
 #include <unistd.h>
+
+#include <fmt/core.h>
 
 #include "abt/net/SocketIo.hpp"
 #include "abt/protocol/Itch50.hpp"
@@ -39,7 +34,7 @@ volatile std::sig_atomic_t g_stop = 0;
 void onSignal(int) { g_stop = 1; }
 
 [[noreturn]] void die(const char* what) {
-    std::perror(what);
+    fmt::print(stderr, "{}: {}\n", what, std::strerror(errno));
     std::exit(1);
 }
 
@@ -65,16 +60,16 @@ int acceptOrderEntry(std::uint16_t port) {
     addr.sin_port = htons(port);
     if (::bind(lfd, reinterpret_cast<sockaddr*>(&addr), sizeof addr) < 0) die("bind");
     if (::listen(lfd, 1) < 0) die("listen");
-    std::fprintf(stderr, "exchange-sim: waiting for order-entry client on tcp/:%u ...\n", port);
+    fmt::print(stderr, "exchange-sim: waiting for order-entry client on tcp/:{} ...\n", port);
     const int cfd = ::accept(lfd, nullptr, nullptr);
     if (cfd < 0) die("accept");
     int nodelay = 1;
-    ::setsockopt(cfd, IPPROTO_TCP, TCP_NODELAY, &nodelay, sizeof nodelay);  // no Nagle
+    ::setsockopt(cfd, IPPROTO_TCP, TCP_NODELAY, &nodelay, sizeof nodelay);
     ::close(lfd);
     return cfd;
 }
 
-}  // namespace
+}
 
 int main(int argc, char** argv) {
     const std::uint16_t oePort = argc > 1 ? static_cast<std::uint16_t>(std::atoi(argv[1])) : 5001;
@@ -86,8 +81,8 @@ int main(int argc, char** argv) {
 
     const int mdFd = makeUdpSender(mdHost, mdPort);
     const int oeFd = acceptOrderEntry(oePort);
-    std::fprintf(stderr, "exchange-sim: client connected; publishing market data to udp/%s:%u\n",
-                 mdHost, mdPort);
+    fmt::print(stderr, "exchange-sim: client connected; publishing market data to udp/{}:{}\n",
+               mdHost, mdPort);
 
     net::SocketIo io{mdFd, oeFd};
     using Session = sim::ExchangeSession<net::SocketIo>;
@@ -95,21 +90,21 @@ int main(int argc, char** argv) {
     sim::FlowGenerator<Session> gen(ex, {});
 
     ex.sessionEvent(itch::SystemEventCode::StartOfMarketHours, util::nsSinceMidnightUtc());
-    gen.run(200, util::nsSinceMidnightUtc(), 0);   // prime a two-sided book
+    gen.run(200, util::nsSinceMidnightUtc(), 0);
 
     std::array<std::byte, 8192> rx{};
     std::uint64_t lastGen = util::monotonicNs();
     while (g_stop == 0) {
         pollfd pfd{oeFd, POLLIN, 0};
-        const int pr = ::poll(&pfd, 1, 1);          // 1 ms tick
+        const int pr = ::poll(&pfd, 1, 1);
         if (pr > 0 && (pfd.revents & POLLIN) != 0) {
             const ssize_t n = ::recv(oeFd, rx.data(), rx.size(), 0);
-            if (n <= 0) { std::fprintf(stderr, "exchange-sim: client disconnected\n"); break; }
+            if (n <= 0) { fmt::print(stderr, "exchange-sim: client disconnected\n"); break; }
             ex.onOrderEntryBytes({rx.data(), static_cast<std::size_t>(n)},
                                  util::nsSinceMidnightUtc());
         }
         const std::uint64_t now = util::monotonicNs();
-        if (now - lastGen > 100'000) {              // drive the market ~every 100 us
+        if (now - lastGen > 100'000) {
             gen.step(util::nsSinceMidnightUtc());
             lastGen = now;
         }
@@ -118,6 +113,6 @@ int main(int argc, char** argv) {
     ex.sessionEvent(itch::SystemEventCode::EndOfMarketHours, util::nsSinceMidnightUtc());
     ::close(oeFd);
     ::close(mdFd);
-    std::fprintf(stderr, "exchange-sim: shut down.\n");
+    fmt::print(stderr, "exchange-sim: shut down.\n");
     return 0;
 }

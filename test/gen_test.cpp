@@ -1,7 +1,7 @@
 //
-// gen_test.cpp -- the synthetic flow generator keeps a sane two-sided book, emits ITCH
-// (never OUCH), and is deterministic for a fixed seed.
+// Flow generator keeps an uncrossed book, emits only ITCH, and is deterministic.
 //
+
 #include <cstddef>
 #include <span>
 
@@ -27,13 +27,12 @@ void test_generator_book_invariant() {
 
     for (int i = 0; i < 2000; ++i) {
         gen.step(1'000'000 + static_cast<std::uint64_t>(i) * 100);
-        // The matching engine must never leave a crossed book.
         if (v.bestBid() != lob::kNoPrice && v.bestAsk() != lob::kNoPrice) {
             CHECK(v.bestBid() < v.bestAsk());
         }
     }
-    CHECK(sink.md > 0);      // produced market data
-    CHECK_EQ(sink.oe, 0u);   // synthetic flow never emits OUCH
+    CHECK(sink.md > 0);
+    CHECK_EQ(sink.oe, 0u);
 }
 
 void test_generator_deterministic() {
@@ -49,12 +48,12 @@ void test_generator_deterministic() {
     g1.run(1500, 0, 100);
     g2.run(1500, 0, 100);
 
-    CHECK_EQ(s1.md, s2.md);                 // identical output
-    CHECK_EQ(v1.bestBid(), v2.bestBid());   // identical book
+    CHECK_EQ(s1.md, s2.md);
+    CHECK_EQ(v1.bestBid(), v2.bestBid());
     CHECK_EQ(v1.bestAsk(), v2.bestAsk());
 }
 
-}  // namespace
+}
 
 int main() {
     test_generator_book_invariant();

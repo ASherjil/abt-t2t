@@ -1,7 +1,7 @@
 //
-// framing_test.cpp -- MoldUDP64 (market-data) and SoupBinTCP (order-entry) framing:
-// build datagrams/packets, parse them back, verify sequencing and payload fidelity.
+// Verifies MoldUDP64 and SoupBinTCP framing round-trip and sequencing.
 //
+
 #include <array>
 #include <cstddef>
 #include <cstring>
@@ -21,8 +21,6 @@ namespace {
 std::span<const std::byte> bytes(const void* p, std::size_t n) {
     return {reinterpret_cast<const std::byte*>(p), n};
 }
-
-// ============================ MoldUDP64 ============================
 
 void test_mold_pack_and_read() {
     const unsigned char m1[] = {0xAA, 0xBB};
@@ -57,7 +55,6 @@ void test_mold_pack_and_read() {
     CHECK_EQ(static_cast<unsigned char>(got[0].second[0]), 0xAAu);
     CHECK_EQ(static_cast<unsigned char>(got[2].second[2]), 0x04u);
 
-    // A second datagram continues the sequence.
     packer.reset(buf.data(), buf.size());
     CHECK(packer.append(bytes(m1, sizeof m1)));
     CHECK(packer.append(bytes(m2, sizeof m2)));
@@ -86,11 +83,9 @@ void test_mold_overflow_stops_cleanly() {
     std::array<std::byte, 64> small{};
     mold::Packer packer("SESSION001", 1);
     packer.reset(small.data(), small.size());
-    CHECK(!packer.append(bytes(big, sizeof big)));   // too large -> refused
+    CHECK(!packer.append(bytes(big, sizeof big)));
     CHECK_EQ(packer.count(), 0u);
 }
-
-// ============================ SoupBinTCP ============================
 
 void test_soup_sequenced_data_roundtrip() {
     const unsigned char ouch[] = {0x11, 0x22, 0x33};
@@ -124,8 +119,8 @@ void test_soup_seq_field_format() {
     wire::Alpha<20> f{};
     soup::formatSeq(f, 123456);
     CHECK_EQ(soup::parseSeq(f), 123456u);
-    CHECK(f.chars[19] == '6');    // right-justified
-    CHECK(f.chars[0] == ' ');     // space-padded on the left
+    CHECK(f.chars[19] == '6');
+    CHECK(f.chars[0] == ' ');
 }
 
 void test_soup_stream_two_packets() {
@@ -146,11 +141,10 @@ void test_soup_stream_two_packets() {
     CHECK(p.type == soup::Type::ServerHeartbeat);
     CHECK_EQ(p.payload.size(), 0u);
 
-    // A truncated tail yields 0 (needs more bytes).
     CHECK_EQ(soup::parse(stream.subspan(0, 2), p), 0u);
 }
 
-}  // namespace
+}
 
 int main() {
     test_mold_pack_and_read();

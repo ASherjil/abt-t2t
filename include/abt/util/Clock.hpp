@@ -1,11 +1,8 @@
 #pragma once
 //
-// Clock.hpp -- wall-clock helpers for the (non-latency-critical) exchange simulator.
+// Wall-clock helpers (ns-since-midnight, monotonic) for the exchange simulator.
 //
-// nsSinceMidnightUtc() produces the nanoseconds-since-midnight value that ITCH/OUCH
-// Timestamp fields expect. monotonicNs() is for scheduling the flow generator. The DUT's
-// latency-critical path uses NIC hardware timestamps instead; these are for the sim.
-//
+
 #include <cstdint>
 #include <ctime>
 
@@ -25,4 +22,4 @@ inline std::uint64_t nsSinceMidnightUtc() noexcept {
     return secOfDay * 1'000'000'000ull + static_cast<std::uint64_t>(ts.tv_nsec);
 }
 
-}  // namespace abt::util
+}
