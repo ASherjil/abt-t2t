@@ -15,6 +15,7 @@
 #include "abt/protocol/Itch50.hpp"
 #include "abt/util/DivBy.hpp"
 #include "abt/util/FlatHashMap.hpp"
+#include "abt/util/Scan.hpp"
 
 namespace abt::dut {
 

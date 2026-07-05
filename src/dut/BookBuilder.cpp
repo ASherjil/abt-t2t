@@ -197,40 +197,24 @@ std::size_t BookBuilder::index(Price price) const noexcept {
 }
 
 void BookBuilder::rescanBestBid() noexcept {
-    // Walk the level index down in lockstep with the price so the array index advances by one per
-    // step instead of recomputing index() (a division) at every level.
-    std::size_t i = index(m_bestBid);
-    Price p = m_bestBid;
-    for (;;) {
-        if (m_bidSize[i] > 0) {
-            m_bestBid = p;
-            return;
-        }
-        if (i == 0) {
-            break;
-        }
-        --i;
-        p -= m_tickWire;
+    // Fall back to the next populated level below the old best. AVX2 checks 8 levels per step,
+    // which matters when the book has gaps and the next level is far down.
+    const std::size_t j = util::scanDownNonZero(m_bidSize.data(), index(m_bestBid));
+    if (j == util::kNoIndex) {
+        m_bestBid = kNoPrice;
+    } else {
+        m_bestBid = m_minPrice + static_cast<Price>(j) * m_tickWire;
     }
-    m_bestBid = kNoPrice;
 }
 
 void BookBuilder::rescanBestAsk() noexcept {
-    std::size_t i = index(m_bestAsk);
     const std::size_t last = m_askSize.size() - 1;
-    Price p = m_bestAsk;
-    for (;;) {
-        if (m_askSize[i] > 0) {
-            m_bestAsk = p;
-            return;
-        }
-        if (i == last) {
-            break;
-        }
-        ++i;
-        p += m_tickWire;
+    const std::size_t j = util::scanUpNonZero(m_askSize.data(), index(m_bestAsk), last);
+    if (j == util::kNoIndex) {
+        m_bestAsk = kNoPrice;
+    } else {
+        m_bestAsk = m_minPrice + static_cast<Price>(j) * m_tickWire;
     }
-    m_bestAsk = kNoPrice;
 }
 
 }

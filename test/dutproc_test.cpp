@@ -21,6 +21,7 @@
 #include "abt/dut/DutSession.hpp"
 #include "abt/protocol/Itch50.hpp"
 #include "abt/protocol/MoldUdp64.hpp"
+#include "abt/util/Scan.hpp"
 #include "abt/util/Tsc.hpp"
 
 using namespace abt;
@@ -165,10 +166,40 @@ void bench_book_throughput() {
     }
 }
 
+// Worst-case best-price rescan: a mostly-empty ladder with the fallback level far away, so the
+// scan traverses almost the whole array. Compares the scalar path to the dispatched (AVX2) path.
+void bench_scan() {
+    tsc::warmUp();
+    constexpr std::size_t kLevels = 1u << 16;
+    std::vector<std::uint32_t> ladder(kLevels, 0u);
+    ladder[3] = 1u;   // one populated level near the bottom
+    constexpr int kIters = 20000;
+
+    std::size_t sink = 0;
+    const std::uint64_t s0 = tsc::now();
+    for (int r = 0; r < kIters; ++r) {
+        sink += util::scanDownNonZeroScalar(ladder.data(), kLevels - 1 - static_cast<std::size_t>(r & 7));
+    }
+    const std::uint64_t s1 = tsc::now();
+    const double scalarNs = static_cast<double>(tsc::toNs(s1 - s0)) / kIters;
+
+    const std::uint64_t v0 = tsc::now();
+    for (int r = 0; r < kIters; ++r) {
+        sink += util::scanDownNonZero(ladder.data(), kLevels - 1 - static_cast<std::size_t>(r & 7));
+    }
+    const std::uint64_t v1 = tsc::now();
+    const double simdNs = static_cast<double>(tsc::toNs(v1 - v0)) / kIters;
+
+    fmt::print("[dut-scan] rescan {} empty levels: scalar {:.0f} ns, simd {:.0f} ns ({:.1f}x)\n",
+               kLevels, scalarNs, simdNs, simdNs > 0.0 ? scalarNs / simdNs : 0.0);
+    CHECK(sink > 0);
+}
+
 }
 
 int main() {
     bench_proc();
     bench_book_throughput();
+    bench_scan();
     return abt::test::summary("dutproc");
 }
