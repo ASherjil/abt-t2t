@@ -1,0 +1,52 @@
+# abt-t2t exchange simulator — single hardcoded config (the binary takes NO command-line args).
+# Edit values in place. Fill [network] / [market_data] / [order_entry] with your real NIC
+# MACs, IPs and ports for the ef_vi/DPDK paths; [socket] is the kernel fallback (config 1).
+
+[venue]
+symbol        = "AAPL"        # ITCH stock symbol (<= 8 chars)
+stock_locate  = 1             # ITCH stock-locate code
+session       = "SIM0000001"  # SoupBinTCP session id (10 chars)
+min_tick      = 1             # lowest tradable tick (sizes the book arrays)
+max_tick      = 100000        # highest tradable tick
+wire_per_tick = 100           # tick -> wire price scale (100 = 4-decimal dollars)
+
+[flow]
+mid_tick         = 5200                 # synthetic market centre (ticks)
+half_spread      = 1                    # ticks between mid and best quote
+depth_ticks      = 20                   # spread over which quotes are scattered
+min_qty          = 10
+max_qty          = 500
+cancel_pct       = 30                   # % of steps that cancel a live order
+cross_pct        = 15                   # % of steps that cross the spread (trade)
+seed             = 0x2545F4914F6CDD1D   # xorshift seed (TOML ints are signed 64-bit)
+warmup_steps     = 200                  # generator steps run before going live
+tick_interval_ns = 100000               # run() pumps one generator step per this interval
+
+[transport]
+mode      = "dpdk"            # "dpdk" (configs 2/3) or "socket" (config 1)
+interface = "cx0"            # NIC the sim drives
+driver    = "mlx5_core"      # "mlx5_core" | "af_xdp" | "i40e"
+cpu_core  = 2                # lcore the DPDK datapath pins to
+
+# Shared L2/L3 addressing. local = this sim's NIC; peer = the DUT. No ARP — both hardcoded.
+[network]
+local_mac = "aa:bb:cc:dd:ee:01"   # <-- sim NIC MAC
+local_ip  = "10.0.0.1"
+peer_mac  = "aa:bb:cc:dd:ee:02"   # <-- DUT NIC MAC
+peer_ip   = "10.0.0.2"
+
+# Market-data feed: sim -> DUT (ITCH / MoldUDP64).
+[market_data]
+src_port = 40000
+dst_port = 41000
+
+# Order entry: DUT -> sim (orders in) and sim -> DUT (OUCH acks out).
+[order_entry]
+src_port = 40001
+dst_port = 41001
+
+# Kernel-socket fallback, used when transport.mode = "socket" (config 1).
+[socket]
+oe_port = 5001               # TCP listen port for order entry
+md_host = "127.0.0.1"        # UDP market-data destination host
+md_port = 5002

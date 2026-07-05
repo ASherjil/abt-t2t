@@ -8,24 +8,14 @@
 #include <vector>
 
 #include "abt/lob/Types.hpp"
+#include "abt/sim/EngineConfig.hpp"
 
 namespace abt {
 
 template <class Market>
 class FlowGenerator {
 public:
-    struct Config {
-        Price          midTick    = 5200;
-        Price          halfSpread = 1;
-        Price          depthTicks = 20;
-        Quantity       minQty     = 10;
-        Quantity       maxQty     = 500;
-        std::uint32_t  cancelPct  = 30;
-        std::uint32_t  crossPct   = 15;
-        std::uint64_t  seed       = 0x9E3779B97F4A7C15ull;
-    };
-
-    FlowGenerator(Market& market, const Config& cfg);
+    FlowGenerator(Market& market, const FlowConfig& cfg);
 
     void step(std::uint64_t ts);
     void run(std::size_t steps, std::uint64_t tsStart, std::uint64_t tsStep);
@@ -37,13 +27,13 @@ private:
     std::uint64_t rng() noexcept;
 
     Market&               m_market;
-    Config                m_cfg;
+    FlowConfig            m_cfg;
     std::uint64_t         m_state;
     std::vector<OrderId>  m_live;
 };
 
 template <class Market>
-FlowGenerator<Market>::FlowGenerator(Market& market, const Config& cfg)
+FlowGenerator<Market>::FlowGenerator(Market& market, const FlowConfig& cfg)
     : m_market(market), m_cfg(cfg), m_state(cfg.seed ? cfg.seed : 1) {}
 
 template <class Market>

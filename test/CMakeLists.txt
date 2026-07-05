@@ -7,3 +7,9 @@ foreach(t IN ITEMS itch ouch lob venue framing session gen socketio net dpdk)
     target_link_libraries(${t}_test PRIVATE abt::sim abt::flags fmt::fmt)
     add_test(NAME ${t}_test COMMAND ${t}_test)
 endforeach()
+
+# config_test additionally links the toml++ loader library.
+add_executable(config_test config_test.cpp)
+target_include_directories(config_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(config_test PRIVATE abt::config abt::flags fmt::fmt)
+add_test(NAME config_test COMMAND config_test)

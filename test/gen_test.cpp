@@ -40,7 +40,7 @@ void test_generator_deterministic() {
     Venue<CountSink> v1(s1, "AAPL", 1, 1, 100000, 100);
     Venue<CountSink> v2(s2, "AAPL", 1, 1, 100000, 100);
 
-    FlowGenerator<Venue<CountSink>>::Config cfg{};
+    FlowConfig cfg{};
     cfg.seed = 0xABCDEF12345ull;
     FlowGenerator<Venue<CountSink>> g1(v1, cfg);
     FlowGenerator<Venue<CountSink>> g2(v2, cfg);

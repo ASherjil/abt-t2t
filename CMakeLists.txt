@@ -18,6 +18,13 @@ include(cmake/CompilerWarnings.cmake)
 
 find_package(fmt REQUIRED)
 
+# TOML config (toml++) — the exchange-sim binary reads config/exchange_sim.toml at runtime.
+include(FetchContent)
+FetchContent_Declare(tomlplusplus
+    GIT_REPOSITORY https://github.com/marzer/tomlplusplus.git
+    GIT_TAG v3.4.0)
+FetchContent_MakeAvailable(tomlplusplus)
+
 # Kernel-bypass transports (DPDK / Verbs / AF_XDP / ef_vi) live in the sibling ABTRDA3
 # repo, which owns all NIC/EAL/hugepage init. OFF by default: enabling it runs ABTRDA3's
 # CMake, which pkg-config-requires DPDK/rdma-core/libxdp. Turn on for the DPDK datapath.
@@ -56,6 +63,13 @@ target_compile_features(abt_lob INTERFACE cxx_std_20)
 add_library(abt_sim INTERFACE)
 add_library(abt::sim ALIAS abt_sim)
 target_link_libraries(abt_sim INTERFACE abt_protocol abt_lob fmt::fmt)
+
+# ---------------------------------------------------------------------------
+# abt_config : TOML-driven runtime configuration loader (toml++).
+# ---------------------------------------------------------------------------
+add_library(abt_config STATIC src/sim/ConfigLoad.cpp)
+add_library(abt::config ALIAS abt_config)
+target_link_libraries(abt_config PUBLIC abt_sim PRIVATE tomlplusplus::tomlplusplus abt_flags)
 
 add_subdirectory(apps)
 

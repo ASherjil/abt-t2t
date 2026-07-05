@@ -34,6 +34,7 @@
 #include "abt/protocol/Ouch50.hpp"
 #include "abt/protocol/SoupBinTcp.hpp"
 #include "abt/protocol/UdpFramer.hpp"
+#include "abt/sim/EngineConfig.hpp"
 #include "abt/sim/Venue.hpp"
 #include "abt/util/Clock.hpp"
 
@@ -46,16 +47,7 @@ struct NoTransport {};
 template <IoMode Mode, class Tx = NoTransport>
 class ExchangeSession {
 public:
-    struct Config {
-        std::string   symbol      = "AAPL";
-        std::uint16_t stockLocate = 1;
-        std::string   session     = "SIM0000001";
-        Price         minTick     = 1;
-        Price         maxTick     = 100000;
-        std::uint32_t wirePerTick = 100;
-    };
-
-    explicit ExchangeSession(const Config& cfg = {});
+    explicit ExchangeSession(const ExchangeConfig& cfg = {});
     ~ExchangeSession();
     ExchangeSession(const ExchangeSession&) = delete;
     ExchangeSession& operator=(const ExchangeSession&) = delete;
@@ -70,17 +62,17 @@ public:
     [[nodiscard]] Price bestAsk() const noexcept;
     [[nodiscard]] const OrderBook& book() const noexcept;
 
-    void prepareSocketIo(std::uint16_t oePort, const char* mdHost, std::uint16_t mdPort)
+    [[nodiscard]] bool prepareSocketIo(std::uint16_t oePort, const char* mdHost, std::uint16_t mdPort)
         requires (Mode == IoMode::Socket);
     void attachSockets(int oeFd, int mdFd) requires (Mode == IoMode::Socket);
     void prepareDpdk(Tx& tx, const net::Endpoints& mdEp, const net::Endpoints& oeEp)
         requires (Mode == IoMode::Dpdk && TxRing<Tx>);
     template <class TickFn>
-    void run(volatile std::sig_atomic_t& stop, TickFn&& onTick)
+    void run(volatile std::sig_atomic_t& stop, std::uint64_t tickIntervalNs, TickFn&& onTick)
         requires (Mode == IoMode::Socket);
     void pollOrderEntry(std::uint64_t ts) requires (Mode == IoMode::Dpdk && RxRing<Tx>);
     template <class TickFn>
-    void run(volatile std::sig_atomic_t& stop, TickFn&& onTick)
+    void run(volatile std::sig_atomic_t& stop, std::uint64_t tickIntervalNs, TickFn&& onTick)
         requires (Mode == IoMode::Dpdk && RxRing<Tx>);
 
     [[nodiscard]] const std::vector<std::vector<std::byte>>& capturedMarketData() const
@@ -123,7 +115,7 @@ private:
         requires (Mode == IoMode::Socket);
     static int acceptOrderEntry(std::uint16_t port) requires (Mode == IoMode::Socket);
 
-    Config            m_cfg;
+    ExchangeConfig    m_cfg;
     VenueSink         m_sink;
     mold::Packer      m_packer;
     Venue<VenueSink>  m_venue;
@@ -140,7 +132,7 @@ private:
 };
 
 template <IoMode Mode, class Tx>
-ExchangeSession<Mode, Tx>::ExchangeSession(const Config& cfg)
+ExchangeSession<Mode, Tx>::ExchangeSession(const ExchangeConfig& cfg)
     : m_cfg(cfg),
       m_sink{this},
       m_packer(cfg.session, 1),
@@ -195,11 +187,12 @@ template <IoMode Mode, class Tx>
 const OrderBook& ExchangeSession<Mode, Tx>::book() const noexcept { return m_venue.book(); }
 
 template <IoMode Mode, class Tx>
-void ExchangeSession<Mode, Tx>::prepareSocketIo(std::uint16_t oePort, const char* mdHost,
+bool ExchangeSession<Mode, Tx>::prepareSocketIo(std::uint16_t oePort, const char* mdHost,
                                                 std::uint16_t mdPort)
     requires (Mode == IoMode::Socket) {
     m_sock.mdFd = makeUdpSender(mdHost, mdPort);
     m_sock.oeFd = acceptOrderEntry(oePort);
+    return m_sock.oeFd >= 0;
 }
 
 template <IoMode Mode, class Tx>
@@ -220,7 +213,8 @@ void ExchangeSession<Mode, Tx>::prepareDpdk(Tx& tx, const net::Endpoints& mdEp,
 
 template <IoMode Mode, class Tx>
 template <class TickFn>
-void ExchangeSession<Mode, Tx>::run(volatile std::sig_atomic_t& stop, TickFn&& onTick)
+void ExchangeSession<Mode, Tx>::run(volatile std::sig_atomic_t& stop, std::uint64_t tickIntervalNs,
+                                    TickFn&& onTick)
     requires (Mode == IoMode::Socket) {
     std::array<std::byte, 8192> rx{};
     std::uint64_t lastTick = monotonicNs();
@@ -232,7 +226,7 @@ void ExchangeSession<Mode, Tx>::run(volatile std::sig_atomic_t& stop, TickFn&& o
             onOrderEntryBytes({rx.data(), static_cast<std::size_t>(n)}, nsSinceMidnightUtc());
         }
         const std::uint64_t now = monotonicNs();
-        if (now - lastTick > 100'000) {
+        if (now - lastTick > tickIntervalNs) {
             onTick(nsSinceMidnightUtc());
             lastTick = now;
         }
@@ -254,13 +248,14 @@ void ExchangeSession<Mode, Tx>::pollOrderEntry(std::uint64_t ts)
 
 template <IoMode Mode, class Tx>
 template <class TickFn>
-void ExchangeSession<Mode, Tx>::run(volatile std::sig_atomic_t& stop, TickFn&& onTick)
+void ExchangeSession<Mode, Tx>::run(volatile std::sig_atomic_t& stop, std::uint64_t tickIntervalNs,
+                                    TickFn&& onTick)
     requires (Mode == IoMode::Dpdk && RxRing<Tx>) {
     std::uint64_t lastTick = monotonicNs();
     while (stop == 0) {
         pollOrderEntry(nsSinceMidnightUtc());
         const std::uint64_t now = monotonicNs();
-        if (now - lastTick > 100'000) {
+        if (now - lastTick > tickIntervalNs) {
             onTick(nsSinceMidnightUtc());
             lastTick = now;
         }
@@ -430,7 +425,10 @@ int ExchangeSession<Mode, Tx>::acceptOrderEntry(std::uint16_t port)
     if (::listen(lfd, 1) < 0) die("listen");
     fmt::print(stderr, "exchange-sim: waiting for order-entry client on tcp/:{} ...\n", port);
     const int cfd = ::accept(lfd, nullptr, nullptr);
-    if (cfd < 0) die("accept");
+    if (cfd < 0) {
+        if (errno == EINTR) { ::close(lfd); return -1; }
+        die("accept");
+    }
     int nodelay = 1;
     ::setsockopt(cfd, IPPROTO_TCP, TCP_NODELAY, &nodelay, sizeof nodelay);
     ::close(lfd);
