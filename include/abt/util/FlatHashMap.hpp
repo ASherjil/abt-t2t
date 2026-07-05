@@ -34,6 +34,9 @@ public:
     void insertOrAssign(Key key, const Value& value);
 
     bool erase(Key key) noexcept;
+    // Combined find+erase: copies the removed value into `out`, walking the probe chain once
+    // instead of a separate find() then erase(). Returns false if the key was absent.
+    bool erase(Key key, Value& out) noexcept;
     void clear() noexcept;
 
     [[nodiscard]] std::size_t size() const noexcept;
@@ -48,6 +51,8 @@ private:
     [[nodiscard]] static std::size_t nextPow2(std::size_t n) noexcept;
     [[nodiscard]] static std::uint64_t mix(std::uint64_t x) noexcept;
     [[nodiscard]] std::size_t slotFor(Key key) const noexcept;
+    [[nodiscard]] bool locate(Key key, std::size_t& idx) const noexcept;
+    void eraseAtHole(std::size_t hole) noexcept;
     void grow();
 
     std::vector<Slot> m_slots;
@@ -115,18 +120,23 @@ void FlatHashMap<Key, Value, Empty>::insertOrAssign(Key key, const Value& value)
 }
 
 template <class Key, class Value, Key Empty>
-bool FlatHashMap<Key, Value, Empty>::erase(Key key) noexcept {
-    // Locate the key (stop at the first empty slot: the table has no tombstones).
-    std::size_t hole = slotFor(key);
+bool FlatHashMap<Key, Value, Empty>::locate(Key key, std::size_t& idx) const noexcept {
+    // Stop at the first empty slot: the table has no tombstones.
+    std::size_t i = slotFor(key);
     for (;;) {
-        if (m_slots[hole].key == Empty) {
+        if (m_slots[i].key == Empty) {
             return false;
         }
-        if (m_slots[hole].key == key) {
-            break;
+        if (m_slots[i].key == key) {
+            idx = i;
+            return true;
         }
-        hole = (hole + 1) & m_mask;
+        i = (i + 1) & m_mask;
     }
+}
+
+template <class Key, class Value, Key Empty>
+void FlatHashMap<Key, Value, Empty>::eraseAtHole(std::size_t hole) noexcept {
     // Backward-shift: pull following entries into the hole when they can legally move there, so no
     // tombstone is left behind. An entry at `scan` may fill `hole` unless its ideal slot lies
     // cyclically within (hole, scan].
@@ -152,6 +162,26 @@ bool FlatHashMap<Key, Value, Empty>::erase(Key key) noexcept {
     m_slots[hole].key = Empty;
     m_slots[hole].value = Value{};
     --m_size;
+}
+
+template <class Key, class Value, Key Empty>
+bool FlatHashMap<Key, Value, Empty>::erase(Key key) noexcept {
+    std::size_t hole = 0;
+    if (!locate(key, hole)) {
+        return false;
+    }
+    eraseAtHole(hole);
+    return true;
+}
+
+template <class Key, class Value, Key Empty>
+bool FlatHashMap<Key, Value, Empty>::erase(Key key, Value& out) noexcept {
+    std::size_t hole = 0;
+    if (!locate(key, hole)) {
+        return false;
+    }
+    out = m_slots[hole].value;
+    eraseAtHole(hole);
     return true;
 }
 

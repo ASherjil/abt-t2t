@@ -13,6 +13,7 @@
 
 #include "abt/lob/Types.hpp"
 #include "abt/protocol/Itch50.hpp"
+#include "abt/util/DivBy.hpp"
 #include "abt/util/FlatHashMap.hpp"
 
 namespace abt::dut {
@@ -49,11 +50,12 @@ private:
     void rescanBestBid() noexcept;
     void rescanBestAsk() noexcept;
 
-    Price m_minPrice;
-    Price m_maxPrice;
-    Price m_tickWire;
-    Price m_bestBid = kNoPrice;
-    Price m_bestAsk = kNoPrice;
+    Price       m_minPrice;
+    Price       m_maxPrice;
+    Price       m_tickWire;
+    util::DivBy m_tickDiv;   // price-offset / tickWire without a hardware divide
+    Price       m_bestBid = kNoPrice;
+    Price       m_bestAsk = kNoPrice;
 
     std::vector<Quantity>              m_bidSize;
     std::vector<Quantity>              m_askSize;

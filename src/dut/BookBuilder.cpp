@@ -4,14 +4,13 @@
 
 #include "abt/dut/BookBuilder.hpp"
 
-#include <cstring>
-
 namespace abt::dut {
 
 BookBuilder::BookBuilder(Price minPrice, Price maxPrice, Price tickWire, std::size_t maxOrders)
     : m_minPrice(minPrice),
       m_maxPrice(maxPrice),
       m_tickWire(tickWire),
+      m_tickDiv(static_cast<std::uint32_t>(tickWire)),
       m_bidSize(static_cast<std::size_t>((maxPrice - minPrice) / tickWire) + 1, 0),
       m_askSize(static_cast<std::size_t>((maxPrice - minPrice) / tickWire) + 1, 0),
       m_orders(maxOrders) {
@@ -21,54 +20,50 @@ void BookBuilder::apply(std::span<const std::byte> itchMessage) {
     if (itchMessage.empty()) {
         return;
     }
+    // The ITCH overlay structs are alignof-1 and trivially copyable, so reading fields directly
+    // through the wire pointer is well-defined (C++20 implicit object creation) and avoids copying
+    // the whole message onto the stack just to read a handful of fields.
+    const std::byte* data = itchMessage.data();
     const char type = static_cast<char>(itchMessage[0]);
     switch (type) {
         case 'A':
         case 'F': {
             if (itchMessage.size() >= sizeof(itch::AddOrder)) {
-                itch::AddOrder a{};
-                std::memcpy(&a, itchMessage.data(), sizeof a);
-                onAddOrder(a);
+                onAddOrder(*reinterpret_cast<const itch::AddOrder*>(data));
             }
             break;
         }
         case 'E': {
             if (itchMessage.size() >= sizeof(itch::OrderExecuted)) {
-                itch::OrderExecuted e{};
-                std::memcpy(&e, itchMessage.data(), sizeof e);
-                reduceOrder(e.orderRef.value(), e.executedShares.value());
+                const auto* e = reinterpret_cast<const itch::OrderExecuted*>(data);
+                reduceOrder(e->orderRef.value(), e->executedShares.value());
             }
             break;
         }
         case 'C': {
             if (itchMessage.size() >= sizeof(itch::OrderExecutedWithPrice)) {
-                itch::OrderExecutedWithPrice c{};
-                std::memcpy(&c, itchMessage.data(), sizeof c);
-                reduceOrder(c.orderRef.value(), c.executedShares.value());
+                const auto* c = reinterpret_cast<const itch::OrderExecutedWithPrice*>(data);
+                reduceOrder(c->orderRef.value(), c->executedShares.value());
             }
             break;
         }
         case 'X': {
             if (itchMessage.size() >= sizeof(itch::OrderCancel)) {
-                itch::OrderCancel x{};
-                std::memcpy(&x, itchMessage.data(), sizeof x);
-                reduceOrder(x.orderRef.value(), x.cancelledShares.value());
+                const auto* x = reinterpret_cast<const itch::OrderCancel*>(data);
+                reduceOrder(x->orderRef.value(), x->cancelledShares.value());
             }
             break;
         }
         case 'D': {
             if (itchMessage.size() >= sizeof(itch::OrderDelete)) {
-                itch::OrderDelete d{};
-                std::memcpy(&d, itchMessage.data(), sizeof d);
-                removeOrder(d.orderRef.value());
+                const auto* d = reinterpret_cast<const itch::OrderDelete*>(data);
+                removeOrder(d->orderRef.value());
             }
             break;
         }
         case 'U': {
             if (itchMessage.size() >= sizeof(itch::OrderReplace)) {
-                itch::OrderReplace r{};
-                std::memcpy(&r, itchMessage.data(), sizeof r);
-                onOrderReplace(r);
+                onOrderReplace(*reinterpret_cast<const itch::OrderReplace*>(data));
             }
             break;
         }
@@ -113,13 +108,11 @@ void BookBuilder::onAddOrder(const itch::AddOrder& msg) {
 }
 
 void BookBuilder::onOrderReplace(const itch::OrderReplace& msg) {
-    const Resting* o = m_orders.find(msg.origOrderRef.value());
-    if (o == nullptr) {
+    Resting orig{};
+    if (!m_orders.erase(msg.origOrderRef.value(), orig)) {
         return;
     }
-    const Resting orig = *o;   // copy before the erase invalidates the pointer
     removeShares(orig.side, orig.price, orig.shares);
-    m_orders.erase(msg.origOrderRef.value());
 
     const Quantity shares = msg.shares.value();
     if (shares == 0) {
@@ -144,12 +137,11 @@ void BookBuilder::reduceOrder(OrderId ref, Quantity by) {
 }
 
 void BookBuilder::removeOrder(OrderId ref) {
-    const Resting* o = m_orders.find(ref);
-    if (o == nullptr) {
+    Resting o{};
+    if (!m_orders.erase(ref, o)) {
         return;
     }
-    removeShares(o->side, o->price, o->shares);
-    m_orders.erase(ref);
+    removeShares(o.side, o.price, o.shares);
 }
 
 void BookBuilder::addShares(Side side, Price price, Quantity shares) noexcept {
@@ -201,25 +193,42 @@ bool BookBuilder::inBand(Price price) const noexcept {
 }
 
 std::size_t BookBuilder::index(Price price) const noexcept {
-    return static_cast<std::size_t>((price - m_minPrice) / m_tickWire);
+    return m_tickDiv(static_cast<std::uint32_t>(price - m_minPrice));
 }
 
 void BookBuilder::rescanBestBid() noexcept {
-    for (Price p = m_bestBid; p >= m_minPrice; p -= m_tickWire) {
-        if (m_bidSize[index(p)] > 0) {
+    // Walk the level index down in lockstep with the price so the array index advances by one per
+    // step instead of recomputing index() (a division) at every level.
+    std::size_t i = index(m_bestBid);
+    Price p = m_bestBid;
+    for (;;) {
+        if (m_bidSize[i] > 0) {
             m_bestBid = p;
             return;
         }
+        if (i == 0) {
+            break;
+        }
+        --i;
+        p -= m_tickWire;
     }
     m_bestBid = kNoPrice;
 }
 
 void BookBuilder::rescanBestAsk() noexcept {
-    for (Price p = m_bestAsk; p <= m_maxPrice; p += m_tickWire) {
-        if (m_askSize[index(p)] > 0) {
+    std::size_t i = index(m_bestAsk);
+    const std::size_t last = m_askSize.size() - 1;
+    Price p = m_bestAsk;
+    for (;;) {
+        if (m_askSize[i] > 0) {
             m_bestAsk = p;
             return;
         }
+        if (i == last) {
+            break;
+        }
+        ++i;
+        p += m_tickWire;
     }
     m_bestAsk = kNoPrice;
 }
