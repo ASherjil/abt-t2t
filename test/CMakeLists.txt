@@ -36,3 +36,9 @@ add_executable(dut_socket_test dut_socket_test.cpp)
 target_include_directories(dut_socket_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(dut_socket_test PRIVATE abt::dut abt::sim abt::flags fmt::fmt)
 add_test(NAME dut_socket_test COMMAND dut_socket_test)
+
+# dutproc_test measures the in-process RX->decision compute latency (no hardware timestamps).
+add_executable(dutproc_test dutproc_test.cpp)
+target_include_directories(dutproc_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(dutproc_test PRIVATE abt::dut abt::flags fmt::fmt)
+add_test(NAME dutproc_test COMMAND dutproc_test)

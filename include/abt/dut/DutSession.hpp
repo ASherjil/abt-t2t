@@ -46,6 +46,7 @@
 #include "abt/protocol/SoupBinTcp.hpp"
 #include "abt/protocol/UdpFramer.hpp"
 #include "abt/util/Clock.hpp"
+#include "abt/util/Tsc.hpp"
 
 namespace abt::dut {
 
@@ -102,6 +103,10 @@ public:
 
     [[nodiscard]] const BookBuilder& book() const noexcept;
     [[nodiscard]] const T2tRecorder& t2t() const noexcept;
+    // In-process compute latency (ns) of the RX -> decision path: MoldUDP64 parse + book rebuild +
+    // strategy + order encode, measured with the cycle counter and excluding the network send. This
+    // isolates the data-structure/algorithm cost — no NIC or hardware timestamps involved.
+    [[nodiscard]] const T2tRecorder& proc() const noexcept;
     [[nodiscard]] std::uint32_t ordersSent() const noexcept;
 
     // Loopback capture of the raw OUCH order bytes that were "sent".
@@ -110,7 +115,6 @@ public:
 
 private:
     void applyPacket(std::span<const std::byte> moldPacket, std::uint64_t rxHwts);
-    void react(std::uint64_t rxHwts);
     [[nodiscard]] std::size_t encodeEnterOrder(const OrderIntent& intent,
                                                std::uint32_t userRef) noexcept;
     [[nodiscard]] bool sendOrder(std::span<const std::byte> ouch);
@@ -146,6 +150,7 @@ private:
     Strat         m_strat;
     BookBuilder   m_book;
     T2tRecorder   m_t2t;
+    T2tRecorder   m_proc;
     std::uint32_t m_nextUserRef;
     std::uint32_t m_ordersSent = 0;
 
@@ -164,7 +169,10 @@ DutSession<Mode, Strat, Io>::DutSession(const DutConfig& cfg, Strat strat)
       m_strat(std::move(strat)),
       m_book(cfg.minPrice, cfg.maxPrice, cfg.tickWire),
       m_t2t(cfg.t2tCapacity),
+      m_proc(cfg.t2tCapacity),
       m_nextUserRef(cfg.firstUserRef) {
+    // Calibrate the cycle counter now so the first measured packet never pays the spin.
+    tsc::warmUp();
 }
 
 template <IoMode Mode, Strategy Strat, class Io>
@@ -358,6 +366,11 @@ const T2tRecorder& DutSession<Mode, Strat, Io>::t2t() const noexcept {
 }
 
 template <IoMode Mode, Strategy Strat, class Io>
+const T2tRecorder& DutSession<Mode, Strat, Io>::proc() const noexcept {
+    return m_proc;
+}
+
+template <IoMode Mode, Strategy Strat, class Io>
 std::uint32_t DutSession<Mode, Strat, Io>::ordersSent() const noexcept {
     return m_ordersSent;
 }
@@ -371,25 +384,29 @@ const std::vector<std::vector<std::byte>>& DutSession<Mode, Strat, Io>::captured
 template <IoMode Mode, Strategy Strat, class Io>
 void DutSession<Mode, Strat, Io>::applyPacket(std::span<const std::byte> moldPacket,
                                               std::uint64_t rxHwts) {
+    // --- measured compute span: parse -> book -> strategy -> encode (no I/O) ---
+    const std::uint64_t begin = tsc::now();
     mold::forEachMessage(moldPacket,
         [this](std::uint64_t, std::span<const std::byte> msg) {
             m_book.apply(msg);
         });
-    react(rxHwts);
-}
-
-template <IoMode Mode, Strategy Strat, class Io>
-void DutSession<Mode, Strat, Io>::react(std::uint64_t rxHwts) {
     const OrderIntent intent = m_strat.onBook(m_book);
-    if (!intent.send) {
-        return;
+    std::uint32_t userRef = 0;
+    std::size_t   len     = 0;
+    if (intent.send) {
+        userRef = m_nextUserRef++;
+        len = encodeEnterOrder(intent, userRef);
     }
-    const std::uint32_t userRef = m_nextUserRef++;
-    const std::size_t n = encodeEnterOrder(intent, userRef);
-    if (sendOrder({m_oeBuf.data(), n})) {
-        // Remember which RX stamp triggered this order; the matching TX-completion stamp closes
-        // the tick-to-trade sample when it arrives (see completeTx).
-        recordSend(userRef, rxHwts);
+    const std::uint64_t end = tsc::now();
+    m_proc.record(tsc::toNs(end - begin));
+    // --- end measured span; the network send below is I/O, deliberately excluded ---
+
+    if (intent.send) {
+        if (sendOrder({m_oeBuf.data(), len})) {
+            // Remember which RX stamp triggered this order; the matching TX-completion stamp
+            // closes the tick-to-trade sample when it arrives (see completeTx).
+            recordSend(userRef, rxHwts);
+        }
     }
 }
 
