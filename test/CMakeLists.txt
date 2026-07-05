@@ -30,3 +30,9 @@ add_executable(t2t_test t2t_test.cpp)
 target_include_directories(t2t_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(t2t_test PRIVATE abt::dut abt::flags fmt::fmt)
 add_test(NAME t2t_test COMMAND t2t_test)
+
+# dut_socket_test drives the sim and the DUT against each other over real kernel sockets.
+add_executable(dut_socket_test dut_socket_test.cpp)
+target_include_directories(dut_socket_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(dut_socket_test PRIVATE abt::dut abt::sim abt::flags fmt::fmt)
+add_test(NAME dut_socket_test COMMAND dut_socket_test)
