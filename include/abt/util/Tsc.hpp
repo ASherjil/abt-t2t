@@ -40,23 +40,42 @@ namespace detail {
 #endif
 }
 
-// Nanoseconds per counter tick, calibrated once against a ~5 ms CLOCK_MONOTONIC window. On the
+// Nanoseconds per counter tick, calibrated once against CLOCK_MONOTONIC. Each trial pairs a tick
+// read with a ns read; if the thread is descheduled *between* that pair the endpoint is skewed and
+// the ratio is wild, so we take the median over several trials and sanity-clamp the result (a real
+// TSC sits at ~1-5 GHz => 0.2-1.0 ns/tick; anything outside [0.05, 5.0] is a bad sample). On the
 // non-x86 fallback now() already returns ns, so the ratio converges to ~1.0 and toNs is identity.
 [[nodiscard]] inline double nsPerTick() noexcept {
     static const double value = []() noexcept {
-        const std::uint64_t startNs = detail::monoNs();
-        const std::uint64_t startTick = now();
-        std::uint64_t nowNs = startNs;
-        while (nowNs - startNs < 5'000'000ull) {
-            nowNs = detail::monoNs();
+        constexpr int kTrials = 5;
+        double ratios[kTrials] = {};
+        for (int trial = 0; trial < kTrials; ++trial) {
+            const std::uint64_t c0 = now();
+            const std::uint64_t t0 = detail::monoNs();
+            std::uint64_t t = t0;
+            while (t - t0 < 1'000'000ull) {   // ~1 ms spin
+                t = detail::monoNs();
+            }
+            const std::uint64_t t1 = detail::monoNs();
+            const std::uint64_t c1 = now();
+            const std::uint64_t dc = c1 - c0;
+            const std::uint64_t dt = t1 - t0;
+            ratios[trial] = (dc == 0) ? 1.0 : static_cast<double>(dt) / static_cast<double>(dc);
         }
-        const std::uint64_t endTick = now();
-        const double elapsedNs = static_cast<double>(nowNs - startNs);
-        const double ticks = static_cast<double>(endTick - startTick);
-        if (ticks <= 0.0) {
-            return 1.0;
+        for (int i = 1; i < kTrials; ++i) {
+            const double key = ratios[i];
+            int j = i - 1;
+            while (j >= 0 && ratios[j] > key) {
+                ratios[j + 1] = ratios[j];
+                --j;
+            }
+            ratios[j + 1] = key;
         }
-        return elapsedNs / ticks;
+        double median = ratios[kTrials / 2];
+        if (median < 0.05 || median > 5.0) {
+            median = 1.0;
+        }
+        return median;
     }();
     return value;
 }
