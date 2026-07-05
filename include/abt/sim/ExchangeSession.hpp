@@ -28,6 +28,8 @@
 
 #include <fmt/core.h>
 
+#include "third_party/abtrda3/RingConcepts.hpp"
+
 #include "abt/protocol/MoldUdp64.hpp"
 #include "abt/protocol/Ouch50.hpp"
 #include "abt/protocol/SoupBinTcp.hpp"
@@ -38,13 +40,6 @@
 namespace abt {
 
 enum class IoMode { Loopback, Socket, Dpdk };
-
-template <class T>
-concept DpdkTx = requires (T t, std::span<const std::uint8_t> tmpl, std::uint32_t n) {
-    t.prefillRing(tmpl);
-    { t.acquire(n) } -> std::same_as<std::uint8_t*>;
-    t.commit();
-};
 
 struct NoTransport {};
 
@@ -79,10 +74,14 @@ public:
         requires (Mode == IoMode::Socket);
     void attachSockets(int oeFd, int mdFd) requires (Mode == IoMode::Socket);
     void prepareDpdk(Tx& tx, const net::Endpoints& ep)
-        requires (Mode == IoMode::Dpdk && DpdkTx<Tx>);
+        requires (Mode == IoMode::Dpdk && TxRing<Tx>);
     template <class TickFn>
     void run(volatile std::sig_atomic_t& stop, TickFn&& onTick)
         requires (Mode == IoMode::Socket);
+    void pollOrderEntry(std::uint64_t ts) requires (Mode == IoMode::Dpdk && RxRing<Tx>);
+    template <class TickFn>
+    void run(volatile std::sig_atomic_t& stop, TickFn&& onTick)
+        requires (Mode == IoMode::Dpdk && RxRing<Tx>);
 
     [[nodiscard]] const std::vector<std::vector<std::byte>>& capturedMarketData() const
         requires (Mode == IoMode::Loopback);
@@ -210,7 +209,7 @@ void ExchangeSession<Mode, Tx>::attachSockets(int oeFd, int mdFd)
 
 template <IoMode Mode, class Tx>
 void ExchangeSession<Mode, Tx>::prepareDpdk(Tx& tx, const net::Endpoints& ep)
-    requires (Mode == IoMode::Dpdk && DpdkTx<Tx>) {
+    requires (Mode == IoMode::Dpdk && TxRing<Tx>) {
     m_dpdk.tx = &tx;
     m_dpdk.framer.emplace(ep);
     const auto h = m_dpdk.framer->header();
@@ -231,6 +230,34 @@ void ExchangeSession<Mode, Tx>::run(volatile std::sig_atomic_t& stop, TickFn&& o
             if (n <= 0) { fmt::print(stderr, "exchange-sim: client disconnected\n"); break; }
             onOrderEntryBytes({rx.data(), static_cast<std::size_t>(n)}, nsSinceMidnightUtc());
         }
+        const std::uint64_t now = monotonicNs();
+        if (now - lastTick > 100'000) {
+            onTick(nsSinceMidnightUtc());
+            lastTick = now;
+        }
+    }
+}
+
+template <IoMode Mode, class Tx>
+void ExchangeSession<Mode, Tx>::pollOrderEntry(std::uint64_t ts)
+    requires (Mode == IoMode::Dpdk && RxRing<Tx>) {
+    for (auto f = m_dpdk.tx->tryReceive(); f.status != 0; f = m_dpdk.tx->tryReceive()) {
+        const auto raw = f.data;
+        if (raw.size() > net::kL2L3L4Overhead) {
+            const auto* p = reinterpret_cast<const std::byte*>(raw.data());
+            dispatchOuch({p + net::kL2L3L4Overhead, raw.size() - net::kL2L3L4Overhead}, ts);
+        }
+        m_dpdk.tx->release();
+    }
+}
+
+template <IoMode Mode, class Tx>
+template <class TickFn>
+void ExchangeSession<Mode, Tx>::run(volatile std::sig_atomic_t& stop, TickFn&& onTick)
+    requires (Mode == IoMode::Dpdk && RxRing<Tx>) {
+    std::uint64_t lastTick = monotonicNs();
+    while (stop == 0) {
+        pollOrderEntry(nsSinceMidnightUtc());
         const std::uint64_t now = monotonicNs();
         if (now - lastTick > 100'000) {
             onTick(nsSinceMidnightUtc());

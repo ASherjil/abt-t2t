@@ -9,13 +9,17 @@
 #include <cstdint>
 #include <cstring>
 #include <span>
+#include <string_view>
 #include <vector>
 
 #include "TestHarness.hpp"
 
+#include "third_party/abtrda3/RxFrame.hpp"
+
 #include "abt/protocol/Checksum.hpp"
 #include "abt/protocol/EthIpUdp.hpp"
 #include "abt/protocol/MoldUdp64.hpp"
+#include "abt/protocol/Ouch50.hpp"
 #include "abt/sim/ExchangeSession.hpp"
 
 using namespace abt;
@@ -27,13 +31,27 @@ struct MockTx {
     std::vector<std::uint8_t>              scratch;
     std::vector<std::vector<std::uint8_t>> frames;
 
-    void prefillRing(std::span<const std::uint8_t> t) { tmpl.assign(t.begin(), t.end()); }
-    std::uint8_t* acquire(std::uint32_t n) {
+    void prefillRing(std::span<const std::uint8_t> t) noexcept { tmpl.assign(t.begin(), t.end()); }
+    std::uint8_t* acquire(std::uint32_t n) noexcept {
         scratch.assign(n, 0);
         std::memcpy(scratch.data(), tmpl.data(), std::min<std::size_t>(tmpl.size(), n));
         return scratch.data();
     }
-    void commit() { frames.emplace_back(scratch); }
+    void commit() noexcept { frames.emplace_back(scratch); }
+    bool send(std::span<const std::uint8_t> frame) noexcept {
+        frames.emplace_back(frame.begin(), frame.end());
+        return true;
+    }
+
+    std::vector<std::vector<std::uint8_t>> inbound;
+    std::vector<std::uint8_t>              rxCur;
+    std::size_t                            rxIdx = 0;
+    RxFrame tryReceive() noexcept {
+        if (rxIdx >= inbound.size()) return RxFrame{{}, 0, 0, 0};
+        rxCur = inbound[rxIdx];
+        return RxFrame{{rxCur.data(), rxCur.size()}, 0, 0, 1};
+    }
+    void release() noexcept { ++rxIdx; }
 };
 
 net::Endpoints makeEndpoints() {
@@ -91,9 +109,56 @@ void testMarketDataFrame() {
     CHECK_EQ(msgType, 'A');
 }
 
+void testOrderEntryRx() {
+    ExchangeSession<IoMode::Dpdk, MockTx> ex{};
+    MockTx tx;
+    ex.prepareDpdk(tx, makeEndpoints());
+
+    ex.injectSynthetic(Side::Sell, 5200, 100, 1000);
+    tx.frames.clear();
+
+    ouch::EnterOrder o{};
+    o.type = static_cast<char>(ouch::InType::EnterOrder);
+    o.userRefNum = 1000u;
+    o.side = static_cast<char>(ouch::Side::Buy);
+    o.quantity = 100u;
+    o.symbol = std::string_view{"AAPL"};
+    o.price = 520000u;
+    o.timeInForce = static_cast<char>(ouch::TimeInForce::Day);
+    o.display = static_cast<char>(ouch::Display::Visible);
+    o.capacity = static_cast<char>(ouch::Capacity::Agency);
+    o.imSweepEligibility = static_cast<char>(ouch::ImSweep::NotEligible);
+    o.crossType = static_cast<char>(ouch::CrossType::Continuous);
+    o.clOrdId = std::string_view{"CID1"};
+    o.appendageLength = 0;
+
+    std::vector<std::uint8_t> frame(net::kL2L3L4Overhead + sizeof o, 0);
+    std::memcpy(frame.data() + net::kL2L3L4Overhead, &o, sizeof o);
+    tx.inbound.push_back(frame);
+
+    ex.pollOrderEntry(2000);
+
+    CHECK_EQ(ex.bestAsk(), kNoPrice);
+    CHECK_EQ(tx.frames.size(), 1u);
+    if (!tx.frames.empty()) {
+        const auto& f = tx.frames.front();
+        std::span<const std::byte> fr{reinterpret_cast<const std::byte*>(f.data()), f.size()};
+        auto payload = fr.subspan(net::kL2L3L4Overhead);
+        int msgs = 0;
+        char msgType = 0;
+        mold::forEachMessage(payload, [&](std::uint64_t, std::span<const std::byte> m) {
+            ++msgs;
+            if (!m.empty()) msgType = static_cast<char>(m[0]);
+        });
+        CHECK_EQ(msgs, 1);
+        CHECK_EQ(msgType, 'E');
+    }
+}
+
 }
 
 int main() {
     testMarketDataFrame();
+    testOrderEntryRx();
     return abt::test::summary("dpdk");
 }
