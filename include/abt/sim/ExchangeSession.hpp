@@ -1,16 +1,19 @@
 #pragma once
 //
 // Session server: SoupBinTCP <-> OUCH <-> matching <-> ITCH <-> MoldUDP64. A compile-time
-// IoMode selects in-memory capture (Loopback, for tests) or kernel sockets (Socket, live).
+// IoMode selects in-memory capture (Loopback, for tests), kernel sockets (Socket, live), or a
+// hand-framed DPDK transport (Dpdk) supplied through the Tx type parameter.
 //
 
 #include <array>
 #include <cerrno>
+#include <concepts>
 #include <csignal>
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
+#include <optional>
 #include <span>
 #include <string>
 #include <type_traits>
@@ -28,14 +31,24 @@
 #include "abt/protocol/MoldUdp64.hpp"
 #include "abt/protocol/Ouch50.hpp"
 #include "abt/protocol/SoupBinTcp.hpp"
+#include "abt/protocol/UdpFramer.hpp"
 #include "abt/sim/Venue.hpp"
 #include "abt/util/Clock.hpp"
 
 namespace abt {
 
-enum class IoMode { Loopback, Socket };
+enum class IoMode { Loopback, Socket, Dpdk };
 
-template <IoMode Mode>
+template <class T>
+concept DpdkTx = requires (T t, std::span<const std::uint8_t> tmpl, std::uint32_t n) {
+    t.prefillRing(tmpl);
+    { t.acquire(n) } -> std::same_as<std::uint8_t*>;
+    t.commit();
+};
+
+struct NoTransport {};
+
+template <IoMode Mode, class Tx = NoTransport>
 class ExchangeSession {
 public:
     struct Config {
@@ -65,6 +78,8 @@ public:
     void prepareSocketIo(std::uint16_t oePort, const char* mdHost, std::uint16_t mdPort)
         requires (Mode == IoMode::Socket);
     void attachSockets(int oeFd, int mdFd) requires (Mode == IoMode::Socket);
+    void prepareDpdk(Tx& tx, const net::Endpoints& ep)
+        requires (Mode == IoMode::Dpdk && DpdkTx<Tx>);
     template <class TickFn>
     void run(volatile std::sig_atomic_t& stop, TickFn&& onTick)
         requires (Mode == IoMode::Socket);
@@ -88,6 +103,10 @@ private:
         std::vector<std::vector<std::byte>> oe;
     };
     struct Empty {};
+    struct DpdkState {
+        Tx*                           tx = nullptr;
+        std::optional<net::UdpFramer> framer;
+    };
 
     void marketDataOut(std::span<const std::byte> b);
     void orderEntryOut(std::span<const std::byte> b);
@@ -116,25 +135,27 @@ private:
 
     [[no_unique_address]] std::conditional_t<Mode == IoMode::Socket, SocketState, Empty> m_sock{};
     [[no_unique_address]] std::conditional_t<Mode == IoMode::Loopback, Capture, Empty> m_cap{};
+    [[no_unique_address]] std::conditional_t<Mode == IoMode::Dpdk, DpdkState, Empty> m_dpdk{};
 };
 
-template <IoMode Mode>
-ExchangeSession<Mode>::ExchangeSession(const Config& cfg)
+template <IoMode Mode, class Tx>
+ExchangeSession<Mode, Tx>::ExchangeSession(const Config& cfg)
     : m_cfg(cfg),
       m_sink{this},
       m_packer(cfg.session, 1),
       m_venue(m_sink, cfg.symbol, cfg.stockLocate, cfg.minTick, cfg.maxTick, cfg.wirePerTick) {}
 
-template <IoMode Mode>
-ExchangeSession<Mode>::~ExchangeSession() {
+template <IoMode Mode, class Tx>
+ExchangeSession<Mode, Tx>::~ExchangeSession() {
     if constexpr (Mode == IoMode::Socket) {
         if (m_sock.oeFd >= 0) ::close(m_sock.oeFd);
         if (m_sock.mdFd >= 0) ::close(m_sock.mdFd);
     }
 }
 
-template <IoMode Mode>
-void ExchangeSession<Mode>::onOrderEntryBytes(std::span<const std::byte> data, std::uint64_t ts) {
+template <IoMode Mode, class Tx>
+void ExchangeSession<Mode, Tx>::onOrderEntryBytes(std::span<const std::byte> data,
+                                                  std::uint64_t ts) {
     m_rxBuf.insert(m_rxBuf.end(), data.begin(), data.end());
     std::size_t off = 0;
     soup::Packet p{};
@@ -147,48 +168,59 @@ void ExchangeSession<Mode>::onOrderEntryBytes(std::span<const std::byte> data, s
     if (off) m_rxBuf.erase(m_rxBuf.begin(), m_rxBuf.begin() + static_cast<std::ptrdiff_t>(off));
 }
 
-template <IoMode Mode>
-OrderId ExchangeSession<Mode>::injectSynthetic(Side side, Price tick, Quantity qty,
-                                               std::uint64_t ts) {
+template <IoMode Mode, class Tx>
+OrderId ExchangeSession<Mode, Tx>::injectSynthetic(Side side, Price tick, Quantity qty,
+                                                   std::uint64_t ts) {
     OrderId ref = 0;
     withMarketData([&] { ref = m_venue.injectSynthetic(side, tick, qty, ts); });
     return ref;
 }
 
-template <IoMode Mode>
-void ExchangeSession<Mode>::cancelSynthetic(OrderId ref, std::uint64_t ts) {
+template <IoMode Mode, class Tx>
+void ExchangeSession<Mode, Tx>::cancelSynthetic(OrderId ref, std::uint64_t ts) {
     withMarketData([&] { m_venue.cancelSynthetic(ref, ts); });
 }
 
-template <IoMode Mode>
-void ExchangeSession<Mode>::sessionEvent(itch::SystemEventCode code, std::uint64_t ts) {
+template <IoMode Mode, class Tx>
+void ExchangeSession<Mode, Tx>::sessionEvent(itch::SystemEventCode code, std::uint64_t ts) {
     withMarketData([&] { m_venue.sessionEvent(code, ts); });
 }
 
-template <IoMode Mode>
-Price ExchangeSession<Mode>::bestBid() const noexcept { return m_venue.bestBid(); }
-template <IoMode Mode>
-Price ExchangeSession<Mode>::bestAsk() const noexcept { return m_venue.bestAsk(); }
-template <IoMode Mode>
-const OrderBook& ExchangeSession<Mode>::book() const noexcept { return m_venue.book(); }
+template <IoMode Mode, class Tx>
+Price ExchangeSession<Mode, Tx>::bestBid() const noexcept { return m_venue.bestBid(); }
+template <IoMode Mode, class Tx>
+Price ExchangeSession<Mode, Tx>::bestAsk() const noexcept { return m_venue.bestAsk(); }
+template <IoMode Mode, class Tx>
+const OrderBook& ExchangeSession<Mode, Tx>::book() const noexcept { return m_venue.book(); }
 
-template <IoMode Mode>
-void ExchangeSession<Mode>::prepareSocketIo(std::uint16_t oePort, const char* mdHost,
-                                            std::uint16_t mdPort)
+template <IoMode Mode, class Tx>
+void ExchangeSession<Mode, Tx>::prepareSocketIo(std::uint16_t oePort, const char* mdHost,
+                                                std::uint16_t mdPort)
     requires (Mode == IoMode::Socket) {
     m_sock.mdFd = makeUdpSender(mdHost, mdPort);
     m_sock.oeFd = acceptOrderEntry(oePort);
 }
 
-template <IoMode Mode>
-void ExchangeSession<Mode>::attachSockets(int oeFd, int mdFd) requires (Mode == IoMode::Socket) {
+template <IoMode Mode, class Tx>
+void ExchangeSession<Mode, Tx>::attachSockets(int oeFd, int mdFd)
+    requires (Mode == IoMode::Socket) {
     m_sock.oeFd = oeFd;
     m_sock.mdFd = mdFd;
 }
 
-template <IoMode Mode>
+template <IoMode Mode, class Tx>
+void ExchangeSession<Mode, Tx>::prepareDpdk(Tx& tx, const net::Endpoints& ep)
+    requires (Mode == IoMode::Dpdk && DpdkTx<Tx>) {
+    m_dpdk.tx = &tx;
+    m_dpdk.framer.emplace(ep);
+    const auto h = m_dpdk.framer->header();
+    tx.prefillRing(std::span<const std::uint8_t>{
+        reinterpret_cast<const std::uint8_t*>(h.data()), h.size()});
+}
+
+template <IoMode Mode, class Tx>
 template <class TickFn>
-void ExchangeSession<Mode>::run(volatile std::sig_atomic_t& stop, TickFn&& onTick)
+void ExchangeSession<Mode, Tx>::run(volatile std::sig_atomic_t& stop, TickFn&& onTick)
     requires (Mode == IoMode::Socket) {
     std::array<std::byte, 8192> rx{};
     std::uint64_t lastTick = monotonicNs();
@@ -207,38 +239,48 @@ void ExchangeSession<Mode>::run(volatile std::sig_atomic_t& stop, TickFn&& onTic
     }
 }
 
-template <IoMode Mode>
-const std::vector<std::vector<std::byte>>& ExchangeSession<Mode>::capturedMarketData() const
+template <IoMode Mode, class Tx>
+const std::vector<std::vector<std::byte>>& ExchangeSession<Mode, Tx>::capturedMarketData() const
     requires (Mode == IoMode::Loopback) { return m_cap.md; }
-template <IoMode Mode>
-const std::vector<std::vector<std::byte>>& ExchangeSession<Mode>::capturedOrderEntry() const
+template <IoMode Mode, class Tx>
+const std::vector<std::vector<std::byte>>& ExchangeSession<Mode, Tx>::capturedOrderEntry() const
     requires (Mode == IoMode::Loopback) { return m_cap.oe; }
-template <IoMode Mode>
-void ExchangeSession<Mode>::clearCaptured() requires (Mode == IoMode::Loopback) {
+template <IoMode Mode, class Tx>
+void ExchangeSession<Mode, Tx>::clearCaptured() requires (Mode == IoMode::Loopback) {
     m_cap.md.clear();
     m_cap.oe.clear();
 }
 
-template <IoMode Mode>
-void ExchangeSession<Mode>::marketDataOut(std::span<const std::byte> b) {
+template <IoMode Mode, class Tx>
+void ExchangeSession<Mode, Tx>::marketDataOut(std::span<const std::byte> b) {
     if constexpr (Mode == IoMode::Loopback) {
         m_cap.md.emplace_back(b.begin(), b.end());
-    } else {
+    } else if constexpr (Mode == IoMode::Socket) {
         (void)::send(m_sock.mdFd, b.data(), b.size(), MSG_NOSIGNAL);
+    } else {
+        const auto frameLen = static_cast<std::uint32_t>(net::kL2L3L4Overhead + b.size());
+        std::uint8_t* buf = m_dpdk.tx->acquire(frameLen);
+        if (buf != nullptr) [[likely]] {
+            std::memcpy(buf + net::kL2L3L4Overhead, b.data(), b.size());
+            m_dpdk.framer->patch(reinterpret_cast<std::byte*>(buf), b.size());
+            m_dpdk.tx->commit();
+        }
     }
 }
 
-template <IoMode Mode>
-void ExchangeSession<Mode>::orderEntryOut(std::span<const std::byte> b) {
+template <IoMode Mode, class Tx>
+void ExchangeSession<Mode, Tx>::orderEntryOut(std::span<const std::byte> b) {
     if constexpr (Mode == IoMode::Loopback) {
         m_cap.oe.emplace_back(b.begin(), b.end());
-    } else {
+    } else if constexpr (Mode == IoMode::Socket) {
         (void)::send(m_sock.oeFd, b.data(), b.size(), MSG_NOSIGNAL);
+    } else {
+        (void)b;
     }
 }
 
-template <IoMode Mode>
-void ExchangeSession<Mode>::handleSoup(const soup::Packet& p, std::uint64_t ts) {
+template <IoMode Mode, class Tx>
+void ExchangeSession<Mode, Tx>::handleSoup(const soup::Packet& p, std::uint64_t ts) {
     switch (p.type) {
     case soup::Type::LoginRequest: {
         const auto pkt = soup::packLoginAccepted(m_oeBuf.data(), m_cfg.session, m_outSeq);
@@ -257,8 +299,9 @@ void ExchangeSession<Mode>::handleSoup(const soup::Packet& p, std::uint64_t ts) 
     }
 }
 
-template <IoMode Mode>
-void ExchangeSession<Mode>::dispatchOuch(std::span<const std::byte> payload, std::uint64_t ts) {
+template <IoMode Mode, class Tx>
+void ExchangeSession<Mode, Tx>::dispatchOuch(std::span<const std::byte> payload,
+                                             std::uint64_t ts) {
     if (payload.empty()) return;
     const char t = static_cast<char>(payload[0]);
     if (t == static_cast<char>(ouch::InType::EnterOrder) &&
@@ -279,15 +322,15 @@ void ExchangeSession<Mode>::dispatchOuch(std::span<const std::byte> payload, std
     }
 }
 
-template <IoMode Mode>
+template <IoMode Mode, class Tx>
 template <class Fn>
-void ExchangeSession<Mode>::withMarketData(Fn&& fn) {
+void ExchangeSession<Mode, Tx>::withMarketData(Fn&& fn) {
     fn();
     flushMarketData();
 }
 
-template <IoMode Mode>
-void ExchangeSession<Mode>::appendMarketData(std::span<const std::byte> itch) {
+template <IoMode Mode, class Tx>
+void ExchangeSession<Mode, Tx>::appendMarketData(std::span<const std::byte> itch) {
     if (!m_mdOpen) {
         m_packer.reset(m_mdBuf.data(), m_mdBuf.size());
         m_mdOpen = true;
@@ -300,29 +343,29 @@ void ExchangeSession<Mode>::appendMarketData(std::span<const std::byte> itch) {
     }
 }
 
-template <IoMode Mode>
-void ExchangeSession<Mode>::flushMarketData() {
+template <IoMode Mode, class Tx>
+void ExchangeSession<Mode, Tx>::flushMarketData() {
     if (m_mdOpen && m_packer.count() > 0) {
         marketDataOut(m_packer.finalize());
     }
     m_mdOpen = false;
 }
 
-template <IoMode Mode>
-void ExchangeSession<Mode>::sendOrderEntry(std::span<const std::byte> ouch) {
+template <IoMode Mode, class Tx>
+void ExchangeSession<Mode, Tx>::sendOrderEntry(std::span<const std::byte> ouch) {
     const auto pkt = soup::packSequencedData(m_oeBuf.data(), ouch);
     orderEntryOut(pkt);
     ++m_outSeq;
 }
 
-template <IoMode Mode>
-void ExchangeSession<Mode>::die(const char* what) {
+template <IoMode Mode, class Tx>
+void ExchangeSession<Mode, Tx>::die(const char* what) {
     fmt::print(stderr, "{}: {}\n", what, std::strerror(errno));
     std::exit(1);
 }
 
-template <IoMode Mode>
-int ExchangeSession<Mode>::makeUdpSender(const char* host, std::uint16_t port)
+template <IoMode Mode, class Tx>
+int ExchangeSession<Mode, Tx>::makeUdpSender(const char* host, std::uint16_t port)
     requires (Mode == IoMode::Socket) {
     const int fd = ::socket(AF_INET, SOCK_DGRAM, 0);
     if (fd < 0) die("socket(udp)");
@@ -334,8 +377,9 @@ int ExchangeSession<Mode>::makeUdpSender(const char* host, std::uint16_t port)
     return fd;
 }
 
-template <IoMode Mode>
-int ExchangeSession<Mode>::acceptOrderEntry(std::uint16_t port) requires (Mode == IoMode::Socket) {
+template <IoMode Mode, class Tx>
+int ExchangeSession<Mode, Tx>::acceptOrderEntry(std::uint16_t port)
+    requires (Mode == IoMode::Socket) {
     const int lfd = ::socket(AF_INET, SOCK_STREAM, 0);
     if (lfd < 0) die("socket(tcp)");
     int one = 1;
