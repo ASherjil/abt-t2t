@@ -63,6 +63,7 @@ struct DutConfig {
     std::string   symbol{};       // OUCH symbol stamped on every order
     std::uint32_t firstUserRef = 1;
     std::size_t   t2tCapacity = 1u << 16;   // tick-to-trade samples retained for percentiles
+    std::size_t   maxOrders   = 1u << 12;   // initial capacity of the book's order-ref map
 };
 
 template <IoMode Mode, Strategy Strat, class Io = NoTransport>
@@ -167,7 +168,7 @@ template <IoMode Mode, Strategy Strat, class Io>
 DutSession<Mode, Strat, Io>::DutSession(const DutConfig& cfg, Strat strat)
     : m_cfg(cfg),
       m_strat(std::move(strat)),
-      m_book(cfg.minPrice, cfg.maxPrice, cfg.tickWire),
+      m_book(cfg.minPrice, cfg.maxPrice, cfg.tickWire, cfg.maxOrders),
       m_t2t(cfg.t2tCapacity),
       m_proc(cfg.t2tCapacity),
       m_nextUserRef(cfg.firstUserRef) {

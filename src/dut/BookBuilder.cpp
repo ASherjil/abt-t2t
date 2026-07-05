@@ -8,12 +8,13 @@
 
 namespace abt::dut {
 
-BookBuilder::BookBuilder(Price minPrice, Price maxPrice, Price tickWire)
+BookBuilder::BookBuilder(Price minPrice, Price maxPrice, Price tickWire, std::size_t maxOrders)
     : m_minPrice(minPrice),
       m_maxPrice(maxPrice),
       m_tickWire(tickWire),
       m_bidSize(static_cast<std::size_t>((maxPrice - minPrice) / tickWire) + 1, 0),
-      m_askSize(static_cast<std::size_t>((maxPrice - minPrice) / tickWire) + 1, 0) {
+      m_askSize(static_cast<std::size_t>((maxPrice - minPrice) / tickWire) + 1, 0),
+      m_orders(maxOrders) {
 }
 
 void BookBuilder::apply(std::span<const std::byte> itchMessage) {
@@ -107,49 +108,48 @@ void BookBuilder::onAddOrder(const itch::AddOrder& msg) {
     const OrderId ref = msg.orderRef.value();
     const Side side = (msg.side == static_cast<char>(itch::Side::Buy)) ? Side::Buy : Side::Sell;
     const Price price = static_cast<Price>(msg.price.value());
-    m_orders.insert_or_assign(ref, Resting{price, shares, side});
+    m_orders.insertOrAssign(ref, Resting{price, shares, side});
     addShares(side, price, shares);
 }
 
 void BookBuilder::onOrderReplace(const itch::OrderReplace& msg) {
-    const auto it = m_orders.find(msg.origOrderRef.value());
-    if (it == m_orders.end()) {
+    const Resting* o = m_orders.find(msg.origOrderRef.value());
+    if (o == nullptr) {
         return;
     }
-    const Side side = it->second.side;
-    removeShares(side, it->second.price, it->second.shares);
-    m_orders.erase(it);
+    const Resting orig = *o;   // copy before the erase invalidates the pointer
+    removeShares(orig.side, orig.price, orig.shares);
+    m_orders.erase(msg.origOrderRef.value());
 
     const Quantity shares = msg.shares.value();
     if (shares == 0) {
         return;
     }
     const Price price = static_cast<Price>(msg.price.value());
-    m_orders.insert_or_assign(msg.newOrderRef.value(), Resting{price, shares, side});
-    addShares(side, price, shares);
+    m_orders.insertOrAssign(msg.newOrderRef.value(), Resting{price, shares, orig.side});
+    addShares(orig.side, price, shares);
 }
 
 void BookBuilder::reduceOrder(OrderId ref, Quantity by) {
-    const auto it = m_orders.find(ref);
-    if (it == m_orders.end()) {
+    Resting* o = m_orders.find(ref);
+    if (o == nullptr) {
         return;
     }
-    Resting& o = it->second;
-    const Quantity gone = (by < o.shares) ? by : o.shares;
-    removeShares(o.side, o.price, gone);
-    o.shares -= gone;
-    if (o.shares == 0) {
-        m_orders.erase(it);
+    const Quantity gone = (by < o->shares) ? by : o->shares;
+    removeShares(o->side, o->price, gone);
+    o->shares -= gone;
+    if (o->shares == 0) {
+        m_orders.erase(ref);
     }
 }
 
 void BookBuilder::removeOrder(OrderId ref) {
-    const auto it = m_orders.find(ref);
-    if (it == m_orders.end()) {
+    const Resting* o = m_orders.find(ref);
+    if (o == nullptr) {
         return;
     }
-    removeShares(it->second.side, it->second.price, it->second.shares);
-    m_orders.erase(it);
+    removeShares(o->side, o->price, o->shares);
+    m_orders.erase(ref);
 }
 
 void BookBuilder::addShares(Side side, Price price, Quantity shares) noexcept {

@@ -9,17 +9,19 @@
 #include <cstddef>
 #include <cstdint>
 #include <span>
-#include <unordered_map>
 #include <vector>
 
 #include "abt/lob/Types.hpp"
 #include "abt/protocol/Itch50.hpp"
+#include "abt/util/FlatHashMap.hpp"
 
 namespace abt::dut {
 
 class BookBuilder {
 public:
-    BookBuilder(Price minPrice, Price maxPrice, Price tickWire);
+    // maxOrders sizes the order-ref map's initial capacity (it grows if exceeded). ITCH order refs
+    // are >= 1, so 0 is reserved as the map's empty sentinel.
+    BookBuilder(Price minPrice, Price maxPrice, Price tickWire, std::size_t maxOrders = 1u << 12);
 
     void apply(std::span<const std::byte> itchMessage);
 
@@ -53,9 +55,9 @@ private:
     Price m_bestBid = kNoPrice;
     Price m_bestAsk = kNoPrice;
 
-    std::vector<Quantity>                m_bidSize;
-    std::vector<Quantity>                m_askSize;
-    std::unordered_map<OrderId, Resting> m_orders;
+    std::vector<Quantity>              m_bidSize;
+    std::vector<Quantity>              m_askSize;
+    util::FlatHashMap<OrderId, Resting> m_orders;
 };
 
 }
