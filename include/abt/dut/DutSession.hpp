@@ -25,6 +25,8 @@
 
 #include "abt/dut/BookBuilder.hpp"
 #include "abt/dut/Strategy.hpp"
+#include "abt/dut/T2tRecorder.hpp"
+#include "abt/dut/TxStamp.hpp"
 #include "abt/lob/Types.hpp"
 #include "abt/protocol/MoldUdp64.hpp"
 #include "abt/protocol/Ouch50.hpp"
@@ -44,6 +46,7 @@ struct DutConfig {
     Price         tickWire = 1;
     std::string   symbol{};       // OUCH symbol stamped on every order
     std::uint32_t firstUserRef = 1;
+    std::size_t   t2tCapacity = 1u << 16;   // tick-to-trade samples retained for percentiles
 };
 
 template <IoMode Mode, Strategy Strat, class Io = NoTransport>
@@ -60,7 +63,15 @@ public:
         requires (Mode == IoMode::Transport && TxRing<Io>);
     void poll() requires (Mode == IoMode::Transport && RxRing<Io> && TxRing<Io>);
 
+    // Drain a source of asynchronous TX-completion timestamps and close out each pending order's
+    // tick-to-trade sample. Mode- and transport-agnostic: the source may be the datapath ring
+    // itself or a sidecar, and the test drives it with a mock.
+    template <TxStampSource Src>
+    void pollTxCompletions(Src& src);
+    void completeTx(std::uint32_t userRef, std::uint64_t txHwts) noexcept;
+
     [[nodiscard]] const BookBuilder& book() const noexcept;
+    [[nodiscard]] const T2tRecorder& t2t() const noexcept;
     [[nodiscard]] std::uint32_t ordersSent() const noexcept;
 
     // Loopback capture of the raw OUCH order bytes that were "sent".
@@ -70,8 +81,20 @@ public:
 private:
     void applyPacket(std::span<const std::byte> moldPacket, std::uint64_t rxHwts);
     void react(std::uint64_t rxHwts);
-    [[nodiscard]] std::size_t encodeEnterOrder(const OrderIntent& intent) noexcept;
-    void sendOrder(std::span<const std::byte> ouch);
+    [[nodiscard]] std::size_t encodeEnterOrder(const OrderIntent& intent,
+                                               std::uint32_t userRef) noexcept;
+    [[nodiscard]] bool sendOrder(std::span<const std::byte> ouch);
+    void recordSend(std::uint32_t userRef, std::uint64_t rxHwts) noexcept;
+
+    // Pending orders awaiting their TX-completion timestamp, keyed by userRefNum into a fixed ring
+    // (userRefs are monotonic and completions arrive within microseconds, so this never wraps in
+    // practice). Each slot remembers the RX timestamp that triggered the order.
+    static constexpr std::uint32_t kInFlight = 1024;
+    struct InFlight {
+        std::uint32_t userRef = 0;
+        std::uint64_t rxHwts  = 0;
+        bool          live    = false;
+    };
 
     struct Capture {
         std::vector<std::vector<std::byte>> oe;
@@ -85,10 +108,12 @@ private:
     DutConfig     m_cfg;
     Strat         m_strat;
     BookBuilder   m_book;
+    T2tRecorder   m_t2t;
     std::uint32_t m_nextUserRef;
     std::uint32_t m_ordersSent = 0;
 
-    std::array<std::byte, 128> m_oeBuf{};
+    std::array<InFlight, kInFlight> m_inflight{};
+    std::array<std::byte, 128>      m_oeBuf{};
 
     [[no_unique_address]] std::conditional_t<Mode == IoMode::Loopback, Capture, Empty> m_cap{};
     [[no_unique_address]] std::conditional_t<Mode == IoMode::Transport, TransportState, Empty>
@@ -100,6 +125,7 @@ DutSession<Mode, Strat, Io>::DutSession(const DutConfig& cfg, Strat strat)
     : m_cfg(cfg),
       m_strat(std::move(strat)),
       m_book(cfg.minPrice, cfg.maxPrice, cfg.tickWire),
+      m_t2t(cfg.t2tCapacity),
       m_nextUserRef(cfg.firstUserRef) {
 }
 
@@ -133,8 +159,35 @@ void DutSession<Mode, Strat, Io>::poll()
 }
 
 template <IoMode Mode, Strategy Strat, class Io>
+template <TxStampSource Src>
+void DutSession<Mode, Strat, Io>::pollTxCompletions(Src& src) {
+    for (auto c = src.pollTxTimestamp(); c.status != 0; c = src.pollTxTimestamp()) {
+        const std::uint64_t txHwts =
+            static_cast<std::uint64_t>(c.sec) * 1'000'000'000ull + c.nsec;
+        completeTx(c.userRef, txHwts);
+    }
+}
+
+template <IoMode Mode, Strategy Strat, class Io>
+void DutSession<Mode, Strat, Io>::completeTx(std::uint32_t userRef, std::uint64_t txHwts) noexcept {
+    InFlight& slot = m_inflight[userRef % kInFlight];
+    if (!slot.live || slot.userRef != userRef) {
+        return;
+    }
+    slot.live = false;
+    if (txHwts >= slot.rxHwts) {
+        m_t2t.record(txHwts - slot.rxHwts);
+    }
+}
+
+template <IoMode Mode, Strategy Strat, class Io>
 const BookBuilder& DutSession<Mode, Strat, Io>::book() const noexcept {
     return m_book;
+}
+
+template <IoMode Mode, Strategy Strat, class Io>
+const T2tRecorder& DutSession<Mode, Strat, Io>::t2t() const noexcept {
+    return m_t2t;
 }
 
 template <IoMode Mode, Strategy Strat, class Io>
@@ -164,18 +217,21 @@ void DutSession<Mode, Strat, Io>::react(std::uint64_t rxHwts) {
     if (!intent.send) {
         return;
     }
-    const std::size_t n = encodeEnterOrder(intent);
-    sendOrder({m_oeBuf.data(), n});
-    // The RX timestamp pairs with the TX timestamp for the tick-to-trade delta; the TX side is
-    // net-new API surface (it does not fit TxRing) and lands with the t2t harness in a later chunk.
-    (void)rxHwts;
+    const std::uint32_t userRef = m_nextUserRef++;
+    const std::size_t n = encodeEnterOrder(intent, userRef);
+    if (sendOrder({m_oeBuf.data(), n})) {
+        // Remember which RX stamp triggered this order; the matching TX-completion stamp closes
+        // the tick-to-trade sample when it arrives (see completeTx).
+        recordSend(userRef, rxHwts);
+    }
 }
 
 template <IoMode Mode, Strategy Strat, class Io>
-std::size_t DutSession<Mode, Strat, Io>::encodeEnterOrder(const OrderIntent& intent) noexcept {
+std::size_t DutSession<Mode, Strat, Io>::encodeEnterOrder(const OrderIntent& intent,
+                                                          std::uint32_t userRef) noexcept {
     ouch::EnterOrder o{};
     o.type = static_cast<char>(ouch::InType::EnterOrder);
-    o.userRefNum = m_nextUserRef++;
+    o.userRefNum = userRef;
     o.side = (intent.side == Side::Buy) ? static_cast<char>(ouch::Side::Buy)
                                         : static_cast<char>(ouch::Side::Sell);
     o.quantity = intent.qty;
@@ -192,14 +248,14 @@ std::size_t DutSession<Mode, Strat, Io>::encodeEnterOrder(const OrderIntent& int
 }
 
 template <IoMode Mode, Strategy Strat, class Io>
-void DutSession<Mode, Strat, Io>::sendOrder(std::span<const std::byte> ouch) {
+bool DutSession<Mode, Strat, Io>::sendOrder(std::span<const std::byte> ouch) {
     if constexpr (Mode == IoMode::Loopback) {
         m_cap.oe.emplace_back(ouch.begin(), ouch.end());
     } else {
         const auto frameLen = static_cast<std::uint32_t>(net::kL2L3L4Overhead + ouch.size());
         std::uint8_t* buf = m_io.io->acquire(frameLen);
         if (buf == nullptr) [[unlikely]] {
-            return;
+            return false;
         }
         std::memcpy(buf, m_io.oeFramer->header().data(), net::kL2L3L4Overhead);
         std::memcpy(buf + net::kL2L3L4Overhead, ouch.data(), ouch.size());
@@ -207,6 +263,12 @@ void DutSession<Mode, Strat, Io>::sendOrder(std::span<const std::byte> ouch) {
         m_io.io->commit();
     }
     ++m_ordersSent;
+    return true;
+}
+
+template <IoMode Mode, Strategy Strat, class Io>
+void DutSession<Mode, Strat, Io>::recordSend(std::uint32_t userRef, std::uint64_t rxHwts) noexcept {
+    m_inflight[userRef % kInFlight] = InFlight{userRef, rxHwts, true};
 }
 
 }
