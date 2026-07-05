@@ -73,7 +73,7 @@ public:
     void prepareSocketIo(std::uint16_t oePort, const char* mdHost, std::uint16_t mdPort)
         requires (Mode == IoMode::Socket);
     void attachSockets(int oeFd, int mdFd) requires (Mode == IoMode::Socket);
-    void prepareDpdk(Tx& tx, const net::Endpoints& ep)
+    void prepareDpdk(Tx& tx, const net::Endpoints& mdEp, const net::Endpoints& oeEp)
         requires (Mode == IoMode::Dpdk && TxRing<Tx>);
     template <class TickFn>
     void run(volatile std::sig_atomic_t& stop, TickFn&& onTick)
@@ -104,11 +104,13 @@ private:
     struct Empty {};
     struct DpdkState {
         Tx*                           tx = nullptr;
-        std::optional<net::UdpFramer> framer;
+        std::optional<net::UdpFramer> mdFramer;
+        std::optional<net::UdpFramer> oeFramer;
     };
 
     void marketDataOut(std::span<const std::byte> b);
     void orderEntryOut(std::span<const std::byte> b);
+    void sendDpdk(const net::UdpFramer& fr, std::span<const std::byte> payload);
     void handleSoup(const soup::Packet& p, std::uint64_t ts);
     void dispatchOuch(std::span<const std::byte> payload, std::uint64_t ts);
     template <class Fn> void withMarketData(Fn&& fn);
@@ -208,13 +210,12 @@ void ExchangeSession<Mode, Tx>::attachSockets(int oeFd, int mdFd)
 }
 
 template <IoMode Mode, class Tx>
-void ExchangeSession<Mode, Tx>::prepareDpdk(Tx& tx, const net::Endpoints& ep)
+void ExchangeSession<Mode, Tx>::prepareDpdk(Tx& tx, const net::Endpoints& mdEp,
+                                            const net::Endpoints& oeEp)
     requires (Mode == IoMode::Dpdk && TxRing<Tx>) {
     m_dpdk.tx = &tx;
-    m_dpdk.framer.emplace(ep);
-    const auto h = m_dpdk.framer->header();
-    tx.prefillRing(std::span<const std::uint8_t>{
-        reinterpret_cast<const std::uint8_t*>(h.data()), h.size()});
+    m_dpdk.mdFramer.emplace(mdEp);
+    m_dpdk.oeFramer.emplace(oeEp);
 }
 
 template <IoMode Mode, class Tx>
@@ -279,19 +280,25 @@ void ExchangeSession<Mode, Tx>::clearCaptured() requires (Mode == IoMode::Loopba
 }
 
 template <IoMode Mode, class Tx>
+void ExchangeSession<Mode, Tx>::sendDpdk(const net::UdpFramer& fr,
+                                         std::span<const std::byte> payload) {
+    const auto frameLen = static_cast<std::uint32_t>(net::kL2L3L4Overhead + payload.size());
+    std::uint8_t* buf = m_dpdk.tx->acquire(frameLen);
+    if (buf == nullptr) [[unlikely]] return;
+    std::memcpy(buf, fr.header().data(), net::kL2L3L4Overhead);
+    std::memcpy(buf + net::kL2L3L4Overhead, payload.data(), payload.size());
+    fr.patch(reinterpret_cast<std::byte*>(buf), payload.size());
+    m_dpdk.tx->commit();
+}
+
+template <IoMode Mode, class Tx>
 void ExchangeSession<Mode, Tx>::marketDataOut(std::span<const std::byte> b) {
     if constexpr (Mode == IoMode::Loopback) {
         m_cap.md.emplace_back(b.begin(), b.end());
     } else if constexpr (Mode == IoMode::Socket) {
         (void)::send(m_sock.mdFd, b.data(), b.size(), MSG_NOSIGNAL);
     } else {
-        const auto frameLen = static_cast<std::uint32_t>(net::kL2L3L4Overhead + b.size());
-        std::uint8_t* buf = m_dpdk.tx->acquire(frameLen);
-        if (buf != nullptr) [[likely]] {
-            std::memcpy(buf + net::kL2L3L4Overhead, b.data(), b.size());
-            m_dpdk.framer->patch(reinterpret_cast<std::byte*>(buf), b.size());
-            m_dpdk.tx->commit();
-        }
+        sendDpdk(*m_dpdk.mdFramer, b);
     }
 }
 
@@ -380,9 +387,13 @@ void ExchangeSession<Mode, Tx>::flushMarketData() {
 
 template <IoMode Mode, class Tx>
 void ExchangeSession<Mode, Tx>::sendOrderEntry(std::span<const std::byte> ouch) {
-    const auto pkt = soup::packSequencedData(m_oeBuf.data(), ouch);
-    orderEntryOut(pkt);
-    ++m_outSeq;
+    if constexpr (Mode == IoMode::Dpdk) {
+        sendDpdk(*m_dpdk.oeFramer, ouch);
+    } else {
+        const auto pkt = soup::packSequencedData(m_oeBuf.data(), ouch);
+        orderEntryOut(pkt);
+        ++m_outSeq;
+    }
 }
 
 template <IoMode Mode, class Tx>

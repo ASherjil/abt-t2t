@@ -34,7 +34,8 @@ struct MockTx {
     void prefillRing(std::span<const std::uint8_t> t) noexcept { tmpl.assign(t.begin(), t.end()); }
     std::uint8_t* acquire(std::uint32_t n) noexcept {
         scratch.assign(n, 0);
-        std::memcpy(scratch.data(), tmpl.data(), std::min<std::size_t>(tmpl.size(), n));
+        if (!tmpl.empty())
+            std::memcpy(scratch.data(), tmpl.data(), std::min<std::size_t>(tmpl.size(), n));
         return scratch.data();
     }
     void commit() noexcept { frames.emplace_back(scratch); }
@@ -54,22 +55,20 @@ struct MockTx {
     void release() noexcept { ++rxIdx; }
 };
 
-net::Endpoints makeEndpoints() {
+net::Endpoints makeEndpoints(std::uint16_t srcPort, std::uint16_t dstPort) {
     return net::Endpoints{
         .srcMac  = {0x11, 0x22, 0x33, 0x44, 0x55, 0x66},
         .dstMac  = {0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff},
         .srcIp   = net::ipv4(10, 0, 0, 1),
         .dstIp   = net::ipv4(10, 0, 0, 2),
-        .srcPort = 40000,
-        .dstPort = 41000};
+        .srcPort = srcPort,
+        .dstPort = dstPort};
 }
 
 void testMarketDataFrame() {
     ExchangeSession<IoMode::Dpdk, MockTx> ex{};
     MockTx tx;
-    ex.prepareDpdk(tx, makeEndpoints());
-
-    CHECK_EQ(tx.tmpl.size(), net::kL2L3L4Overhead);
+    ex.prepareDpdk(tx, makeEndpoints(40000, 41000), makeEndpoints(40001, 41001));
 
     ex.injectSynthetic(Side::Buy, 5000, 100, 1000);
 
@@ -112,7 +111,7 @@ void testMarketDataFrame() {
 void testOrderEntryRx() {
     ExchangeSession<IoMode::Dpdk, MockTx> ex{};
     MockTx tx;
-    ex.prepareDpdk(tx, makeEndpoints());
+    ex.prepareDpdk(tx, makeEndpoints(40000, 41000), makeEndpoints(40001, 41001));
 
     ex.injectSynthetic(Side::Sell, 5200, 100, 1000);
     tx.frames.clear();
@@ -139,20 +138,27 @@ void testOrderEntryRx() {
     ex.pollOrderEntry(2000);
 
     CHECK_EQ(ex.bestAsk(), kNoPrice);
-    CHECK_EQ(tx.frames.size(), 1u);
-    if (!tx.frames.empty()) {
-        const auto& f = tx.frames.front();
-        std::span<const std::byte> fr{reinterpret_cast<const std::byte*>(f.data()), f.size()};
-        auto payload = fr.subspan(net::kL2L3L4Overhead);
-        int msgs = 0;
-        char msgType = 0;
-        mold::forEachMessage(payload, [&](std::uint64_t, std::span<const std::byte> m) {
-            ++msgs;
-            if (!m.empty()) msgType = static_cast<char>(m[0]);
-        });
-        CHECK_EQ(msgs, 1);
-        CHECK_EQ(msgType, 'E');
+    CHECK_EQ(tx.frames.size(), 3u);
+
+    int mdCount = 0;
+    int oeCount = 0;
+    char mdMsg = 0;
+    for (const auto& fv : tx.frames) {
+        std::span<const std::byte> fr{reinterpret_cast<const std::byte*>(fv.data()), fv.size()};
+        const std::uint16_t dstPort = mold::getU16(fr.data() + 36);
+        if (dstPort == 41000) {
+            ++mdCount;
+            mold::forEachMessage(fr.subspan(net::kL2L3L4Overhead),
+                                 [&](std::uint64_t, std::span<const std::byte> m) {
+                if (!m.empty()) mdMsg = static_cast<char>(m[0]);
+            });
+        } else if (dstPort == 41001) {
+            ++oeCount;
+        }
     }
+    CHECK_EQ(mdCount, 1);
+    CHECK_EQ(oeCount, 2);
+    CHECK_EQ(mdMsg, 'E');
 }
 
 }
