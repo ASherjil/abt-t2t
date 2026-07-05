@@ -24,3 +24,9 @@ add_executable(dutsession_test dutsession_test.cpp)
 target_include_directories(dutsession_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(dutsession_test PRIVATE abt::dut abt::flags fmt::fmt)
 add_test(NAME dutsession_test COMMAND dutsession_test)
+
+# t2t_test exercises the tick-to-trade latency recorder.
+add_executable(t2t_test t2t_test.cpp)
+target_include_directories(t2t_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(t2t_test PRIVATE abt::dut abt::flags fmt::fmt)
+add_test(NAME t2t_test COMMAND t2t_test)

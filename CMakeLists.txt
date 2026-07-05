@@ -74,9 +74,11 @@ target_link_libraries(abt_config PUBLIC abt_sim PRIVATE tomlplusplus::tomlpluspl
 # ---------------------------------------------------------------------------
 # abt_dut : DUT-side latency-critical order book (ITCH feed builder; t2t harness to come).
 # ---------------------------------------------------------------------------
-add_library(abt_dut STATIC src/dut/BookBuilder.cpp)
+add_library(abt_dut STATIC
+    src/dut/BookBuilder.cpp
+    src/dut/T2tRecorder.cpp)
 add_library(abt::dut ALIAS abt_dut)
-target_link_libraries(abt_dut PUBLIC abt_protocol abt_lob PRIVATE abt_flags)
+target_link_libraries(abt_dut PUBLIC abt_protocol abt_lob PRIVATE abt_flags fmt::fmt)
 
 add_subdirectory(apps)
 
