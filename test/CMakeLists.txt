@@ -14,6 +14,12 @@ target_include_directories(config_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(config_test PRIVATE abt::config abt::flags fmt::fmt)
 add_test(NAME config_test COMMAND config_test)
 
+# histogram_test smoke-tests the vendored HdrHistogram binding.
+add_executable(histogram_test histogram_test.cpp)
+target_include_directories(histogram_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(histogram_test PRIVATE abt::dut abt::flags fmt::fmt)
+add_test(NAME histogram_test COMMAND histogram_test)
+
 # dutbook_test exercises the DUT-side feed builder; dutsession_test drives the whole t2t loop.
 add_executable(dutbook_test dutbook_test.cpp)
 target_include_directories(dutbook_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})

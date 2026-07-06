@@ -17,13 +17,31 @@ endif()
 include(cmake/CompilerWarnings.cmake)
 
 find_package(fmt REQUIRED)
+find_package(Threads REQUIRED)
+
+include(FetchContent)
 
 # TOML config (toml++) — the exchange-sim binary reads config/exchange_sim.toml at runtime.
-include(FetchContent)
 FetchContent_Declare(tomlplusplus
     GIT_REPOSITORY https://github.com/marzer/tomlplusplus.git
     GIT_TAG v3.4.0)
 FetchContent_MakeAvailable(tomlplusplus)
+
+# Lock-free SPSC ring (Eric Rigtorp) — decouples the latency-critical thread from the histogram
+# consumer thread in the tick-to-trade measurement pipeline. Header-only.
+FetchContent_Declare(spscqueue
+    GIT_REPOSITORY https://github.com/rigtorp/SPSCQueue.git
+    GIT_TAG v1.1)
+FetchContent_MakeAvailable(spscqueue)
+
+# HdrHistogram (official C library) — nanosecond-resolution latency histogram, recorded off the
+# hot path in the consumer thread. Same choice as ABTRDA3.
+set(HDR_HISTOGRAM_BUILD_PROGRAMS OFF CACHE BOOL "" FORCE)
+set(HDR_HISTOGRAM_BUILD_SHARED OFF CACHE BOOL "" FORCE)
+FetchContent_Declare(hdrhistogram
+    GIT_REPOSITORY https://github.com/HdrHistogram/HdrHistogram_c.git
+    GIT_TAG 0.11.10)
+FetchContent_MakeAvailable(hdrhistogram)
 
 # Kernel-bypass transports (DPDK / Verbs / AF_XDP / ef_vi) live in the sibling ABTRDA3
 # repo, which owns all NIC/EAL/hugepage init. OFF by default: enabling it runs ABTRDA3's
@@ -76,9 +94,12 @@ target_link_libraries(abt_config PUBLIC abt_sim PRIVATE tomlplusplus::tomlpluspl
 # ---------------------------------------------------------------------------
 add_library(abt_dut STATIC
     src/dut/BookBuilder.cpp
-    src/dut/T2tRecorder.cpp)
+    src/dut/T2tRecorder.cpp
+    src/util/Histogram.cpp)
 add_library(abt::dut ALIAS abt_dut)
-target_link_libraries(abt_dut PUBLIC abt_protocol abt_lob PRIVATE abt_flags fmt::fmt)
+target_link_libraries(abt_dut
+    PUBLIC abt_protocol abt_lob SPSCQueue::SPSCQueue Threads::Threads
+    PRIVATE abt_flags fmt::fmt hdr_histogram_static)
 
 add_subdirectory(apps)
 
