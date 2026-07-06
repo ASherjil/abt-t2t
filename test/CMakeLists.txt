@@ -14,6 +14,12 @@ target_include_directories(config_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(config_test PRIVATE abt::config abt::flags fmt::fmt)
 add_test(NAME config_test COMMAND config_test)
 
+# quoter_test exercises the market-making quoter strategy.
+add_executable(quoter_test quoter_test.cpp)
+target_include_directories(quoter_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(quoter_test PRIVATE abt::dut abt::flags fmt::fmt)
+add_test(NAME quoter_test COMMAND quoter_test)
+
 # histogram_test smoke-tests the vendored HdrHistogram binding.
 add_executable(histogram_test histogram_test.cpp)
 target_include_directories(histogram_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})

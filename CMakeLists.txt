@@ -94,6 +94,7 @@ target_link_libraries(abt_config PUBLIC abt_sim PRIVATE tomlplusplus::tomlpluspl
 # ---------------------------------------------------------------------------
 add_library(abt_dut STATIC
     src/dut/BookBuilder.cpp
+    src/dut/QuoterStrategy.cpp
     src/dut/T2tRecorder.cpp
     src/util/Histogram.cpp)
 add_library(abt::dut ALIAS abt_dut)
