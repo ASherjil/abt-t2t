@@ -34,7 +34,7 @@ net::MacAddr parseMac(std::string_view s) noexcept {
         acc    = 0;
         digits = 0;
     };
-    for (char c : s) {
+    for (const char c : s) {
         if (c == ':' || c == '-') {
             flush();
             continue;
@@ -60,7 +60,7 @@ std::uint32_t parseIp(std::string_view s) noexcept {
         }
         acc = 0;
     };
-    for (char c : s) {
+    for (const char c : s) {
         if (c == '.') {
             flush();
             continue;

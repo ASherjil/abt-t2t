@@ -253,7 +253,7 @@ inline void OrderBook::free(Handle h) noexcept {
 }
 
 inline void OrderBook::unlink(Level& lvl, Handle h) noexcept {
-    Order& o = m_pool[h];
+    const Order& o = m_pool[h];
     if (o.prev != kNilHandle) {
         m_pool[o.prev].next = o.next;
     } else {
@@ -273,7 +273,12 @@ Quantity OrderBook::matchLevel(Level& lvl, OrderId aggId, Side aggSide, Quantity
         Order&         r             = m_pool[rh];
         const Quantity fill          = qty < r.qty ? qty : r.qty;
         const bool     restingFilled = (fill == r.qty);
-        sink.onTrade(Trade{r.id, aggId, r.price, fill, aggSide, restingFilled});
+        sink.onTrade(Trade{.restingId     = r.id,
+                           .aggressorId   = aggId,
+                           .price         = r.price,
+                           .qty           = fill,
+                           .aggressorSide = aggSide,
+                           .restingFilled = restingFilled});
         qty -= fill;
         r.qty -= fill;
         lvl.totalQty -= fill;

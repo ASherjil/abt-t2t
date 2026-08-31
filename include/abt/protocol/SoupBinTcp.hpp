@@ -79,8 +79,8 @@ inline void formatSeq(wire::Alpha<20>& f, std::uint64_t v) noexcept {
         tmp[--i] = static_cast<char>('0' + (v % 10));
         v /= 10;
     } while (v && i > 0);
-    std::size_t digits = static_cast<std::size_t>(20 - i);
-    std::size_t pad    = 20 - digits;
+    const std::size_t digits = static_cast<std::size_t>(20 - i);
+    const std::size_t pad    = 20 - digits;
     for (std::size_t k = 0; k < pad; ++k) {
         f.chars[k] = ' ';
     }
@@ -89,7 +89,7 @@ inline void formatSeq(wire::Alpha<20>& f, std::uint64_t v) noexcept {
 
 inline std::uint64_t parseSeq(const wire::Alpha<20>& f) noexcept {
     std::uint64_t v = 0;
-    for (char c : f.chars) {
+    for (const char c : f.chars) {
         if (c >= '0' && c <= '9') {
             v = v * 10 + static_cast<std::uint64_t>(c - '0');
         }
@@ -149,7 +149,7 @@ inline std::span<const std::byte> packLoginRequest(std::byte* buf, std::string_v
 }
 
 inline std::span<const std::byte> packLoginRejected(std::byte* buf, RejectReason r) noexcept {
-    LoginRejected j{static_cast<char>(r)};
+    const LoginRejected j{static_cast<char>(r)};
     return pack(buf, Type::LoginRejected, asBytes(j));
 }
 

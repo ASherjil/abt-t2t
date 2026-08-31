@@ -39,7 +39,7 @@ itch::AddOrder mkAdd(OrderId ref, char side, Quantity shares, Price price) {
 struct JoinBid {
     Quantity qty;
 
-    dut::QuoteTargets onBook(const dut::BookBuilder& book, const dut::Account&) noexcept {
+    [[nodiscard]] dut::QuoteTargets onBook(const dut::BookBuilder& book, const dut::Account&) const noexcept {
         dut::QuoteTargets t{};
         if (book.bestBid() != kNoPrice) {
             t.quoteBid = true;
@@ -77,7 +77,7 @@ struct FakeStampSource {
         if (idx < queue.size()) {
             return queue[idx++];
         }
-        return dut::TxCompletion{0, 0, 0, 0};
+        return dut::TxCompletion{.userRef = 0, .sec = 0, .nsec = 0, .status = 0};
     }
 };
 
@@ -158,7 +158,7 @@ void test_quote_lifecycle_through_session() {
 void test_take_and_t2t() {
     dut::DutConfig cfg = baseCfg();
     cfg.firstUserRef   = 1;
-    dut::DutSession<dut::IoMode::Loopback, TakeOnce> sess(cfg, TakeOnce{101, 5u});
+    dut::DutSession<dut::IoMode::Loopback, TakeOnce> sess(cfg, TakeOnce{.trigger = 101, .qty = 5u});
 
     mold::Packer                packer("SESSION01", 1);
     std::array<std::byte, 2048> buf{};
@@ -187,7 +187,7 @@ void test_take_and_t2t() {
     CHECK(sess.t2tSw().min() > 0 && sess.t2tSw().min() < 1'000'000);
 
     FakeStampSource src{};
-    src.queue.push_back(dut::TxCompletion{1u, 0u, 1850u, 1u});
+    src.queue.push_back(dut::TxCompletion{.userRef = 1u, .sec = 0u, .nsec = 1850u, .status = 1u});
     sess.pollTxCompletions(src);
     (void)sess.t2t().drain();
     CHECK_EQ(sess.t2t().count(), 1);
@@ -195,7 +195,7 @@ void test_take_and_t2t() {
     CHECK_EQ(sess.t2t().percentile(50.0), 850);
 
     FakeStampSource stale{};
-    stale.queue.push_back(dut::TxCompletion{999u, 0u, 5000u, 1u});
+    stale.queue.push_back(dut::TxCompletion{.userRef = 999u, .sec = 0u, .nsec = 5000u, .status = 1u});
     sess.pollTxCompletions(stale);
     (void)sess.t2t().drain();
     CHECK_EQ(sess.t2t().count(), 1);
@@ -338,10 +338,10 @@ struct MockIo {
 
     RxFrame tryReceive() noexcept {
         if (rxIdx >= inbound.size()) {
-            return RxFrame{{}, 0, 0, 0};
+            return RxFrame{.data = {}, .sec = 0, .nsec = 0, .status = 0};
         }
         rxCur = inbound[rxIdx];
-        return RxFrame{{rxCur.data(), rxCur.size()}, 0, 0, 1};
+        return RxFrame{.data = {rxCur.data(), rxCur.size()}, .sec = 0, .nsec = 0, .status = 1};
     }
 
     void release() noexcept {
@@ -360,9 +360,9 @@ void test_transport_login_roundtrip() {
 
     sess.sendLogin("SIM0000001", "DUT001");
     CHECK_EQ(io.frames.size(), 1u);
-    std::span<const std::byte> fr{reinterpret_cast<const std::byte*>(io.frames[0].data()),
-                                  io.frames[0].size()};
-    soup::Packet               sp{};
+    const std::span<const std::byte> fr{reinterpret_cast<const std::byte*>(io.frames[0].data()),
+                                        io.frames[0].size()};
+    soup::Packet                     sp{};
     CHECK(soup::parse(fr.subspan(net::kL2L3L4Overhead), sp) != 0);
     CHECK(sp.type == soup::Type::LoginRequest);
     soup::LoginRequest lr{};

@@ -133,9 +133,9 @@ void test_soup_stream_two_packets() {
     const auto                 b        = soup::packServerHeartbeat(buf.data() + a.size());
     const std::size_t          totalLen = a.size() + b.size();
 
-    std::span<const std::byte> stream{buf.data(), totalLen};
-    soup::Packet               p{};
-    const std::size_t          c1 = soup::parse(stream, p);
+    const std::span<const std::byte> stream{buf.data(), totalLen};
+    soup::Packet                     p{};
+    const std::size_t                c1 = soup::parse(stream, p);
     CHECK(c1 > 0);
     CHECK(p.type == soup::Type::SequencedData);
 

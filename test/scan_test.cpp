@@ -43,9 +43,9 @@ void test_scan() {
         return rng;
     };
 
-    for (std::size_t n : sizes) {
+    for (const std::size_t n : sizes) {
         // All zero.
-        std::vector<std::uint32_t> a(n, 0u);
+        const std::vector<std::uint32_t> a(n, 0u);
         checkArray(a);
 
         // Single populated level at each position.

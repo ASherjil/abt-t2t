@@ -126,7 +126,7 @@ void BookBuilder::onAddOrder(const itch::AddOrder& msg) {
     const Side    side  = (msg.side == static_cast<char>(itch::Side::Buy)) ? Side::Buy : Side::Sell;
     const Price   price = static_cast<Price>(msg.price.value());
     const bool    own   = m_ownRefMin != 0 && ref >= m_ownRefMin;
-    m_orders.insertOrAssign(ref, Resting{price, shares, side, own});
+    m_orders.insertOrAssign(ref, Resting{.price = price, .shares = shares, .side = side, .own = own});
     if (own) [[unlikely]] {
         ++m_own;
         return;
@@ -150,7 +150,8 @@ void BookBuilder::onOrderReplace(const itch::OrderReplace& msg) {
         return;
     }
     const Price price = static_cast<Price>(msg.price.value());
-    m_orders.insertOrAssign(msg.newOrderRef.value(), Resting{price, shares, orig.side, orig.own});
+    m_orders.insertOrAssign(msg.newOrderRef.value(),
+                            Resting{.price = price, .shares = shares, .side = orig.side, .own = orig.own});
     if (orig.own) [[unlikely]] {
         ++m_own;
         return;

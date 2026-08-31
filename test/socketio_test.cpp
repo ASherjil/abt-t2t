@@ -31,7 +31,7 @@ std::span<const std::byte> bytesOf(const T& t) {
 }
 
 void setRecvTimeout(int fd, int ms) {
-    timeval tv{ms / 1000, (ms % 1000) * 1000};
+    timeval tv{.tv_sec = ms / 1000, .tv_usec = static_cast<__suseconds_t>((ms % 1000) * 1000)};
     ::setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof tv);
 }
 

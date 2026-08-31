@@ -43,8 +43,8 @@ void testChecksum() {
 }
 
 void testTemplate() {
-    net::UdpFramer fr{makeEndpoints()};
-    auto           h = fr.header();
+    const net::UdpFramer fr{makeEndpoints()};
+    auto                 h = fr.header();
 
     CHECK_EQ(h.size(), net::kL2L3L4Overhead);
     CHECK_EQ(byteAt(h, 0), 0xaa);
@@ -66,7 +66,7 @@ void testTemplate() {
 }
 
 void testPatch() {
-    net::UdpFramer fr{makeEndpoints()};
+    const net::UdpFramer fr{makeEndpoints()};
 
     constexpr std::size_t                                    payloadLen = 18;
     std::array<std::byte, net::kL2L3L4Overhead + payloadLen> frame{};

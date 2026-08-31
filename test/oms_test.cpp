@@ -236,7 +236,7 @@ void test_rejects() {
     CHECK_EQ(oms.slot(Side::Sell).userRef, 2u);
     CHECK_EQ(oms.slot(Side::Sell).price, 101);
 
-    dut::QuoteTargets t{};
+    const dut::QuoteTargets t{};
     (void)oms.reconcile(t, out);
     CHECK(oms.slot(Side::Sell).state == QuoteState::PendingCancel);
     oms.onAck(bytesOf(cancelReject(2)));

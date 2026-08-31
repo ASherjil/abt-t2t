@@ -205,8 +205,8 @@ void Venue<Sink>::onCancelOrder(const ouch::CancelOrder& x, std::uint64_t ts) {
         emitCancelReject(user, ts);
         return;
     }
-    const OrderId ref  = *refp;
-    LiveOrder*    live = m_live.find(ref);
+    const OrderId    ref  = *refp;
+    const LiveOrder* live = m_live.find(ref);
     if (live == nullptr) {
         emitCancelReject(user, ts);
         return;
@@ -320,7 +320,7 @@ void Venue<Sink>::mirrorAdd(OrderId ref, Side side, std::uint32_t wirePrice, Qua
 template <class Sink>
 void Venue<Sink>::mirrorExecute(OrderId ref, Quantity shares, std::uint64_t ts) {
     ++m_mirror.executes;
-    LiveOrder* live = m_live.find(ref);
+    const LiveOrder* live = m_live.find(ref);
     if (live == nullptr) {
         ++m_mirror.unknownRef;
         return;
@@ -343,7 +343,7 @@ void Venue<Sink>::mirrorExecute(OrderId ref, Quantity shares, std::uint64_t ts) 
 template <class Sink>
 void Venue<Sink>::mirrorCancel(OrderId ref, Quantity shares, std::uint64_t) {
     ++m_mirror.cancels;
-    LiveOrder* live = m_live.find(ref);
+    const LiveOrder* live = m_live.find(ref);
     if (live == nullptr) {
         ++m_mirror.unknownRef;
         return;
@@ -363,7 +363,7 @@ void Venue<Sink>::mirrorCancel(OrderId ref, Quantity shares, std::uint64_t) {
 template <class Sink>
 void Venue<Sink>::mirrorDelete(OrderId ref, std::uint64_t) {
     ++m_mirror.deletes;
-    LiveOrder* live = m_live.find(ref);
+    const LiveOrder* live = m_live.find(ref);
     if (live == nullptr) {
         ++m_mirror.unknownRef;
         return;
@@ -375,7 +375,7 @@ template <class Sink>
 void Venue<Sink>::mirrorReplace(OrderId origRef, OrderId newRef, Quantity shares, std::uint32_t wirePrice,
                                 std::uint64_t ts) {
     ++m_mirror.replaces;
-    LiveOrder* live = m_live.find(origRef);
+    const LiveOrder* live = m_live.find(origRef);
     if (live == nullptr) {
         ++m_mirror.unknownRef;
         return;
@@ -389,8 +389,8 @@ void Venue<Sink>::mirrorReplace(OrderId origRef, OrderId newRef, Quantity shares
 template <class Sink>
 void Venue<Sink>::resetDay(std::uint64_t ts) {
     while (!m_clientRefs.empty()) {
-        const OrderId ref  = m_clientRefs.back();
-        LiveOrder*    live = m_live.find(ref);
+        const OrderId    ref  = m_clientRefs.back();
+        const LiveOrder* live = m_live.find(ref);
         if (live == nullptr) {
             m_clientRefs.pop_back();
             continue;
@@ -502,7 +502,7 @@ void Venue<Sink>::handleTrade(const Trade& t, std::uint64_t ts, bool aggClient, 
     if (aggClient) {
         emitExecuted(aggUser, t.qty, t.price, 'R', match, ts);
     }
-    LiveOrder* live = m_live.find(t.restingId);
+    const LiveOrder* live = m_live.find(t.restingId);
     if (live == nullptr) {
         return;
     }
@@ -551,7 +551,7 @@ void Venue<Sink>::removeReal(OrderId ref, const LiveOrder& live) {
 
 template <class Sink>
 void Venue<Sink>::fillClient(OrderId ref, Quantity qty, std::uint64_t ts) {
-    LiveOrder* live = m_live.find(ref);
+    const LiveOrder* live = m_live.find(ref);
     if (live == nullptr || qty == 0) {
         return;
     }

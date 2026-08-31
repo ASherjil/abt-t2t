@@ -20,6 +20,7 @@ Checks: >
   modernize-use-designated-initializers,
   modernize-loop-convert,
   performance-*,
+  -performance-enum-size,
   readability-make-member-function-const,
   readability-const-return-type,
   readability-redundant-smartptr-get,

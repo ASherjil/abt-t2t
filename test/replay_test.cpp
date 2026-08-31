@@ -51,7 +51,7 @@ std::vector<std::byte> systemEvent(char code, std::uint64_t ts) {
     return bytesOf(s);
 }
 
-constexpr std::uint64_t kOpen = (9ull * 3600 + 30 * 60) * 1'000'000'000ull;
+constexpr std::uint64_t kOpen = (9ull * 3600 + static_cast<unsigned long long>(30 * 60)) * 1'000'000'000ull;
 
 std::vector<std::vector<std::byte>> makeDay(std::uint64_t spanNs, int steps) {
     std::vector<std::vector<std::byte>> out;

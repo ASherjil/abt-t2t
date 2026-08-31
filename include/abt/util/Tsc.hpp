@@ -48,7 +48,7 @@ namespace detail {
     static const double value = []() noexcept {
         constexpr int kTrials         = 5;
         double        ratios[kTrials] = {};
-        for (int trial = 0; trial < kTrials; ++trial) {
+        for (double& ratio : ratios) {
             const std::uint64_t c0 = now();
             const std::uint64_t t0 = detail::monoNs();
             std::uint64_t       t  = t0;
@@ -59,7 +59,7 @@ namespace detail {
             const std::uint64_t c1 = now();
             const std::uint64_t dc = c1 - c0;
             const std::uint64_t dt = t1 - t0;
-            ratios[trial]          = (dc == 0) ? 1.0 : static_cast<double>(dt) / static_cast<double>(dc);
+            ratio                  = (dc == 0) ? 1.0 : static_cast<double>(dt) / static_cast<double>(dc);
         }
         for (int i = 1; i < kTrials; ++i) {
             const double key = ratios[i];

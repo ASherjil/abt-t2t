@@ -85,7 +85,7 @@ struct Fixture {
 
 Fixture makeDay() {
     Fixture             f;
-    const std::uint64_t open = 9ull * 3600 + 30 * 60;
+    const std::uint64_t open = 9ull * 3600 + static_cast<unsigned long long>(30 * 60);
     std::uint64_t       ts   = open * 1'000'000'000ull;
     f.messages.push_back(systemEvent('O', ts));
     f.messages.push_back(stockDirectory(1, "AAPL", ts));

@@ -167,7 +167,7 @@ std::uint32_t OrderManager::allocRef(Side side) noexcept {
     if (m_nextUserRef == 0) {
         m_nextUserRef = 1;
     }
-    m_refs[ref % kRefRing] = RefSide{ref, side};
+    m_refs[ref % kRefRing] = RefSide{.userRef = ref, .side = side};
     return ref;
 }
 

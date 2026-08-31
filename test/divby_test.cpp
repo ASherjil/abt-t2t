@@ -27,7 +27,7 @@ void checkDivisor(std::uint32_t d) {
     // A few large dividends near the 32-bit ceiling.
     const std::uint32_t bigs[] = {0xFFFFFFFFu, 0xFFFFFFFEu, 0x80000000u, 0x7FFFFFFFu, 123456789u};
     bool                okBig  = true;
-    for (std::uint32_t n : bigs) {
+    for (const std::uint32_t n : bigs) {
         if (div(n) != n / d) {
             okBig = false;
         }
@@ -38,7 +38,7 @@ void checkDivisor(std::uint32_t d) {
 void test_divby() {
     const std::uint32_t divisors[] = {1u,   2u,   3u,   4u,    5u,    7u,     8u,     10u,
                                       100u, 128u, 256u, 1000u, 1024u, 12345u, 65535u, 65536u};
-    for (std::uint32_t d : divisors) {
+    for (const std::uint32_t d : divisors) {
         checkDivisor(d);
     }
 }

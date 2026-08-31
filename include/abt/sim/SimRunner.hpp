@@ -135,7 +135,9 @@ int runSim(const SimConfig& cfg, typename T::Type& backend, volatile std::sig_at
 }
 
 [[nodiscard]] inline NicSpec nicOf(const SimConfig& cfg) {
-    return NicSpec{cfg.transport.interface, cfg.transport.driver, cfg.transport.cpuCore};
+    return NicSpec{.interface = cfg.transport.interface,
+                   .driver    = cfg.transport.driver,
+                   .cpuCore   = cfg.transport.cpuCore};
 }
 
 }   // namespace abt

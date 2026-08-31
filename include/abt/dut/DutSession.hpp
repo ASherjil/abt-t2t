@@ -185,7 +185,7 @@ DutSession<Mode, Strat, Io>::DutSession(const DutConfig& cfg, Strat strat)
     : m_cfg(cfg),
       m_strat(std::move(strat)),
       m_book(cfg.minPrice, cfg.maxPrice, cfg.tickWire, cfg.maxOrders, cfg.ownRefMin),
-      m_oms(OmsConfig{cfg.symbol, cfg.firstUserRef}),
+      m_oms(OmsConfig{.symbol = cfg.symbol, .firstUserRef = cfg.firstUserRef}),
       m_t2t("t2t_hw", cfg.queueCapacity, 1.0, cfg.sigFigs),
       m_t2tSw("t2t_sw", cfg.queueCapacity, tsc::nsPerTick(), cfg.sigFigs),
       m_proc("proc", cfg.queueCapacity, tsc::nsPerTick(), cfg.sigFigs) {

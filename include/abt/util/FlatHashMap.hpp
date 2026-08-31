@@ -231,8 +231,8 @@ std::size_t FlatHashMap<Key, Value, Empty>::slotFor(Key key) const noexcept {
 
 template <class Key, class Value, Key Empty>
 void FlatHashMap<Key, Value, Empty>::grow() {
-    const std::size_t newCap = (m_mask + 1) * 2;
-    std::vector<Slot> old    = std::move(m_slots);
+    const std::size_t       newCap = (m_mask + 1) * 2;
+    const std::vector<Slot> old    = std::move(m_slots);
     m_slots.assign(newCap, Slot{Empty, Value{}});
     m_mask = newCap - 1;
     m_size = 0;

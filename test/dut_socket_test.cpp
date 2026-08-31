@@ -42,7 +42,7 @@ struct TakeOnce {
 };
 
 void setRecvTimeout(int fd, int ms) {
-    timeval tv{ms / 1000, (ms % 1000) * 1000};
+    timeval tv{.tv_sec = ms / 1000, .tv_usec = static_cast<__suseconds_t>((ms % 1000) * 1000)};
     ::setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof tv);
 }
 
@@ -87,11 +87,11 @@ void test_socket_integration() {
     int md[2];
     CHECK_EQ(::socketpair(AF_UNIX, SOCK_STREAM, 0, oe), 0);
     CHECK_EQ(::socketpair(AF_UNIX, SOCK_DGRAM, 0, md), 0);
-    for (int fd : {oe[0], oe[1], md[0], md[1]}) {
+    for (const int fd : {oe[0], oe[1], md[0], md[1]}) {
         setRecvTimeout(fd, 2000);
     }
 
-    ExchangeConfig                  simCfg{};
+    const ExchangeConfig            simCfg{};
     ExchangeSession<IoMode::Socket> sim{simCfg};
     sim.attachSockets(oe[0], md[0]);
 
@@ -101,7 +101,7 @@ void test_socket_integration() {
     dutCfg.tickWire     = 100;
     dutCfg.symbol       = "AAPL";
     dutCfg.firstUserRef = 1;
-    dut::DutSession<dut::IoMode::Socket, TakeOnce> dutSess(dutCfg, TakeOnce{5200, 5u});
+    dut::DutSession<dut::IoMode::Socket, TakeOnce> dutSess(dutCfg, TakeOnce{.trigger = 5200, .qty = 5u});
     dutSess.attachSockets(oe[1], md[1]);
 
     dutSess.login(simCfg.session, "DUT001");

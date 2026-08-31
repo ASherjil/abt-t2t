@@ -59,10 +59,10 @@ struct MockTx {
 
     RxFrame tryReceive() noexcept {
         if (rxIdx >= inbound.size()) {
-            return RxFrame{{}, 0, 0, 0};
+            return RxFrame{.data = {}, .sec = 0, .nsec = 0, .status = 0};
         }
         rxCur = inbound[rxIdx];
-        return RxFrame{{rxCur.data(), rxCur.size()}, 0, 0, 1};
+        return RxFrame{.data = {rxCur.data(), rxCur.size()}, .sec = 0, .nsec = 0, .status = 1};
     }
 
     void release() noexcept {
@@ -91,8 +91,8 @@ void testMarketDataFrame() {
         return;
     }
 
-    const auto&                f = tx.frames.front();
-    std::span<const std::byte> frame{reinterpret_cast<const std::byte*>(f.data()), f.size()};
+    const auto&                      f = tx.frames.front();
+    const std::span<const std::byte> frame{reinterpret_cast<const std::byte*>(f.data()), f.size()};
 
     CHECK(frame.size() > net::kL2L3L4Overhead);
     CHECK_EQ(std::to_integer<int>(frame[12]), 0x08);
@@ -142,8 +142,8 @@ void testLoginHandshake() {
     CHECK_EQ(ex.stats().logins, 1u);
     CHECK(ex.clientSeen());
     CHECK_EQ(tx.frames.size(), 1u);
-    const auto&                fv = tx.frames[0];
-    std::span<const std::byte> fr{reinterpret_cast<const std::byte*>(fv.data()), fv.size()};
+    const auto&                      fv = tx.frames[0];
+    const std::span<const std::byte> fr{reinterpret_cast<const std::byte*>(fv.data()), fv.size()};
     CHECK_EQ(mold::getU16(fr.data() + 36), 41001u);
     soup::Packet sp{};
     CHECK(soup::parse(fr.subspan(net::kL2L3L4Overhead), sp) != 0);
@@ -186,8 +186,8 @@ void testOrderEntryRx() {
     int  oeCount = 0;
     char mdMsg   = 0;
     for (const auto& fv : tx.frames) {
-        std::span<const std::byte> fr{reinterpret_cast<const std::byte*>(fv.data()), fv.size()};
-        const std::uint16_t        dstPort = mold::getU16(fr.data() + 36);
+        const std::span<const std::byte> fr{reinterpret_cast<const std::byte*>(fv.data()), fv.size()};
+        const std::uint16_t              dstPort = mold::getU16(fr.data() + 36);
         if (dstPort == 41000) {
             ++mdCount;
             mold::forEachMessage(fr.subspan(net::kL2L3L4Overhead),
