@@ -98,6 +98,15 @@ enum class CancelReason : char {
     SystemCancel        = 'Z',
 };
 
+enum class RejectReason : std::uint16_t {
+    InvalidSide        = 0x0009,
+    InvalidQuantity    = 0x0013,
+    ReplaceNotAllowed  = 0x0015,
+    InvalidSymbol      = 0x0017,
+    InvalidPrice       = 0x001D,
+    Other              = 0x000F,
+};
+
 enum class OptionTag : std::uint8_t {
     SecondaryOrdRefNum  = 1,
     Firm                = 2,
@@ -244,6 +253,14 @@ struct Rejected {
 };
 static_assert(sizeof(Rejected) == 31);
 
+struct CancelReject {
+    char        type;
+    timestamp_t timestamp;
+    userref_t   userRefNum;
+    u16be       appendageLength;
+};
+static_assert(sizeof(CancelReject) == 15);
+
 template <class M>
 inline constexpr bool is_wire_message_v =
     std::is_trivially_copyable_v<M> && std::is_standard_layout_v<M> && alignof(M) == 1;
@@ -257,6 +274,7 @@ static_assert(is_wire_message_v<Replaced>);
 static_assert(is_wire_message_v<Canceled>);
 static_assert(is_wire_message_v<Executed>);
 static_assert(is_wire_message_v<Rejected>);
+static_assert(is_wire_message_v<CancelReject>);
 
 inline std::size_t writeOption(std::span<std::byte> out, OptionTag tag,
                                std::span<const std::byte> value) noexcept {

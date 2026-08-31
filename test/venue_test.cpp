@@ -198,6 +198,127 @@ void test_replace_noncrossing() {
     CHECK_EQ(v.book().volumeAt(Side::Buy, 5100), 150u);
 }
 
+void test_reject_paths() {
+    RecSink sink;
+    Venue<RecSink> v(sink, "AAPL", 1, 1, 100000, 100);
+
+    v.onEnterOrder(makeEnter(1, 'B', 0, "AAPL", kPx52), 1'000);
+    CHECK_EQ(sink.oe.size(), 1u);
+    CHECK(type_of(sink.oe[0]) == 'J');
+    auto j = decode<ouch::Rejected>(sink.oe[0]);
+    CHECK_EQ(j.userRefNum.value(), 1u);
+    CHECK_EQ(j.reason.value(), static_cast<std::uint16_t>(ouch::RejectReason::InvalidQuantity));
+    CHECK(j.clOrdId.view() == "CID");
+    sink.clear();
+
+    v.onEnterOrder(makeEnter(2, 'B', 100, "MSFT", kPx52), 1'000);
+    j = decode<ouch::Rejected>(sink.oe[0]);
+    CHECK_EQ(j.reason.value(), static_cast<std::uint16_t>(ouch::RejectReason::InvalidSymbol));
+    sink.clear();
+
+    v.onEnterOrder(makeEnter(3, 'B', 100, "AAPL", 520050), 1'000);
+    j = decode<ouch::Rejected>(sink.oe[0]);
+    CHECK_EQ(j.reason.value(), static_cast<std::uint16_t>(ouch::RejectReason::InvalidPrice));
+    sink.clear();
+
+    v.onEnterOrder(makeEnter(4, 'B', 100, "AAPL", 100000000ull), 1'000);
+    j = decode<ouch::Rejected>(sink.oe[0]);
+    CHECK_EQ(j.reason.value(), static_cast<std::uint16_t>(ouch::RejectReason::InvalidPrice));
+    sink.clear();
+
+    v.onEnterOrder(makeEnter(5, 'Q', 100, "AAPL", kPx52), 1'000);
+    j = decode<ouch::Rejected>(sink.oe[0]);
+    CHECK_EQ(j.reason.value(), static_cast<std::uint16_t>(ouch::RejectReason::InvalidSide));
+    CHECK_EQ(sink.md.size(), 0u);
+    CHECK(v.book().empty());
+}
+
+void test_cancel_reject() {
+    RecSink sink;
+    Venue<RecSink> v(sink, "AAPL", 1, 1, 100000, 100);
+    v.onEnterOrder(makeEnter(1000, 'B', 100, "AAPL", kPx52), 1'000);
+    sink.clear();
+
+    ouch::CancelOrder x{};
+    x.type = static_cast<char>(ouch::InType::CancelOrder);
+    x.userRefNum = 4242u;
+    x.quantity = 0u;
+    x.appendageLength = 0;
+    v.onCancelOrder(x, 2'000);
+    CHECK_EQ(sink.oe.size(), 1u);
+    CHECK(type_of(sink.oe[0]) == 'I');
+    CHECK_EQ(decode<ouch::CancelReject>(sink.oe[0]).userRefNum.value(), 4242u);
+    CHECK_EQ(sink.md.size(), 0u);
+    sink.clear();
+
+    x.userRefNum = 1000u;
+    x.quantity = 100u;
+    v.onCancelOrder(x, 2'000);
+    CHECK_EQ(sink.oe.size(), 1u);
+    CHECK(type_of(sink.oe[0]) == 'I');
+    CHECK_EQ(v.book().volumeAt(Side::Buy, 5200), 100u);
+}
+
+void test_replace_unknown_rejected() {
+    RecSink sink;
+    Venue<RecSink> v(sink, "AAPL", 1, 1, 100000, 100);
+
+    ouch::ReplaceOrder u{};
+    u.type = static_cast<char>(ouch::InType::ReplaceOrder);
+    u.origUserRefNum = 77u;
+    u.userRefNum = 78u;
+    u.quantity = 10u;
+    u.price = kPx51;
+    u.clOrdId = std::string_view{"R1"};
+    v.onReplaceOrder(u, 1'000);
+    CHECK_EQ(sink.oe.size(), 1u);
+    CHECK(type_of(sink.oe[0]) == 'J');
+    const auto j = decode<ouch::Rejected>(sink.oe[0]);
+    CHECK_EQ(j.userRefNum.value(), 78u);
+    CHECK_EQ(j.reason.value(), static_cast<std::uint16_t>(ouch::RejectReason::ReplaceNotAllowed));
+}
+
+void test_ioc_partial_fill_cancels_rest() {
+    RecSink sink;
+    Venue<RecSink> v(sink, "AAPL", 1, 1, 100000, 100);
+    v.injectSynthetic(Side::Sell, 5200, 40, 1'000);
+    sink.clear();
+
+    auto o = makeEnter(1000, 'B', 100, "AAPL", kPx52);
+    o.timeInForce = static_cast<char>(ouch::TimeInForce::IOC);
+    v.onEnterOrder(o, 2'000);
+
+    CHECK_EQ(sink.oe.size(), 3u);
+    CHECK(type_of(sink.oe[0]) == 'A');
+    CHECK(decode<ouch::Accepted>(sink.oe[0]).orderState == static_cast<char>(ouch::OrderState::Dead));
+    CHECK(type_of(sink.oe[1]) == 'E');
+    CHECK_EQ(decode<ouch::Executed>(sink.oe[1]).quantity.value(), 40u);
+    CHECK(type_of(sink.oe[2]) == 'C');
+    const auto c = decode<ouch::Canceled>(sink.oe[2]);
+    CHECK_EQ(c.quantity.value(), 60u);
+    CHECK(c.reason == static_cast<char>(ouch::CancelReason::Ioc));
+
+    CHECK_EQ(sink.md.size(), 1u);
+    CHECK(type_of(sink.md[0]) == 'E');
+    CHECK(v.book().empty());
+}
+
+void test_ioc_no_liquidity() {
+    RecSink sink;
+    Venue<RecSink> v(sink, "AAPL", 1, 1, 100000, 100);
+
+    auto o = makeEnter(1000, 'S', 100, "AAPL", kPx52);
+    o.timeInForce = static_cast<char>(ouch::TimeInForce::IOC);
+    v.onEnterOrder(o, 2'000);
+
+    CHECK_EQ(sink.oe.size(), 2u);
+    CHECK(type_of(sink.oe[0]) == 'A');
+    CHECK(type_of(sink.oe[1]) == 'C');
+    CHECK_EQ(decode<ouch::Canceled>(sink.oe[1]).quantity.value(), 100u);
+    CHECK_EQ(sink.md.size(), 0u);
+    CHECK(v.book().empty());
+}
+
 }
 
 int main() {
@@ -206,5 +327,10 @@ int main() {
     test_full_cancel();
     test_partial_cancel();
     test_replace_noncrossing();
+    test_reject_paths();
+    test_cancel_reject();
+    test_replace_unknown_rejected();
+    test_ioc_partial_fill_cancels_rest();
+    test_ioc_no_liquidity();
     return abt::test::summary("venue_test");
 }

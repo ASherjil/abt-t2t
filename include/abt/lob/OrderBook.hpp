@@ -18,6 +18,8 @@ public:
     template <class Sink>
     Handle add(OrderId id, Side side, Price price, Quantity qty, Sink&& sink);
     Handle add(OrderId id, Side side, Price price, Quantity qty);
+    template <class Sink>
+    Quantity match(OrderId id, Side side, Price price, Quantity qty, Sink&& sink);
 
     Quantity cancel(Handle h);
     Quantity reduce(Handle h, Quantity newQty);
@@ -72,22 +74,32 @@ Handle OrderBook::add(OrderId id, Side side, Price price, Quantity qty, Sink&& s
     if (qty == 0 || price < m_minPrice || price > m_maxPrice) [[unlikely]] {
         return kNilHandle;
     }
+    const Quantity rem = match(id, side, price, qty, sink);
+    if (rem > 0) {
+        return rest(id, side, price, rem);
+    }
+    return kNilHandle;
+}
+
+template <class Sink>
+Quantity OrderBook::match(OrderId id, Side side, Price price, Quantity qty, Sink&& sink) {
+    if (qty == 0 || price < m_minPrice || price > m_maxPrice) [[unlikely]] {
+        return 0;
+    }
     if (side == Side::Buy) {
         while (qty > 0 && m_bestAsk != kNoPrice && price >= m_bestAsk) {
             Level& lvl = m_askLevels[index(m_bestAsk)];
             qty = matchLevel(lvl, id, Side::Buy, qty, sink);
             if (lvl.totalQty == 0) rescanBestAsk();
         }
-        if (qty > 0) return rest(id, Side::Buy, price, qty);
     } else {
         while (qty > 0 && m_bestBid != kNoPrice && price <= m_bestBid) {
             Level& lvl = m_bidLevels[index(m_bestBid)];
             qty = matchLevel(lvl, id, Side::Sell, qty, sink);
             if (lvl.totalQty == 0) rescanBestBid();
         }
-        if (qty > 0) return rest(id, Side::Sell, price, qty);
     }
-    return kNilHandle;
+    return qty;
 }
 
 inline Handle OrderBook::add(OrderId id, Side side, Price price, Quantity qty) {
