@@ -11,10 +11,11 @@ duration="${1:-10}"
 backend="${2:-verbs}"
 preset="${3:-release}"
 
-cd "$(dirname "$0")/.."
+self="$(readlink -f "$0")"
+cd "$(dirname "${self}")/.."
 
 if [[ "${backend}" != "socket" && "${EUID}" -ne 0 ]]; then
-    exec sudo --preserve-env=HOME "$0" "${duration}" "${backend}" "${preset}"
+    exec sudo --preserve-env=HOME "${self}" "${duration}" "${backend}" "${preset}"
 fi
 
 suffix="_${backend}"
