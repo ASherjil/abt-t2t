@@ -1,11 +1,8 @@
 #pragma once
-//
-// Deterministic synthetic order flow that keeps a live two-sided market on the feed.
-//
 
 #include <cstddef>
 #include <cstdint>
-#include <vector>
+#include <deque>
 
 #include "abt/lob/Types.hpp"
 #include "abt/sim/EngineConfig.hpp"
@@ -19,22 +16,21 @@ public:
 
     void step(std::uint64_t ts);
     void run(std::size_t steps, std::uint64_t tsStart, std::uint64_t tsStep);
-    [[nodiscard]] std::size_t liveCount() const noexcept { return m_live.size(); }
+    [[nodiscard]] std::size_t liveCount() const noexcept;
 
 private:
-    static constexpr std::size_t kMaxTracked = 4096;
-
     std::uint64_t rng() noexcept;
 
-    Market&               m_market;
-    FlowConfig            m_cfg;
-    std::uint64_t         m_state;
-    std::vector<OrderId>  m_live;
+    Market&              m_market;
+    FlowConfig           m_cfg;
+    std::uint64_t        m_state;
+    std::deque<OrderId>  m_live;
 };
 
 template <class Market>
 FlowGenerator<Market>::FlowGenerator(Market& market, const FlowConfig& cfg)
-    : m_market(market), m_cfg(cfg), m_state(cfg.seed ? cfg.seed : 1) {}
+    : m_market(market), m_cfg(cfg), m_state(cfg.seed ? cfg.seed : 1) {
+}
 
 template <class Market>
 void FlowGenerator<Market>::step(std::uint64_t ts) {
@@ -56,8 +52,11 @@ void FlowGenerator<Market>::step(std::uint64_t ts) {
 
     Price tick;
     if (crossing) {
-        if (buy) tick = m_market.bestAsk() != kNoPrice ? m_market.bestAsk() : m_cfg.midTick;
-        else     tick = m_market.bestBid() != kNoPrice ? m_market.bestBid() : m_cfg.midTick;
+        if (buy) {
+            tick = m_market.bestAsk() != kNoPrice ? m_market.bestAsk() : m_cfg.midTick;
+        } else {
+            tick = m_market.bestBid() != kNoPrice ? m_market.bestBid() : m_cfg.midTick;
+        }
     } else {
         const Price off = static_cast<Price>(rng() % static_cast<std::uint64_t>(m_cfg.depthTicks));
         tick = buy ? m_cfg.midTick - m_cfg.halfSpread - off
@@ -67,9 +66,10 @@ void FlowGenerator<Market>::step(std::uint64_t ts) {
     const OrderId ref = m_market.injectSynthetic(side, tick, qty, ts);
     if (!crossing) {
         m_live.push_back(ref);
-        if (m_live.size() > kMaxTracked) {
-            m_live.erase(m_live.begin(),
-                         m_live.begin() + static_cast<std::ptrdiff_t>(kMaxTracked / 2));
+        const std::size_t cap = m_cfg.maxLive == 0 ? 1 : m_cfg.maxLive;
+        while (m_live.size() > cap) {
+            m_market.cancelSynthetic(m_live.front(), ts);
+            m_live.pop_front();
         }
     }
 }
@@ -77,13 +77,22 @@ void FlowGenerator<Market>::step(std::uint64_t ts) {
 template <class Market>
 void FlowGenerator<Market>::run(std::size_t steps, std::uint64_t tsStart, std::uint64_t tsStep) {
     std::uint64_t ts = tsStart;
-    for (std::size_t i = 0; i < steps; ++i, ts += tsStep) step(ts);
+    for (std::size_t i = 0; i < steps; ++i, ts += tsStep) {
+        step(ts);
+    }
+}
+
+template <class Market>
+std::size_t FlowGenerator<Market>::liveCount() const noexcept {
+    return m_live.size();
 }
 
 template <class Market>
 std::uint64_t FlowGenerator<Market>::rng() noexcept {
     std::uint64_t x = m_state;
-    x ^= x << 13; x ^= x >> 7; x ^= x << 17;
+    x ^= x << 13;
+    x ^= x >> 7;
+    x ^= x << 17;
     m_state = x;
     return x;
 }

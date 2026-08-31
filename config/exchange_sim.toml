@@ -22,11 +22,11 @@ max_qty          = 500
 cancel_pct       = 30                   # % of steps that cancel a live order
 cross_pct        = 15                   # % of steps that cross the spread (trade)
 seed             = 0x2545F4914F6CDD1D   # xorshift seed (TOML ints are signed 64-bit)
+max_live         = 4096                 # resting synthetic orders kept; oldest cancelled beyond this
 warmup_steps     = 200                  # generator steps run before going live
 tick_interval_ns = 100000               # run() pumps one generator step per this interval
 
 [transport]
-mode      = "socket"          # must match the binary: socket (exchange_sim) | verbs | dpdk
 interface = "cx0"             # NIC the sim drives (ConnectX-4 Lx port 0)
 driver    = "mlx5_core"       # "mlx5_core" | "sfc" | "i40e" (dpdk backend devargs policy)
 cpu_core  = 5                 # isolated core the sim hot loop pins to
@@ -48,7 +48,7 @@ dst_port = 41000
 src_port = 40001
 dst_port = 41001
 
-# Kernel-socket path, used by exchange_sim (mode = "socket").
+# Kernel-socket path, used by exchange_sim / dut (no NIC).
 [socket]
 oe_port = 5001               # TCP listen port for order entry
 md_host = "127.0.0.1"        # UDP market-data destination host

@@ -30,14 +30,6 @@ for bin in "${sim_bin}" "${dut_bin}"; do
     fi
 done
 
-for toml in config/exchange_sim.toml config/dut.toml; do
-    mode="$(sed -n 's/^mode *= *"\([a-z]*\)".*/\1/p' "${toml}" | head -1)"
-    if [[ "${mode}" != "${backend}" ]]; then
-        echo "${toml}: transport.mode is '${mode}', expected '${backend}'"
-        echo "  fix: sed -i 's/^mode      = \"${mode}\"/mode      = \"${backend}\"/' ${toml}"
-        exit 1
-    fi
-done
 
 out="results/loopback_$(date +%Y%m%d_%H%M%S)"
 mkdir -p "${out}"

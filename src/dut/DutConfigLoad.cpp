@@ -49,7 +49,6 @@ DutAppConfig loadDutConfig(const std::string& path) {
     c.socket.session    = t["socket"]["session"].value_or(c.socket.session);
     c.socket.username   = t["socket"]["username"].value_or(c.socket.username);
 
-    c.transport.mode      = t["transport"]["mode"].value_or(c.transport.mode);
     c.transport.interface = t["transport"]["interface"].value_or(c.transport.interface);
     c.transport.driver    = t["transport"]["driver"].value_or(c.transport.driver);
     c.transport.cpuCore   = t["transport"]["cpu_core"].value_or(c.transport.cpuCore);

@@ -39,7 +39,6 @@ session = "TST0000042"
 username = "USR42"
 
 [transport]
-mode = "efvi"
 interface = "sfc1"
 driver = "sfc"
 cpu_core = 6
@@ -100,7 +99,6 @@ void test_load() {
     CHECK(c.socket.session == "TST0000042");
     CHECK(c.socket.username == "USR42");
 
-    CHECK(c.transport.mode == "efvi");
     CHECK(c.transport.interface == "sfc1");
     CHECK(c.transport.driver == "sfc");
     CHECK_EQ(c.transport.cpuCore, 6);
@@ -124,7 +122,6 @@ void test_defaults() {
     std::remove(path.c_str());
     CHECK_EQ(c.session.tickWire, 1);
     CHECK_EQ(c.session.firstUserRef, 1u);
-    CHECK(c.transport.mode == "socket");
     CHECK_EQ(c.measure.histogramCore, -1);
 }
 

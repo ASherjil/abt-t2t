@@ -29,6 +29,7 @@ struct FlowConfig {
     Quantity       maxQty     = 500;
     std::uint32_t  cancelPct  = 30;
     std::uint32_t  crossPct   = 15;
+    std::size_t    maxLive    = 4096;
     std::uint64_t  seed       = 0x9E3779B97F4A7C15ull;
 };
 

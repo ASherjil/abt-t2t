@@ -37,11 +37,11 @@ SimConfig loadConfig(const std::string& path) {
     c.flow.maxQty     = t["flow"]["max_qty"].value_or(c.flow.maxQty);
     c.flow.cancelPct  = t["flow"]["cancel_pct"].value_or(c.flow.cancelPct);
     c.flow.crossPct   = t["flow"]["cross_pct"].value_or(c.flow.crossPct);
+    c.flow.maxLive    = t["flow"]["max_live"].value_or(c.flow.maxLive);
     c.flow.seed       = t["flow"]["seed"].value_or(c.flow.seed);
     c.warmupSteps     = t["flow"]["warmup_steps"].value_or(c.warmupSteps);
     c.tickIntervalNs  = t["flow"]["tick_interval_ns"].value_or(c.tickIntervalNs);
 
-    c.transport.mode      = t["transport"]["mode"].value_or(c.transport.mode);
     c.transport.interface = t["transport"]["interface"].value_or(c.transport.interface);
     c.transport.driver    = t["transport"]["driver"].value_or(c.transport.driver);
     c.transport.cpuCore   = t["transport"]["cpu_core"].value_or(c.transport.cpuCore);

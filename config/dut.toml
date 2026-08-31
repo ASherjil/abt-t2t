@@ -8,7 +8,7 @@ min_price      = 0          # book band in wire prices (4-decimal dollars)
 max_price      = 10000000
 tick_wire      = 100        # wire units per tick (100 = $0.01 with 4-decimal wire prices)
 first_user_ref = 1
-max_orders     = 4096       # initial order-ref map capacity
+max_orders     = 16384      # initial order-ref map capacity (>= 2x the sim's max_live)
 
 [quoter]
 half_spread_ticks   = 1       # ticks from fair value to each quote
@@ -29,7 +29,6 @@ session      = "SIM0000001"
 username     = "DUT001"
 
 [transport]
-mode      = "socket"         # must match the binary: socket (dut) | verbs | dpdk
 interface = "cx1"            # NIC the DUT drives (ConnectX-4 Lx port 1 in loopback; X2522 later)
 driver    = "mlx5_core"      # "mlx5_core" | "sfc" (dpdk backend devargs policy)
 cpu_core  = 6                # isolated core the DUT hot loop pins to

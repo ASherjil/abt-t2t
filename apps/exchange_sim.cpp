@@ -34,12 +34,6 @@ int main() {
     const SimConfig cfg = loadConfig(ABT_CONFIG_PATH);
     installSignals();
 
-    if (cfg.transport.mode != Backend::kName) {
-        fmt::print(stderr, "exchange-sim: built for backend '{}' but config transport.mode is '{}'\n",
-                   Backend::kName, cfg.transport.mode);
-        return 1;
-    }
-
     const NicSpec nic = nicOf(cfg);
     auto backend = Backend::make(nic);
     if (!Backend::init(backend, nic)) {

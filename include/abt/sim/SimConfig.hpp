@@ -19,7 +19,6 @@ struct SocketConfig {
 };
 
 struct TransportConfig {
-    std::string    mode      = "socket";
     std::string    interface = "cx0";
     std::string    driver    = "mlx5_core";
     int            cpuCore   = 2;

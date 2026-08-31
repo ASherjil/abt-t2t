@@ -36,12 +36,6 @@ int main() {
     installSignals();
     tsc::warmUp();
 
-    if (cfg.transport.mode != Backend::kName) {
-        fmt::print(stderr, "dut: built for backend '{}' but config transport.mode is '{}'\n",
-                   Backend::kName, cfg.transport.mode);
-        return 1;
-    }
-
     const NicSpec nic = dut::nicOf(cfg);
     auto backend = Backend::make(nic);
     if (!Backend::init(backend, nic)) {
