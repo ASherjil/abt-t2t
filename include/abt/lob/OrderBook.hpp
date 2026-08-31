@@ -18,8 +18,10 @@ public:
     template <class Sink>
     Handle add(OrderId id, Side side, Price price, Quantity qty, Sink&& sink);
     Handle add(OrderId id, Side side, Price price, Quantity qty);
+    Handle place(OrderId id, Side side, Price price, Quantity qty);
     template <class Sink>
     Quantity match(OrderId id, Side side, Price price, Quantity qty, Sink&& sink);
+    void clear() noexcept;
 
     Quantity cancel(Handle h);
     Quantity reduce(Handle h, Quantity newQty);
@@ -104,6 +106,22 @@ Quantity OrderBook::match(OrderId id, Side side, Price price, Quantity qty, Sink
         }
     }
     return qty;
+}
+
+inline Handle OrderBook::place(OrderId id, Side side, Price price, Quantity qty) {
+    if (qty == 0 || price < m_minPrice || price > m_maxPrice) [[unlikely]] {
+        return kNilHandle;
+    }
+    return rest(id, side, price, qty);
+}
+
+inline void OrderBook::clear() noexcept {
+    for (Level& l : m_bidLevels) l = Level{};
+    for (Level& l : m_askLevels) l = Level{};
+    m_pool.clear();
+    m_freeHead = kNilHandle;
+    m_bestBid = kNoPrice;
+    m_bestAsk = kNoPrice;
 }
 
 inline Handle OrderBook::add(OrderId id, Side side, Price price, Quantity qty) {

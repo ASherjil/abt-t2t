@@ -5,6 +5,7 @@
 #include <span>
 #include <string>
 #include <string_view>
+#include <vector>
 
 #include "abt/lob/OrderBook.hpp"
 #include "abt/protocol/Itch50.hpp"
@@ -13,11 +14,27 @@
 
 namespace abt {
 
+struct MirrorStats {
+    std::uint64_t adds        = 0;
+    std::uint64_t executes    = 0;
+    std::uint64_t cancels     = 0;
+    std::uint64_t deletes     = 0;
+    std::uint64_t replaces    = 0;
+    std::uint64_t unknownRef  = 0;
+    std::uint64_t overReduce  = 0;
+    std::uint64_t outOfBand   = 0;
+    std::uint64_t shadowFills = 0;
+    std::uint64_t shadowShares = 0;
+    std::uint64_t crossFills  = 0;
+    std::uint64_t impactFills = 0;
+};
+
 template <class Sink>
 class Venue {
 public:
     Venue(Sink& sink, std::string_view symbol, std::uint16_t stockLocate,
-          Price minTick, Price maxTick, std::uint32_t wirePerTick = 100);
+          Price minTick, Price maxTick, std::uint32_t wirePerTick = 100,
+          OrderId firstOrderRef = 1, std::size_t liveReserve = 1u << 12);
 
     void sessionEvent(itch::SystemEventCode code, std::uint64_t ts);
     void onEnterOrder(const ouch::EnterOrder& o, std::uint64_t ts);
@@ -26,6 +43,16 @@ public:
 
     OrderId injectSynthetic(Side side, Price tick, Quantity qty, std::uint64_t ts);
     void cancelSynthetic(OrderId ref, std::uint64_t ts);
+
+    void mirrorAdd(OrderId ref, Side side, std::uint32_t wirePrice, Quantity qty, std::uint64_t ts);
+    void mirrorExecute(OrderId ref, Quantity shares, std::uint64_t ts);
+    void mirrorCancel(OrderId ref, Quantity shares, std::uint64_t ts);
+    void mirrorDelete(OrderId ref, std::uint64_t ts);
+    void mirrorReplace(OrderId origRef, OrderId newRef, Quantity shares, std::uint32_t wirePrice,
+                       std::uint64_t ts);
+    void resetDay(std::uint64_t ts);
+    [[nodiscard]] const MirrorStats& mirrorStats() const noexcept;
+    [[nodiscard]] std::size_t clientOrders() const noexcept;
 
     [[nodiscard]] const OrderBook& book() const noexcept;
     [[nodiscard]] Price bestBid() const noexcept;
@@ -60,6 +87,14 @@ private:
     void processImmediate(OrderId ref, Side side, Price tick, Quantity qty, std::uint64_t ts,
                           std::uint32_t user);
     void handleTrade(const Trade& t, std::uint64_t ts, bool aggClient, std::uint32_t aggUser);
+    void trackClient(OrderId ref, Handle h, Side side, Price tick, std::uint32_t user);
+    void dropClient(OrderId ref, const LiveOrder& live);
+    void fillClient(OrderId ref, Quantity qty, std::uint64_t ts);
+    Quantity crossClients(Side side, Price tick, Quantity qty, std::uint64_t ts);
+    void shadowFill(Side side, Price tick, OrderId realRef, Quantity qty, std::uint64_t ts);
+    [[nodiscard]] bool aheadInLevel(Side side, Price tick, OrderId clientRef,
+                                    OrderId realRef) const noexcept;
+    void removeReal(OrderId ref, const LiveOrder& live);
     [[nodiscard]] bool isMarketable(Side side, Price tick) const noexcept;
     [[nodiscard]] std::uint32_t tickToWire(Price tick) const noexcept;
 
@@ -92,25 +127,30 @@ private:
     Price         m_maxTick;
     OrderBook     m_engine;
 
-    OrderId       m_nextOrderRef = 1;
+    OrderId       m_nextOrderRef;
     std::uint64_t m_nextMatch    = 1;
+    MirrorStats   m_mirror{};
 
     util::FlatHashMap<OrderId, LiveOrder>     m_live;
     util::FlatHashMap<std::uint32_t, OrderId> m_byUserRef;
+    std::vector<OrderId>                      m_clientRefs;
 };
 
 template <class Sink>
 Venue<Sink>::Venue(Sink& sink, std::string_view symbol, std::uint16_t stockLocate,
-                   Price minTick, Price maxTick, std::uint32_t wirePerTick)
+                   Price minTick, Price maxTick, std::uint32_t wirePerTick,
+                   OrderId firstOrderRef, std::size_t liveReserve)
     : m_sink(sink),
       m_symbol(symbol),
       m_stockLocate(stockLocate),
       m_wirePerTick(wirePerTick),
       m_minTick(minTick),
       m_maxTick(maxTick),
-      m_engine(minTick, maxTick),
-      m_live(1u << 12),
+      m_engine(minTick, maxTick, liveReserve),
+      m_nextOrderRef(firstOrderRef == 0 ? 1 : firstOrderRef),
+      m_live(liveReserve),
       m_byUserRef(1u << 12) {
+    m_clientRefs.reserve(16);
 }
 
 template <class Sink>
@@ -185,8 +225,7 @@ void Venue<Sink>::onCancelOrder(const ouch::CancelOrder& x, std::uint64_t ts) {
         const Quantity removed = m_engine.cancel(h);
         emitItchDelete(ref, ts);
         emitCanceled(user, removed, ouch::CancelReason::UserRequested, ts);
-        m_byUserRef.erase(user);
-        m_live.erase(ref);
+        dropClient(ref, *live);
     } else {
         const Quantity removed = m_engine.reduce(h, intended);
         emitItchCancel(ref, removed, ts);
@@ -224,8 +263,7 @@ void Venue<Sink>::onReplaceOrder(const ouch::ReplaceOrder& u, std::uint64_t ts) 
     const Side side = orig.side;
 
     m_engine.cancel(orig.handle);
-    m_byUserRef.erase(origUser);
-    m_live.erase(origRef);
+    dropClient(origRef, orig);
 
     const OrderId newRef = m_nextOrderRef++;
     emitReplaced(u, newRef, side, ts);
@@ -237,8 +275,7 @@ void Venue<Sink>::onReplaceOrder(const ouch::ReplaceOrder& u, std::uint64_t ts) 
         const Handle h = m_engine.add(newRef, side, tick, qty);
         emitItchReplace(origRef, newRef, qty, tick, ts);
         if (h != kNilHandle) {
-            m_live.insertOrAssign(newRef, LiveOrder{h, side, tick, true, newUser});
-            m_byUserRef.insertOrAssign(newUser, newRef);
+            trackClient(newRef, h, side, tick, newUser);
         }
     }
 }
@@ -258,6 +295,126 @@ void Venue<Sink>::cancelSynthetic(OrderId ref, std::uint64_t ts) {
     }
     m_engine.cancel(live.handle);
     emitItchDelete(ref, ts);
+}
+
+template <class Sink>
+void Venue<Sink>::mirrorAdd(OrderId ref, Side side, std::uint32_t wirePrice, Quantity qty,
+                            std::uint64_t ts) {
+    ++m_mirror.adds;
+    Price tick = 0;
+    if (!validPrice(wirePrice, tick)) {
+        ++m_mirror.outOfBand;
+        return;
+    }
+    Quantity rem = qty;
+    if (!m_clientRefs.empty()) {
+        rem = crossClients(side, tick, qty, ts);
+    }
+    if (rem == 0) {
+        return;
+    }
+    const Handle h = m_engine.place(ref, side, tick, rem);
+    if (h != kNilHandle) {
+        m_live.insertOrAssign(ref, LiveOrder{h, side, tick, false, 0});
+    }
+}
+
+template <class Sink>
+void Venue<Sink>::mirrorExecute(OrderId ref, Quantity shares, std::uint64_t ts) {
+    ++m_mirror.executes;
+    LiveOrder* live = m_live.find(ref);
+    if (live == nullptr) {
+        ++m_mirror.unknownRef;
+        return;
+    }
+    const LiveOrder l = *live;
+    if (!m_clientRefs.empty()) {
+        shadowFill(l.side, l.tick, ref, shares, ts);
+    }
+    const Quantity cur = m_engine.order(l.handle).qty;
+    if (shares > cur) {
+        ++m_mirror.overReduce;
+    }
+    if (shares >= cur) {
+        removeReal(ref, l);
+    } else {
+        m_engine.reduce(l.handle, cur - shares);
+    }
+}
+
+template <class Sink>
+void Venue<Sink>::mirrorCancel(OrderId ref, Quantity shares, std::uint64_t) {
+    ++m_mirror.cancels;
+    LiveOrder* live = m_live.find(ref);
+    if (live == nullptr) {
+        ++m_mirror.unknownRef;
+        return;
+    }
+    const LiveOrder l = *live;
+    const Quantity cur = m_engine.order(l.handle).qty;
+    if (shares > cur) {
+        ++m_mirror.overReduce;
+    }
+    if (shares >= cur) {
+        removeReal(ref, l);
+    } else {
+        m_engine.reduce(l.handle, cur - shares);
+    }
+}
+
+template <class Sink>
+void Venue<Sink>::mirrorDelete(OrderId ref, std::uint64_t) {
+    ++m_mirror.deletes;
+    LiveOrder* live = m_live.find(ref);
+    if (live == nullptr) {
+        ++m_mirror.unknownRef;
+        return;
+    }
+    removeReal(ref, *live);
+}
+
+template <class Sink>
+void Venue<Sink>::mirrorReplace(OrderId origRef, OrderId newRef, Quantity shares,
+                                std::uint32_t wirePrice, std::uint64_t ts) {
+    ++m_mirror.replaces;
+    LiveOrder* live = m_live.find(origRef);
+    if (live == nullptr) {
+        ++m_mirror.unknownRef;
+        return;
+    }
+    const Side side = live->side;
+    removeReal(origRef, *live);
+    --m_mirror.adds;
+    mirrorAdd(newRef, side, wirePrice, shares, ts);
+}
+
+template <class Sink>
+void Venue<Sink>::resetDay(std::uint64_t ts) {
+    while (!m_clientRefs.empty()) {
+        const OrderId ref = m_clientRefs.back();
+        LiveOrder* live = m_live.find(ref);
+        if (live == nullptr) {
+            m_clientRefs.pop_back();
+            continue;
+        }
+        const Quantity removed = m_engine.cancel(live->handle);
+        emitItchDelete(ref, ts);
+        emitCanceled(live->userRef, removed, ouch::CancelReason::Closed, ts);
+        dropClient(ref, *live);
+    }
+    m_engine.clear();
+    m_live.clear();
+    m_byUserRef.clear();
+}
+
+template <class Sink>
+const MirrorStats& Venue<Sink>::mirrorStats() const noexcept {
+    return m_mirror;
+}
+
+template <class Sink>
+std::size_t Venue<Sink>::clientOrders() const noexcept {
+    return m_clientRefs.size();
 }
 
 template <class Sink>
@@ -322,9 +479,10 @@ void Venue<Sink>::processOrder(OrderId ref, Side side, Price tick, Quantity qty,
     if (h != kNilHandle) {
         const Quantity rem = m_engine.order(h).qty;
         emitItchAdd(ref, side, tick, rem, ts);
-        m_live.insertOrAssign(ref, LiveOrder{h, side, tick, client, user});
         if (client) {
-            m_byUserRef.insertOrAssign(user, ref);
+            trackClient(ref, h, side, tick, user);
+        } else {
+            m_live.insertOrAssign(ref, LiveOrder{h, side, tick, false, 0});
         }
     }
 }
@@ -353,13 +511,140 @@ void Venue<Sink>::handleTrade(const Trade& t, std::uint64_t ts, bool aggClient,
     }
     if (live->client) {
         emitExecuted(live->userRef, t.qty, t.price, 'A', match, ts);
+    } else if (aggClient) {
+        ++m_mirror.impactFills;
     }
     if (t.restingFilled) {
         if (live->client) {
-            m_byUserRef.erase(live->userRef);
+            dropClient(t.restingId, *live);
+        } else {
+            m_live.erase(t.restingId);
         }
-        m_live.erase(t.restingId);
     }
+}
+
+template <class Sink>
+void Venue<Sink>::trackClient(OrderId ref, Handle h, Side side, Price tick, std::uint32_t user) {
+    m_live.insertOrAssign(ref, LiveOrder{h, side, tick, true, user});
+    m_byUserRef.insertOrAssign(user, ref);
+    m_clientRefs.push_back(ref);
+}
+
+template <class Sink>
+void Venue<Sink>::dropClient(OrderId ref, const LiveOrder& live) {
+    m_byUserRef.erase(live.userRef);
+    m_live.erase(ref);
+    for (std::size_t i = 0; i < m_clientRefs.size(); ++i) {
+        if (m_clientRefs[i] == ref) {
+            m_clientRefs[i] = m_clientRefs.back();
+            m_clientRefs.pop_back();
+            return;
+        }
+    }
+}
+
+template <class Sink>
+void Venue<Sink>::removeReal(OrderId ref, const LiveOrder& live) {
+    m_engine.cancel(live.handle);
+    m_live.erase(ref);
+}
+
+template <class Sink>
+void Venue<Sink>::fillClient(OrderId ref, Quantity qty, std::uint64_t ts) {
+    LiveOrder* live = m_live.find(ref);
+    if (live == nullptr || qty == 0) {
+        return;
+    }
+    const LiveOrder l = *live;
+    const std::uint64_t match = m_nextMatch++;
+    emitItchExecuted(ref, qty, match, ts);
+    emitExecuted(l.userRef, qty, l.tick, 'A', match, ts);
+    const Quantity cur = m_engine.order(l.handle).qty;
+    if (qty >= cur) {
+        m_engine.cancel(l.handle);
+        dropClient(ref, l);
+    } else {
+        m_engine.reduce(l.handle, cur - qty);
+    }
+}
+
+template <class Sink>
+Quantity Venue<Sink>::crossClients(Side side, Price tick, Quantity qty, std::uint64_t ts) {
+    while (qty > 0) {
+        OrderId best = 0;
+        Handle bestHandle = kNilHandle;
+        Price bestTick = 0;
+        for (const OrderId ref : m_clientRefs) {
+            const LiveOrder* l = m_live.find(ref);
+            if (l == nullptr || l->side == side) {
+                continue;
+            }
+            const bool crosses = side == Side::Buy ? l->tick <= tick : l->tick >= tick;
+            if (!crosses) {
+                continue;
+            }
+            const bool better = best == 0 || (side == Side::Buy ? l->tick < bestTick : l->tick > bestTick);
+            if (better) {
+                best = ref;
+                bestHandle = l->handle;
+                bestTick = l->tick;
+            }
+        }
+        if (best == 0) {
+            break;
+        }
+        const Quantity cur = m_engine.order(bestHandle).qty;
+        const Quantity fill = qty < cur ? qty : cur;
+        ++m_mirror.crossFills;
+        fillClient(best, fill, ts);
+        qty -= fill;
+    }
+    return qty;
+}
+
+template <class Sink>
+void Venue<Sink>::shadowFill(Side side, Price tick, OrderId realRef, Quantity qty,
+                             std::uint64_t ts) {
+    for (std::size_t i = 0; i < m_clientRefs.size() && qty > 0;) {
+        const OrderId ref = m_clientRefs[i];
+        const LiveOrder* l = m_live.find(ref);
+        if (l == nullptr || l->side != side) {
+            ++i;
+            continue;
+        }
+        const bool better = side == Side::Sell ? l->tick < tick : l->tick > tick;
+        const bool ahead = better || (l->tick == tick && aheadInLevel(side, tick, ref, realRef));
+        if (!ahead) {
+            ++i;
+            continue;
+        }
+        const Quantity cur = m_engine.order(l->handle).qty;
+        const Quantity fill = qty < cur ? qty : cur;
+        ++m_mirror.shadowFills;
+        m_mirror.shadowShares += fill;
+        fillClient(ref, fill, ts);
+        qty -= fill;
+        if (fill < cur) {
+            ++i;
+        }
+    }
+}
+
+template <class Sink>
+bool Venue<Sink>::aheadInLevel(Side side, Price tick, OrderId clientRef,
+                               OrderId realRef) const noexcept {
+    bool ahead = false;
+    m_engine.forEachOrderAtLevel(side, tick, [&](const Order& o) {
+        if (o.id == clientRef) {
+            ahead = true;
+            return false;
+        }
+        if (o.id == realRef) {
+            return false;
+        }
+        return true;
+    });
+    return ahead;
 }
 
 template <class Sink>
