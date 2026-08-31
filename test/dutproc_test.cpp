@@ -50,9 +50,8 @@ itch::OrderDelete mkDelete(OrderId ref) {
     return d;
 }
 
-// Never trades — isolates the book-building/parse cost the strategy reacts to.
 struct NeverSend {
-    dut::OrderIntent onBook(const dut::BookBuilder&) noexcept {
+    dut::QuoteTargets onBook(const dut::BookBuilder&, const dut::Account&) noexcept {
         return {};
     }
 };
@@ -63,7 +62,7 @@ void bench_proc() {
     cfg.maxPrice = 100000;
     cfg.tickWire = 100;
     cfg.symbol = "ABT";
-    cfg.t2tCapacity = 1u << 20;   // keep every sample for accurate percentiles
+    cfg.queueCapacity = 1u << 17;
     dut::DutSession<dut::IoMode::Loopback, NeverSend> sess(cfg, NeverSend{});
 
     constexpr std::uint64_t kPackets = 50'000;
@@ -91,8 +90,10 @@ void bench_proc() {
         sess.onMarketData(packer.finalize(), 0);
     }
 
+    (void)sess.proc().drain();
     CHECK_EQ(sess.proc().count(), kPackets);
-    sess.proc().summary("dut-proc rx->decision (parse+book+strategy)");
+    CHECK_EQ(sess.proc().dropped(), 0u);
+    sess.proc().summary();
 }
 
 template <class T>

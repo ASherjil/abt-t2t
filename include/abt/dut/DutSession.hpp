@@ -1,14 +1,4 @@
 #pragma once
-//
-// DUT session: the latency-critical tick-to-trade loop. Market data arrives (MoldUDP64 carrying
-// ITCH), the book is rebuilt, a compile-time Strategy reacts, and — if it fires — an OUCH order
-// is encoded and sent. A compile-time IoMode picks in-memory capture (Loopback, for tests), kernel
-// sockets (Socket = config 1: SoupBinTCP order entry over TCP + MoldUDP64 market data over UDP,
-// transparently accelerated by Onload on the rig), or a ring transport (Transport = ef_vi / DPDK,
-// configs 2/3) supplied through the Io type parameter, which must satisfy the vendored ABTRDA3
-// TxRing/RxRing concepts. This mirrors the exchange sim's ExchangeSession, but flows the other
-// way: RX feed -> book -> TX order.
-//
 
 #include <array>
 #include <cerrno>
@@ -37,10 +27,13 @@
 #include "third_party/abtrda3/RingConcepts.hpp"
 
 #include "abt/dut/BookBuilder.hpp"
+#include "abt/dut/LatencyRecorder.hpp"
+#include "abt/dut/OrderManager.hpp"
+#include "abt/dut/SequenceTracker.hpp"
 #include "abt/dut/Strategy.hpp"
-#include "abt/dut/T2tRecorder.hpp"
 #include "abt/dut/TxStamp.hpp"
 #include "abt/lob/Types.hpp"
+#include "abt/protocol/EthIpUdp.hpp"
 #include "abt/protocol/MoldUdp64.hpp"
 #include "abt/protocol/Ouch50.hpp"
 #include "abt/protocol/SoupBinTcp.hpp"
@@ -52,18 +45,17 @@ namespace abt::dut {
 
 enum class IoMode { Loopback, Socket, Transport };
 
-// Sentinel for the unused Io parameter in Loopback mode (a complete empty type, so no reference-
-// to-void hazard when the transport members are conditioned out).
 struct NoTransport {};
 
 struct DutConfig {
-    Price         minPrice = 0;   // book band, in wire prices
-    Price         maxPrice = 0;
-    Price         tickWire = 1;
-    std::string   symbol{};       // OUCH symbol stamped on every order
-    std::uint32_t firstUserRef = 1;
-    std::size_t   t2tCapacity = 1u << 16;   // tick-to-trade samples retained for percentiles
-    std::size_t   maxOrders   = 1u << 12;   // initial capacity of the book's order-ref map
+    Price         minPrice      = 0;
+    Price         maxPrice      = 0;
+    Price         tickWire      = 1;
+    std::string   symbol{};
+    std::uint32_t firstUserRef  = 1;
+    std::size_t   maxOrders     = 1u << 12;
+    std::size_t   queueCapacity = 1u << 16;
+    int           sigFigs       = 3;
 };
 
 template <IoMode Mode, Strategy Strat, class Io = NoTransport>
@@ -74,13 +66,10 @@ public:
     DutSession(const DutSession&) = delete;
     DutSession& operator=(const DutSession&) = delete;
 
-    // Loopback/Socket: hand the pipeline one raw MoldUDP64 packet plus its RX hardware timestamp
-    // (the kernel/Onload already stripped Eth/IP/UDP, so this is the UDP payload directly).
     void onMarketData(std::span<const std::byte> moldPacket, std::uint64_t rxHwts)
         requires (Mode == IoMode::Loopback || Mode == IoMode::Socket);
+    void onAck(std::span<const std::byte> ouch) noexcept;
 
-    // Socket: connect to the venue (TCP order entry + UDP market data), log in, then run the loop.
-    // attachSockets injects already-connected fds so tests can drive it over socketpairs.
     [[nodiscard]] bool connectVenue(const char* oeHost, std::uint16_t oePort,
                                     const char* mdBindHost, std::uint16_t mdPort)
         requires (Mode == IoMode::Socket);
@@ -90,41 +79,27 @@ public:
     [[nodiscard]] bool sessionEstablished() const noexcept requires (Mode == IoMode::Socket);
     void run(volatile std::sig_atomic_t& stop) requires (Mode == IoMode::Socket);
 
-    // Transport: bind the ring and order-entry framing, then drain RX and react on each poll.
     void prepareTransport(Io& io, const net::Endpoints& oeEp)
         requires (Mode == IoMode::Transport && TxRing<Io>);
     void poll() requires (Mode == IoMode::Transport && RxRing<Io> && TxRing<Io>);
 
-    // Drain a source of asynchronous TX-completion timestamps and close out each pending order's
-    // tick-to-trade sample. Mode- and transport-agnostic: the source may be the datapath ring
-    // itself or a sidecar, and the test drives it with a mock.
     template <TxStampSource Src>
     void pollTxCompletions(Src& src);
     void completeTx(std::uint32_t userRef, std::uint64_t txHwts) noexcept;
 
     [[nodiscard]] const BookBuilder& book() const noexcept;
-    [[nodiscard]] const T2tRecorder& t2t() const noexcept;
-    // In-process compute latency (ns) of the RX -> decision path: MoldUDP64 parse + book rebuild +
-    // strategy + order encode, measured with the cycle counter and excluding the network send. This
-    // isolates the data-structure/algorithm cost — no NIC or hardware timestamps involved.
-    [[nodiscard]] const T2tRecorder& proc() const noexcept;
+    [[nodiscard]] const OrderManager& oms() const noexcept;
+    [[nodiscard]] const SequenceTracker& feed() const noexcept;
+    [[nodiscard]] LatencyRecorder& t2t() noexcept;
+    [[nodiscard]] LatencyRecorder& proc() noexcept;
     [[nodiscard]] std::uint32_t ordersSent() const noexcept;
 
-    // Loopback capture of the raw OUCH order bytes that were "sent".
     [[nodiscard]] const std::vector<std::vector<std::byte>>& capturedOrders() const
         requires (Mode == IoMode::Loopback);
 
 private:
-    void applyPacket(std::span<const std::byte> moldPacket, std::uint64_t rxHwts);
-    [[nodiscard]] std::size_t encodeEnterOrder(const OrderIntent& intent,
-                                               std::uint32_t userRef) noexcept;
-    [[nodiscard]] bool sendOrder(std::span<const std::byte> ouch);
-    void recordSend(std::uint32_t userRef, std::uint64_t rxHwts) noexcept;
-
-    // Pending orders awaiting their TX-completion timestamp, keyed by userRefNum into a fixed ring
-    // (userRefs are monotonic and completions arrive within microseconds, so this never wraps in
-    // practice). Each slot remembers the RX timestamp that triggered the order.
     static constexpr std::uint32_t kInFlight = 1024;
+
     struct InFlight {
         std::uint32_t userRef = 0;
         std::uint64_t rxHwts  = 0;
@@ -138,25 +113,32 @@ private:
     struct TransportState {
         Io*                           io = nullptr;
         std::optional<net::UdpFramer> oeFramer;
+        std::uint16_t                 ackPort = 0;
     };
     struct SocketState {
-        int                        mdFd = -1;   // UDP: receives MoldUDP64 market data
-        int                        oeFd = -1;   // TCP: SoupBinTCP order entry (send orders, read acks)
-        std::vector<std::byte>     rx;          // SoupBinTCP stream reassembly for inbound acks
-        std::array<std::byte, 256> soupBuf{};   // outbound SoupBinTCP framing scratch
+        int                        mdFd = -1;
+        int                        oeFd = -1;
+        std::vector<std::byte>     rx;
+        std::array<std::byte, 256> soupBuf{};
         bool                       loggedIn = false;
     };
 
-    DutConfig     m_cfg;
-    Strat         m_strat;
-    BookBuilder   m_book;
-    T2tRecorder   m_t2t;
-    T2tRecorder   m_proc;
-    std::uint32_t m_nextUserRef;
-    std::uint32_t m_ordersSent = 0;
+    void applyPacket(std::span<const std::byte> moldPacket, std::uint64_t rxHwts);
+    [[nodiscard]] bool sendOrder(std::span<const std::byte> ouch);
+    void recordSend(std::uint32_t userRef, std::uint64_t rxHwts) noexcept;
+    [[nodiscard]] static std::uint16_t udpDstPort(const std::uint8_t* frame) noexcept;
 
-    std::array<InFlight, kInFlight> m_inflight{};
-    std::array<std::byte, 128>      m_oeBuf{};
+    DutConfig       m_cfg;
+    Strat           m_strat;
+    BookBuilder     m_book;
+    OrderManager    m_oms;
+    SequenceTracker m_seq;
+    LatencyRecorder m_t2t;
+    LatencyRecorder m_proc;
+    std::uint32_t   m_ordersSent = 0;
+
+    std::array<Outbound, OrderManager::kMaxOutbound> m_out{};
+    std::array<InFlight, kInFlight>                  m_inflight{};
 
     [[no_unique_address]] std::conditional_t<Mode == IoMode::Loopback, Capture, Empty> m_cap{};
     [[no_unique_address]] std::conditional_t<Mode == IoMode::Socket, SocketState, Empty> m_sock{};
@@ -169,11 +151,9 @@ DutSession<Mode, Strat, Io>::DutSession(const DutConfig& cfg, Strat strat)
     : m_cfg(cfg),
       m_strat(std::move(strat)),
       m_book(cfg.minPrice, cfg.maxPrice, cfg.tickWire, cfg.maxOrders),
-      m_t2t(cfg.t2tCapacity),
-      m_proc(cfg.t2tCapacity),
-      m_nextUserRef(cfg.firstUserRef) {
-    // Calibrate the cycle counter now so the first measured packet never pays the spin.
-    tsc::warmUp();
+      m_oms(OmsConfig{cfg.symbol, cfg.firstUserRef}),
+      m_t2t("t2t", cfg.queueCapacity, 1.0, cfg.sigFigs),
+      m_proc("proc", cfg.queueCapacity, tsc::nsPerTick(), cfg.sigFigs) {
 }
 
 template <IoMode Mode, Strategy Strat, class Io>
@@ -193,6 +173,11 @@ void DutSession<Mode, Strat, Io>::onMarketData(std::span<const std::byte> moldPa
                                                std::uint64_t rxHwts)
     requires (Mode == IoMode::Loopback || Mode == IoMode::Socket) {
     applyPacket(moldPacket, rxHwts);
+}
+
+template <IoMode Mode, Strategy Strat, class Io>
+void DutSession<Mode, Strat, Io>::onAck(std::span<const std::byte> ouch) noexcept {
+    m_oms.onAck(ouch);
 }
 
 template <IoMode Mode, Strategy Strat, class Io>
@@ -269,9 +254,9 @@ void DutSession<Mode, Strat, Io>::onOrderEntry(std::span<const std::byte> data)
         }
         if (p.type == soup::Type::LoginAccepted) {
             m_sock.loggedIn = true;
+        } else if (p.type == soup::Type::SequencedData) {
+            m_oms.onAck(p.payload);
         }
-        // OUCH acks (SequencedData) confirm order state; the t2t path does not need them, so they
-        // are drained here to keep the stream flowing. Order-state tracking can hook in later.
         off += c;
     }
     if (off != 0) {
@@ -317,6 +302,7 @@ void DutSession<Mode, Strat, Io>::prepareTransport(Io& io, const net::Endpoints&
     requires (Mode == IoMode::Transport && TxRing<Io>) {
     m_io.io = &io;
     m_io.oeFramer.emplace(oeEp);
+    m_io.ackPort = oeEp.srcPort;
 }
 
 template <IoMode Mode, Strategy Strat, class Io>
@@ -325,10 +311,17 @@ void DutSession<Mode, Strat, Io>::poll()
     for (auto f = m_io.io->tryReceive(); f.status != 0; f = m_io.io->tryReceive()) {
         const auto raw = f.data;
         if (raw.size() > net::kL2L3L4Overhead) {
+            const auto* frame = reinterpret_cast<const std::uint8_t*>(raw.data());
             const auto* p = reinterpret_cast<const std::byte*>(raw.data());
-            const std::uint64_t rxHwts =
-                static_cast<std::uint64_t>(f.sec) * 1'000'000'000ull + f.nsec;
-            applyPacket({p + net::kL2L3L4Overhead, raw.size() - net::kL2L3L4Overhead}, rxHwts);
+            const std::span<const std::byte> payload{p + net::kL2L3L4Overhead,
+                                                     raw.size() - net::kL2L3L4Overhead};
+            if (udpDstPort(frame) == m_io.ackPort) {
+                m_oms.onAck(payload);
+            } else {
+                const std::uint64_t rxHwts =
+                    static_cast<std::uint64_t>(f.sec) * 1'000'000'000ull + f.nsec;
+                applyPacket(payload, rxHwts);
+            }
         }
         m_io.io->release();
     }
@@ -362,12 +355,22 @@ const BookBuilder& DutSession<Mode, Strat, Io>::book() const noexcept {
 }
 
 template <IoMode Mode, Strategy Strat, class Io>
-const T2tRecorder& DutSession<Mode, Strat, Io>::t2t() const noexcept {
+const OrderManager& DutSession<Mode, Strat, Io>::oms() const noexcept {
+    return m_oms;
+}
+
+template <IoMode Mode, Strategy Strat, class Io>
+const SequenceTracker& DutSession<Mode, Strat, Io>::feed() const noexcept {
+    return m_seq;
+}
+
+template <IoMode Mode, Strategy Strat, class Io>
+LatencyRecorder& DutSession<Mode, Strat, Io>::t2t() noexcept {
     return m_t2t;
 }
 
 template <IoMode Mode, Strategy Strat, class Io>
-const T2tRecorder& DutSession<Mode, Strat, Io>::proc() const noexcept {
+LatencyRecorder& DutSession<Mode, Strat, Io>::proc() noexcept {
     return m_proc;
 }
 
@@ -385,51 +388,29 @@ const std::vector<std::vector<std::byte>>& DutSession<Mode, Strat, Io>::captured
 template <IoMode Mode, Strategy Strat, class Io>
 void DutSession<Mode, Strat, Io>::applyPacket(std::span<const std::byte> moldPacket,
                                               std::uint64_t rxHwts) {
-    // --- measured compute span: parse -> book -> strategy -> encode (no I/O) ---
+    if (moldPacket.size() < mold::kHeaderSize) [[unlikely]] {
+        return;
+    }
     const std::uint64_t begin = tsc::now();
+    const SequenceTracker::Result r =
+        m_seq.onPacket(mold::sequenceOf(moldPacket), mold::countOf(moldPacket));
+    if (r == SequenceTracker::Result::Stale) [[unlikely]] {
+        return;
+    }
     mold::forEachMessage(moldPacket,
         [this](std::uint64_t, std::span<const std::byte> msg) {
             m_book.apply(msg);
         });
-    const OrderIntent intent = m_strat.onBook(m_book);
-    std::uint32_t userRef = 0;
-    std::size_t   len     = 0;
-    if (intent.send) {
-        userRef = m_nextUserRef++;
-        len = encodeEnterOrder(intent, userRef);
-    }
+    const QuoteTargets targets = m_strat.onBook(m_book, m_oms.account());
+    const std::size_t n = m_oms.reconcile(targets, std::span<Outbound, OrderManager::kMaxOutbound>{m_out});
     const std::uint64_t end = tsc::now();
-    m_proc.record(tsc::toNs(end - begin));
-    // --- end measured span; the network send below is I/O, deliberately excluded ---
+    m_proc.record(end - begin);
 
-    if (intent.send) {
-        if (sendOrder({m_oeBuf.data(), len})) {
-            // Remember which RX stamp triggered this order; the matching TX-completion stamp
-            // closes the tick-to-trade sample when it arrives (see completeTx).
-            recordSend(userRef, rxHwts);
+    for (std::size_t i = 0; i < n; ++i) {
+        if (sendOrder({m_out[i].buf.data(), m_out[i].len}) && i == 0) {
+            recordSend(m_out[i].userRef, rxHwts);
         }
     }
-}
-
-template <IoMode Mode, Strategy Strat, class Io>
-std::size_t DutSession<Mode, Strat, Io>::encodeEnterOrder(const OrderIntent& intent,
-                                                          std::uint32_t userRef) noexcept {
-    ouch::EnterOrder o{};
-    o.type = static_cast<char>(ouch::InType::EnterOrder);
-    o.userRefNum = userRef;
-    o.side = (intent.side == Side::Buy) ? static_cast<char>(ouch::Side::Buy)
-                                        : static_cast<char>(ouch::Side::Sell);
-    o.quantity = intent.qty;
-    o.symbol = std::string_view{m_cfg.symbol};
-    o.price = static_cast<std::uint64_t>(static_cast<std::uint32_t>(intent.price));
-    o.timeInForce = static_cast<char>(ouch::TimeInForce::Day);
-    o.display = static_cast<char>(ouch::Display::Visible);
-    o.capacity = static_cast<char>(ouch::Capacity::Agency);
-    o.imSweepEligibility = static_cast<char>(ouch::ImSweep::NotEligible);
-    o.crossType = static_cast<char>(ouch::CrossType::Continuous);
-    o.appendageLength = 0;
-    std::memcpy(m_oeBuf.data(), &o, sizeof o);
-    return sizeof o;
 }
 
 template <IoMode Mode, Strategy Strat, class Io>
@@ -437,8 +418,6 @@ bool DutSession<Mode, Strat, Io>::sendOrder(std::span<const std::byte> ouch) {
     if constexpr (Mode == IoMode::Loopback) {
         m_cap.oe.emplace_back(ouch.begin(), ouch.end());
     } else if constexpr (Mode == IoMode::Socket) {
-        // Wrap the OUCH order in a SoupBinTCP UnsequencedData frame and push it down the TCP
-        // order-entry connection (Onload accelerates this send transparently on the rig).
         const auto pkt = soup::packUnsequencedData(m_sock.soupBuf.data(), ouch);
         if (::send(m_sock.oeFd, pkt.data(), pkt.size(), MSG_NOSIGNAL) <= 0) {
             return false;
@@ -461,6 +440,12 @@ bool DutSession<Mode, Strat, Io>::sendOrder(std::span<const std::byte> ouch) {
 template <IoMode Mode, Strategy Strat, class Io>
 void DutSession<Mode, Strat, Io>::recordSend(std::uint32_t userRef, std::uint64_t rxHwts) noexcept {
     m_inflight[userRef % kInFlight] = InFlight{userRef, rxHwts, true};
+}
+
+template <IoMode Mode, Strategy Strat, class Io>
+std::uint16_t DutSession<Mode, Strat, Io>::udpDstPort(const std::uint8_t* frame) noexcept {
+    constexpr std::size_t off = net::kEthHeaderSize + net::kIpv4HeaderSize + 2;
+    return static_cast<std::uint16_t>((static_cast<std::uint16_t>(frame[off]) << 8) | frame[off + 1]);
 }
 
 }

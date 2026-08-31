@@ -33,6 +33,8 @@ FetchContent_Declare(spscqueue
     GIT_REPOSITORY https://github.com/rigtorp/SPSCQueue.git
     GIT_TAG v1.1)
 FetchContent_MakeAvailable(spscqueue)
+get_target_property(_spsc_inc SPSCQueue INTERFACE_INCLUDE_DIRECTORIES)
+set_target_properties(SPSCQueue PROPERTIES INTERFACE_SYSTEM_INCLUDE_DIRECTORIES "${_spsc_inc}")
 
 # HdrHistogram (official C library) — nanosecond-resolution latency histogram, recorded off the
 # hot path in the consumer thread. Same choice as ABTRDA3.
@@ -94,8 +96,10 @@ target_link_libraries(abt_config PUBLIC abt_sim PRIVATE tomlplusplus::tomlpluspl
 # ---------------------------------------------------------------------------
 add_library(abt_dut STATIC
     src/dut/BookBuilder.cpp
+    src/dut/LatencyRecorder.cpp
+    src/dut/OrderManager.cpp
     src/dut/QuoterStrategy.cpp
-    src/dut/T2tRecorder.cpp
+    src/dut/SequenceTracker.cpp
     src/util/Histogram.cpp)
 add_library(abt::dut ALIAS abt_dut)
 target_link_libraries(abt_dut
