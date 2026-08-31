@@ -27,6 +27,7 @@ if(ABT_CCACHE AND NOT CMAKE_CXX_COMPILER_LAUNCHER)
 endif()
 
 include(FetchContent)
+set(FETCHCONTENT_UPDATES_DISCONNECTED ON CACHE BOOL "Never re-fetch already-populated dependencies")
 
 # {fmt} — fetched (not find_package) at the same tag ABTRDA3 declares, so both projects share
 # one fmt::fmt target when ABTRDA3 is pulled in as a subproject (FetchContent dedups by name).
@@ -91,7 +92,7 @@ if(NOT ABT_BACKEND STREQUAL "socket")
     # carries the fix).
     FetchContent_Declare(abtrda3
         GIT_REPOSITORY https://github.com/ASherjil/ABTRDA3.git
-        GIT_TAG master
+        GIT_TAG d8779f777d7c6abfcf816140dc434fbe4671804e
         PATCH_COMMAND sed -i "s|\\\${CMAKE_SOURCE_DIR}|\\\${PROJECT_SOURCE_DIR}|g" src/backends/CMakeLists.txt)
     FetchContent_MakeAvailable(abtrda3)
     get_target_property(_abtrda3_inc abtrda3 INTERFACE_INCLUDE_DIRECTORIES)
