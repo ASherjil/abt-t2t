@@ -11,8 +11,25 @@
 #include "abt/dut/LatencyRecorder.hpp"
 #include "abt/dut/QuoterStrategy.hpp"
 #include "abt/util/Affinity.hpp"
+#include "abt/util/Clock.hpp"
 
 namespace abt::dut {
+
+inline constexpr std::uint64_t kDutLogPeriodNs = 1'000'000'000ull;
+inline constexpr std::uint64_t kDutPollsPerClockRead = 1u << 16;
+
+template <class Session>
+void logDut(const Session& sess, std::uint64_t elapsedNs) {
+    const OmsStats& s = sess.oms().stats();
+    const SequenceTracker& f = sess.feed();
+    fmt::print(stderr,
+               "[dut +{:>4}s] pkts={} seq={} gaps={} sent={} enter={} replace={} cancel={} accept={} "
+               "fill={} reject={} pos={} bid={} ask={} live={}\n",
+               elapsedNs / 1'000'000'000ull, sess.packetsReceived(), f.expected(), f.gaps(),
+               sess.ordersSent(), s.enters, s.replaces, s.cancels, s.accepts, s.fills, s.rejects,
+               sess.oms().account().position, sess.book().bestBid(), sess.book().bestAsk(),
+               sess.book().liveOrders());
+}
 
 template <class Session>
 void printDutReport(Session& sess) {
@@ -24,12 +41,16 @@ void printDutReport(Session& sess) {
                sess.ordersSent(), s.enters, s.replaces, s.cancels, s.accepts, s.fills, s.rejects,
                s.unknown, sess.oms().account().position);
     const SequenceTracker& f = sess.feed();
-    fmt::print("[feed] next seq={} gaps={} missed={} stale={} live orders={}\n",
-               f.expected(), f.gaps(), f.missed(), f.stale(), sess.book().liveOrders());
+    fmt::print("[feed] packets={} next seq={} gaps={} missed={} stale={} live orders={}\n",
+               sess.packetsReceived(), f.expected(), f.gaps(), f.missed(), f.stale(),
+               sess.book().liveOrders());
 }
 
 template <BackendTraits T>
 int runDut(const DutAppConfig& cfg, typename T::Type& backend, volatile std::sig_atomic_t& stop) {
+    const std::uint64_t start = monotonicNs();
+    std::uint64_t nextLog = start + kDutLogPeriodNs;
+
     if constexpr (kIsSocketBackend<T>) {
         DutSession<IoMode::Socket, QuoterStrategy> sess(cfg.session, QuoterStrategy(cfg.quoter));
         if (!sess.connectVenue(cfg.socket.oeHost.c_str(), cfg.socket.oePort,
@@ -42,8 +63,15 @@ int runDut(const DutAppConfig& cfg, typename T::Type& backend, volatile std::sig
 
         RecorderThread consumer({&sess.t2t(), &sess.proc()}, cfg.measure.histogramCore);
         consumer.start();
-        sess.run(stop);
+        sess.run(stop, [&] {
+            const std::uint64_t now = monotonicNs();
+            if (now >= nextLog) {
+                logDut(sess, now - start);
+                nextLog += kDutLogPeriodNs;
+            }
+        });
         consumer.stop();
+        logDut(sess, monotonicNs() - start);
         printDutReport(sess);
         return 0;
     } else {
@@ -61,10 +89,20 @@ int runDut(const DutAppConfig& cfg, typename T::Type& backend, volatile std::sig
 
         RecorderThread consumer({&sess.t2t(), &sess.proc()}, cfg.measure.histogramCore);
         consumer.start();
+        std::uint64_t polls = 0;
         while (stop == 0) {
             sess.poll();
+            if (++polls == kDutPollsPerClockRead) {
+                polls = 0;
+                const std::uint64_t now = monotonicNs();
+                if (now >= nextLog) {
+                    logDut(sess, now - start);
+                    nextLog += kDutLogPeriodNs;
+                }
+            }
         }
         consumer.stop();
+        logDut(sess, monotonicNs() - start);
         printDutReport(sess);
         return 0;
     }

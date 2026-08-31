@@ -30,6 +30,8 @@ public:
     [[nodiscard]] const OrderBook& book() const noexcept;
     [[nodiscard]] Price bestBid() const noexcept;
     [[nodiscard]] Price bestAsk() const noexcept;
+    [[nodiscard]] std::uint64_t trades() const noexcept;
+    [[nodiscard]] std::size_t liveOrders() const noexcept;
 
 private:
     struct LiveOrder {
@@ -271,6 +273,16 @@ Price Venue<Sink>::bestBid() const noexcept {
 template <class Sink>
 Price Venue<Sink>::bestAsk() const noexcept {
     return m_engine.bestAsk();
+}
+
+template <class Sink>
+std::uint64_t Venue<Sink>::trades() const noexcept {
+    return m_nextMatch - 1;
+}
+
+template <class Sink>
+std::size_t Venue<Sink>::liveOrders() const noexcept {
+    return m_live.size();
 }
 
 template <class Sink>

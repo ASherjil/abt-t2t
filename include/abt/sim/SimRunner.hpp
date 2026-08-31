@@ -15,13 +15,35 @@
 
 namespace abt {
 
+inline constexpr std::uint64_t kSimLogPeriodNs = 1'000'000'000ull;
+
+template <class Session>
+void logSim(const Session& ex, std::uint64_t elapsedNs) {
+    const SessionStats& s = ex.stats();
+    fmt::print(stderr,
+               "[sim +{:>4}s] md_pkts={} oe_pkts={} enter={} replace={} cancel={} unknown={} trades={} "
+               "bid={} ask={} live={}\n",
+               elapsedNs / 1'000'000'000ull, s.mdPackets, s.oePackets, s.enters, s.replaces,
+               s.cancels, s.unknown, ex.trades(), ex.bestBid(), ex.bestAsk(), ex.liveOrders());
+}
+
 template <class Session>
 int runVenue(Session& ex, const SimConfig& cfg, volatile std::sig_atomic_t& stop) {
     FlowGenerator<Session> gen(ex, cfg.flow);
     ex.sessionEvent(itch::SystemEventCode::StartOfMarketHours, nsSinceMidnightUtc());
     gen.run(cfg.warmupSteps, nsSinceMidnightUtc(), 0);
-    ex.run(stop, cfg.tickIntervalNs, [&](std::uint64_t ts) { gen.step(ts); });
+    const std::uint64_t start = monotonicNs();
+    std::uint64_t nextLog = start + kSimLogPeriodNs;
+    ex.run(stop, cfg.tickIntervalNs, [&](std::uint64_t ts) {
+        gen.step(ts);
+        const std::uint64_t now = monotonicNs();
+        if (now >= nextLog) {
+            logSim(ex, now - start);
+            nextLog += kSimLogPeriodNs;
+        }
+    });
     ex.sessionEvent(itch::SystemEventCode::EndOfMarketHours, nsSinceMidnightUtc());
+    logSim(ex, monotonicNs() - start);
     return 0;
 }
 

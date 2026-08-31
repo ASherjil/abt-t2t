@@ -77,7 +77,8 @@ public:
     void login(std::string_view session, std::string_view user) requires (Mode == IoMode::Socket);
     void onOrderEntry(std::span<const std::byte> data) requires (Mode == IoMode::Socket);
     [[nodiscard]] bool sessionEstablished() const noexcept requires (Mode == IoMode::Socket);
-    void run(volatile std::sig_atomic_t& stop) requires (Mode == IoMode::Socket);
+    template <class Periodic>
+    void run(volatile std::sig_atomic_t& stop, Periodic&& periodic) requires (Mode == IoMode::Socket);
 
     void prepareTransport(Io& io, const net::Endpoints& oeEp)
         requires (Mode == IoMode::Transport && TxRing<Io>);
@@ -93,6 +94,7 @@ public:
     [[nodiscard]] LatencyRecorder& t2t() noexcept;
     [[nodiscard]] LatencyRecorder& proc() noexcept;
     [[nodiscard]] std::uint32_t ordersSent() const noexcept;
+    [[nodiscard]] std::uint64_t packetsReceived() const noexcept;
 
     [[nodiscard]] const std::vector<std::vector<std::byte>>& capturedOrders() const
         requires (Mode == IoMode::Loopback);
@@ -136,6 +138,7 @@ private:
     LatencyRecorder m_t2t;
     LatencyRecorder m_proc;
     std::uint32_t   m_ordersSent = 0;
+    std::uint64_t   m_packets    = 0;
 
     std::array<Outbound, OrderManager::kMaxOutbound> m_out{};
     std::array<InFlight, kInFlight>                  m_inflight{};
@@ -271,10 +274,12 @@ bool DutSession<Mode, Strat, Io>::sessionEstablished() const noexcept
 }
 
 template <IoMode Mode, Strategy Strat, class Io>
-void DutSession<Mode, Strat, Io>::run(volatile std::sig_atomic_t& stop)
+template <class Periodic>
+void DutSession<Mode, Strat, Io>::run(volatile std::sig_atomic_t& stop, Periodic&& periodic)
     requires (Mode == IoMode::Socket) {
     std::array<std::byte, 8192> rx{};
     while (stop == 0) {
+        periodic();
         pollfd pfds[2] = {{m_sock.mdFd, POLLIN, 0}, {m_sock.oeFd, POLLIN, 0}};
         if (::poll(pfds, 2, 1) <= 0) {
             continue;
@@ -380,6 +385,11 @@ std::uint32_t DutSession<Mode, Strat, Io>::ordersSent() const noexcept {
 }
 
 template <IoMode Mode, Strategy Strat, class Io>
+std::uint64_t DutSession<Mode, Strat, Io>::packetsReceived() const noexcept {
+    return m_packets;
+}
+
+template <IoMode Mode, Strategy Strat, class Io>
 const std::vector<std::vector<std::byte>>& DutSession<Mode, Strat, Io>::capturedOrders() const
     requires (Mode == IoMode::Loopback) {
     return m_cap.oe;
@@ -391,6 +401,7 @@ void DutSession<Mode, Strat, Io>::applyPacket(std::span<const std::byte> moldPac
     if (moldPacket.size() < mold::kHeaderSize) [[unlikely]] {
         return;
     }
+    ++m_packets;
     const std::uint64_t begin = tsc::now();
     const SequenceTracker::Result r =
         m_seq.onPacket(mold::sequenceOf(moldPacket), mold::countOf(moldPacket));

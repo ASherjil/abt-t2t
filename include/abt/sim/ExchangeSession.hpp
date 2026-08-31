@@ -44,6 +44,15 @@ enum class IoMode { Loopback, Socket, Transport };
 
 struct NoTransport {};
 
+struct SessionStats {
+    std::uint64_t mdPackets = 0;
+    std::uint64_t oePackets = 0;
+    std::uint64_t enters    = 0;
+    std::uint64_t cancels   = 0;
+    std::uint64_t replaces  = 0;
+    std::uint64_t unknown   = 0;
+};
+
 template <IoMode Mode, class Tx = NoTransport>
 class ExchangeSession {
 public:
@@ -61,6 +70,9 @@ public:
     [[nodiscard]] Price bestBid() const noexcept;
     [[nodiscard]] Price bestAsk() const noexcept;
     [[nodiscard]] const OrderBook& book() const noexcept;
+    [[nodiscard]] const SessionStats& stats() const noexcept;
+    [[nodiscard]] std::uint64_t trades() const noexcept;
+    [[nodiscard]] std::size_t liveOrders() const noexcept;
 
     [[nodiscard]] bool prepareSocketIo(std::uint16_t oePort, const char* mdHost, std::uint16_t mdPort)
         requires (Mode == IoMode::Socket);
@@ -122,6 +134,7 @@ private:
     VenueSink         m_sink;
     mold::Packer      m_packer;
     Venue<VenueSink>  m_venue;
+    SessionStats      m_stats{};
 
     std::vector<std::byte>       m_rxBuf;
     std::array<std::byte, 2048>  m_mdBuf{};
@@ -152,6 +165,7 @@ ExchangeSession<Mode, Tx>::~ExchangeSession() {
 template <IoMode Mode, class Tx>
 void ExchangeSession<Mode, Tx>::onOrderEntryBytes(std::span<const std::byte> data,
                                                   std::uint64_t ts) {
+    ++m_stats.oePackets;
     m_rxBuf.insert(m_rxBuf.end(), data.begin(), data.end());
     std::size_t off = 0;
     soup::Packet p{};
@@ -188,6 +202,12 @@ template <IoMode Mode, class Tx>
 Price ExchangeSession<Mode, Tx>::bestAsk() const noexcept { return m_venue.bestAsk(); }
 template <IoMode Mode, class Tx>
 const OrderBook& ExchangeSession<Mode, Tx>::book() const noexcept { return m_venue.book(); }
+template <IoMode Mode, class Tx>
+const SessionStats& ExchangeSession<Mode, Tx>::stats() const noexcept { return m_stats; }
+template <IoMode Mode, class Tx>
+std::uint64_t ExchangeSession<Mode, Tx>::trades() const noexcept { return m_venue.trades(); }
+template <IoMode Mode, class Tx>
+std::size_t ExchangeSession<Mode, Tx>::liveOrders() const noexcept { return m_venue.liveOrders(); }
 
 template <IoMode Mode, class Tx>
 bool ExchangeSession<Mode, Tx>::prepareSocketIo(std::uint16_t oePort, const char* mdHost,
@@ -240,6 +260,7 @@ template <IoMode Mode, class Tx>
 void ExchangeSession<Mode, Tx>::pollOrderEntry(std::uint64_t ts)
     requires (Mode == IoMode::Transport && RxRing<Tx>) {
     for (auto f = m_io.tx->tryReceive(); f.status != 0; f = m_io.tx->tryReceive()) {
+        ++m_stats.oePackets;
         const auto raw = f.data;
         if (raw.size() > net::kL2L3L4Overhead) {
             const auto* p = reinterpret_cast<const std::byte*>(raw.data());
@@ -291,6 +312,7 @@ void ExchangeSession<Mode, Tx>::sendFrame(const net::UdpFramer& fr,
 
 template <IoMode Mode, class Tx>
 void ExchangeSession<Mode, Tx>::marketDataOut(std::span<const std::byte> b) {
+    ++m_stats.mdPackets;
     if constexpr (Mode == IoMode::Loopback) {
         m_cap.md.emplace_back(b.begin(), b.end());
     } else if constexpr (Mode == IoMode::Socket) {
@@ -340,17 +362,22 @@ void ExchangeSession<Mode, Tx>::dispatchOuch(std::span<const std::byte> payload,
         payload.size() >= sizeof(ouch::EnterOrder)) {
         ouch::EnterOrder o{};
         std::memcpy(&o, payload.data(), sizeof o);
+        ++m_stats.enters;
         withMarketData([&] { m_venue.onEnterOrder(o, ts); });
     } else if (t == static_cast<char>(ouch::InType::CancelOrder) &&
                payload.size() >= sizeof(ouch::CancelOrder)) {
         ouch::CancelOrder x{};
         std::memcpy(&x, payload.data(), sizeof x);
+        ++m_stats.cancels;
         withMarketData([&] { m_venue.onCancelOrder(x, ts); });
     } else if (t == static_cast<char>(ouch::InType::ReplaceOrder) &&
                payload.size() >= sizeof(ouch::ReplaceOrder)) {
         ouch::ReplaceOrder u{};
         std::memcpy(&u, payload.data(), sizeof u);
+        ++m_stats.replaces;
         withMarketData([&] { m_venue.onReplaceOrder(u, ts); });
+    } else {
+        ++m_stats.unknown;
     }
 }
 
