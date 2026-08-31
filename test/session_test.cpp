@@ -36,7 +36,7 @@ std::vector<std::vector<std::byte>> moldMessages(const std::vector<std::byte>& d
 
 soup::Packet soupOf(const std::vector<std::byte>& pkt) {
     soup::Packet p{};
-    soup::parse({pkt.data(), pkt.size()}, p);
+    (void)soup::parse({pkt.data(), pkt.size()}, p);
     return p;
 }
 
