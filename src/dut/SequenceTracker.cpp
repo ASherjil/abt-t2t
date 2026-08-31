@@ -5,10 +5,10 @@
 namespace abt::dut {
 
 SequenceTracker::Result SequenceTracker::onPacket(std::uint64_t seq, std::uint16_t count) noexcept {
-    const bool carries = count != mold::kHeartbeat && count != mold::kEndOfSession;
+    const bool          carries = count != mold::kHeartbeat && count != mold::kEndOfSession;
     const std::uint64_t advance = carries ? count : 0;
     if (!m_started) {
-        m_started = true;
+        m_started  = true;
         m_expected = seq + advance;
         return Result::InOrder;
     }
@@ -32,10 +32,10 @@ SequenceTracker::Result SequenceTracker::onPacket(std::uint64_t seq, std::uint16
 
 void SequenceTracker::reset() noexcept {
     m_expected = 0;
-    m_gaps = 0;
-    m_missed = 0;
-    m_stale = 0;
-    m_started = false;
+    m_gaps     = 0;
+    m_missed   = 0;
+    m_stale    = 0;
+    m_started  = false;
 }
 
 bool SequenceTracker::started() const noexcept {
@@ -58,4 +58,4 @@ std::uint64_t SequenceTracker::stale() const noexcept {
     return m_stale;
 }
 
-}
+}   // namespace abt::dut

@@ -25,10 +25,10 @@ inline constexpr std::uint16_t kFlagDontFragment = 0x4000;
 
 using MacAddr = std::array<std::uint8_t, 6>;
 
-[[nodiscard]] constexpr std::uint32_t ipv4(std::uint8_t a, std::uint8_t b,
-                                           std::uint8_t c, std::uint8_t d) noexcept {
-    return (static_cast<std::uint32_t>(a) << 24) | (static_cast<std::uint32_t>(b) << 16)
-         | (static_cast<std::uint32_t>(c) << 8)  |  static_cast<std::uint32_t>(d);
+[[nodiscard]] constexpr std::uint32_t ipv4(std::uint8_t a, std::uint8_t b, std::uint8_t c,
+                                           std::uint8_t d) noexcept {
+    return (static_cast<std::uint32_t>(a) << 24) | (static_cast<std::uint32_t>(b) << 16) |
+           (static_cast<std::uint32_t>(c) << 8) | static_cast<std::uint32_t>(d);
 }
 
 struct EthHeader {
@@ -36,6 +36,7 @@ struct EthHeader {
     MacAddr     srcMac;
     wire::u16be etherType;
 };
+
 static_assert(sizeof(EthHeader) == kEthHeaderSize);
 static_assert(alignof(EthHeader) == 1);
 static_assert(std::is_trivially_copyable_v<EthHeader>);
@@ -52,6 +53,7 @@ struct Ipv4Header {
     wire::u32be  srcIp;
     wire::u32be  dstIp;
 };
+
 static_assert(sizeof(Ipv4Header) == kIpv4HeaderSize);
 static_assert(alignof(Ipv4Header) == 1);
 static_assert(std::is_trivially_copyable_v<Ipv4Header>);
@@ -62,8 +64,9 @@ struct UdpHeader {
     wire::u16be length;
     wire::u16be checksum;
 };
+
 static_assert(sizeof(UdpHeader) == kUdpHeaderSize);
 static_assert(alignof(UdpHeader) == 1);
 static_assert(std::is_trivially_copyable_v<UdpHeader>);
 
-}
+}   // namespace abt::net

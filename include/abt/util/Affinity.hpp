@@ -15,4 +15,4 @@ inline bool pinThread(int core) noexcept {
     return pthread_setaffinity_np(pthread_self(), sizeof set, &set) == 0;
 }
 
-}
+}   // namespace abt::util

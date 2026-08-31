@@ -14,22 +14,24 @@ class FlowGenerator {
 public:
     FlowGenerator(Market& market, const FlowConfig& cfg);
 
-    void step(std::uint64_t ts);
-    void run(std::size_t steps, std::uint64_t tsStart, std::uint64_t tsStep);
+    void                      step(std::uint64_t ts);
+    void                      run(std::size_t steps, std::uint64_t tsStart, std::uint64_t tsStep);
     [[nodiscard]] std::size_t liveCount() const noexcept;
 
 private:
     std::uint64_t rng() noexcept;
 
-    Market&              m_market;
-    FlowConfig           m_cfg;
-    std::uint64_t        m_state;
-    std::deque<OrderId>  m_live;
+    Market&             m_market;
+    FlowConfig          m_cfg;
+    std::uint64_t       m_state;
+    std::deque<OrderId> m_live;
 };
 
 template <class Market>
 FlowGenerator<Market>::FlowGenerator(Market& market, const FlowConfig& cfg)
-    : m_market(market), m_cfg(cfg), m_state(cfg.seed ? cfg.seed : 1) {
+    : m_market(market),
+      m_cfg(cfg),
+      m_state(cfg.seed ? cfg.seed : 1) {
 }
 
 template <class Market>
@@ -44,11 +46,10 @@ void FlowGenerator<Market>::step(std::uint64_t ts) {
         return;
     }
 
-    const bool buy = (rng() & 1u) != 0;
-    const Side side = buy ? Side::Buy : Side::Sell;
-    const Quantity qty = m_cfg.minQty +
-        static_cast<Quantity>(rng() % (m_cfg.maxQty - m_cfg.minQty + 1));
-    const bool crossing = roll >= 100 - m_cfg.crossPct;
+    const bool     buy      = (rng() & 1u) != 0;
+    const Side     side     = buy ? Side::Buy : Side::Sell;
+    const Quantity qty      = m_cfg.minQty + static_cast<Quantity>(rng() % (m_cfg.maxQty - m_cfg.minQty + 1));
+    const bool     crossing = roll >= 100 - m_cfg.crossPct;
 
     Price tick;
     if (crossing) {
@@ -59,8 +60,7 @@ void FlowGenerator<Market>::step(std::uint64_t ts) {
         }
     } else {
         const Price off = static_cast<Price>(rng() % static_cast<std::uint64_t>(m_cfg.depthTicks));
-        tick = buy ? m_cfg.midTick - m_cfg.halfSpread - off
-                   : m_cfg.midTick + m_cfg.halfSpread + off;
+        tick = buy ? m_cfg.midTick - m_cfg.halfSpread - off : m_cfg.midTick + m_cfg.halfSpread + off;
     }
 
     const OrderId ref = m_market.injectSynthetic(side, tick, qty, ts);
@@ -97,4 +97,4 @@ std::uint64_t FlowGenerator<Market>::rng() noexcept {
     return x;
 }
 
-}
+}   // namespace abt

@@ -66,4 +66,4 @@ void Histogram::reset() noexcept {
     }
 }
 
-}
+}   // namespace abt::util

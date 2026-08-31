@@ -26,7 +26,7 @@ public:
 
     // Returns a pointer to the stored value (mutable), or nullptr if the key is absent. The pointer
     // is invalidated by any insertOrAssign that grows the table or by erase.
-    [[nodiscard]] Value* find(Key key) noexcept;
+    [[nodiscard]] Value*       find(Key key) noexcept;
     [[nodiscard]] const Value* find(Key key) const noexcept;
 
     // Insert the key or overwrite its value if already present. Grows (rehashes) past a 0.7 load
@@ -48,12 +48,12 @@ private:
         Value value;
     };
 
-    [[nodiscard]] static std::size_t nextPow2(std::size_t n) noexcept;
+    [[nodiscard]] static std::size_t   nextPow2(std::size_t n) noexcept;
     [[nodiscard]] static std::uint64_t mix(std::uint64_t x) noexcept;
-    [[nodiscard]] std::size_t slotFor(Key key) const noexcept;
-    [[nodiscard]] bool locate(Key key, std::size_t& idx) const noexcept;
-    void eraseAtHole(std::size_t hole) noexcept;
-    void grow();
+    [[nodiscard]] std::size_t          slotFor(Key key) const noexcept;
+    [[nodiscard]] bool                 locate(Key key, std::size_t& idx) const noexcept;
+    void                               eraseAtHole(std::size_t hole) noexcept;
+    void                               grow();
 
     std::vector<Slot> m_slots;
     std::size_t       m_mask = 0;
@@ -106,7 +106,7 @@ void FlatHashMap<Key, Value, Empty>::insertOrAssign(Key key, const Value& value)
     for (;;) {
         Slot& s = m_slots[i];
         if (s.key == Empty) {
-            s.key = key;
+            s.key   = key;
             s.value = value;
             ++m_size;
             return;
@@ -146,8 +146,8 @@ void FlatHashMap<Key, Value, Empty>::eraseAtHole(std::size_t hole) noexcept {
         if (m_slots[scan].key == Empty) {
             break;
         }
-        const std::size_t ideal = slotFor(m_slots[scan].key);
-        bool blocked = false;
+        const std::size_t ideal   = slotFor(m_slots[scan].key);
+        bool              blocked = false;
         if (hole <= scan) {
             blocked = (hole < ideal && ideal <= scan);
         } else {
@@ -157,9 +157,9 @@ void FlatHashMap<Key, Value, Empty>::eraseAtHole(std::size_t hole) noexcept {
             continue;
         }
         m_slots[hole] = m_slots[scan];
-        hole = scan;
+        hole          = scan;
     }
-    m_slots[hole].key = Empty;
+    m_slots[hole].key   = Empty;
     m_slots[hole].value = Value{};
     --m_size;
 }
@@ -188,7 +188,7 @@ bool FlatHashMap<Key, Value, Empty>::erase(Key key, Value& out) noexcept {
 template <class Key, class Value, Key Empty>
 void FlatHashMap<Key, Value, Empty>::clear() noexcept {
     for (Slot& s : m_slots) {
-        s.key = Empty;
+        s.key   = Empty;
         s.value = Value{};
     }
     m_size = 0;
@@ -232,7 +232,7 @@ std::size_t FlatHashMap<Key, Value, Empty>::slotFor(Key key) const noexcept {
 template <class Key, class Value, Key Empty>
 void FlatHashMap<Key, Value, Empty>::grow() {
     const std::size_t newCap = (m_mask + 1) * 2;
-    std::vector<Slot> old = std::move(m_slots);
+    std::vector<Slot> old    = std::move(m_slots);
     m_slots.assign(newCap, Slot{Empty, Value{}});
     m_mask = newCap - 1;
     m_size = 0;
@@ -243,4 +243,4 @@ void FlatHashMap<Key, Value, Empty>::grow() {
     }
 }
 
-}
+}   // namespace abt::util

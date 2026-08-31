@@ -23,10 +23,9 @@ void relax() noexcept {
 #endif
 }
 
-}
+}   // namespace
 
-LatencyRecorder::LatencyRecorder(std::string name, std::size_t queueCapacity, double nsPerUnit,
-                                 int sigFigs)
+LatencyRecorder::LatencyRecorder(std::string name, std::size_t queueCapacity, double nsPerUnit, int sigFigs)
     : m_name(std::move(name)),
       m_queue(queueCapacity < 2 ? 2 : queueCapacity),
       m_hist(kLowestNs, kHighestNs, sigFigs),
@@ -86,9 +85,9 @@ void LatencyRecorder::reset() noexcept {
 }
 
 void LatencyRecorder::summary() const {
-    fmt::print("[{}] ns: n={} dropped={} min={} p50={} p90={} p99={} p99.9={} p99.99={} max={}\n",
-               m_name, count(), dropped(), min(), percentile(50.0), percentile(90.0),
-               percentile(99.0), percentile(99.9), percentile(99.99), max());
+    fmt::print("[{}] ns: n={} dropped={} min={} p50={} p90={} p99={} p99.9={} p99.99={} max={}\n", m_name,
+               count(), dropped(), min(), percentile(50.0), percentile(90.0), percentile(99.0),
+               percentile(99.9), percentile(99.99), max());
 }
 
 RecorderThread::RecorderThread(std::vector<LatencyRecorder*> recorders, int cpuCore)
@@ -104,7 +103,9 @@ void RecorderThread::start() {
     if (m_run.exchange(true)) {
         return;
     }
-    m_thread = std::thread([this] { loop(); });
+    m_thread = std::thread([this] {
+        loop();
+    });
 }
 
 void RecorderThread::stop() {
@@ -136,4 +137,4 @@ void RecorderThread::loop() noexcept {
     }
 }
 
-}
+}   // namespace abt::dut

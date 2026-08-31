@@ -16,7 +16,7 @@ public:
     explicit ItchFileReader(const std::string& path, std::size_t bufferBytes = 1u << 22);
     ~ItchFileReader();
 
-    ItchFileReader(const ItchFileReader&) = delete;
+    ItchFileReader(const ItchFileReader&)            = delete;
     ItchFileReader& operator=(const ItchFileReader&) = delete;
 
     [[nodiscard]] bool ok() const noexcept;
@@ -24,18 +24,18 @@ public:
 
     [[nodiscard]] std::uint64_t messages() const noexcept;
     [[nodiscard]] std::uint64_t bytes() const noexcept;
-    [[nodiscard]] bool truncated() const noexcept;
+    [[nodiscard]] bool          truncated() const noexcept;
 
 private:
     [[nodiscard]] bool fill(std::size_t need);
 
     gzFile_s*              m_file = nullptr;
     std::vector<std::byte> m_buf;
-    std::size_t            m_pos = 0;
-    std::size_t            m_len = 0;
-    std::uint64_t          m_messages = 0;
-    std::uint64_t          m_bytes = 0;
-    bool                   m_eof = false;
+    std::size_t            m_pos       = 0;
+    std::size_t            m_len       = 0;
+    std::uint64_t          m_messages  = 0;
+    std::uint64_t          m_bytes     = 0;
+    bool                   m_eof       = false;
     bool                   m_truncated = false;
 };
 
@@ -44,16 +44,16 @@ public:
     explicit ItchFileWriter(const std::string& path);
     ~ItchFileWriter();
 
-    ItchFileWriter(const ItchFileWriter&) = delete;
+    ItchFileWriter(const ItchFileWriter&)            = delete;
     ItchFileWriter& operator=(const ItchFileWriter&) = delete;
 
-    [[nodiscard]] bool ok() const noexcept;
-    void write(std::span<const std::byte> msg);
+    [[nodiscard]] bool          ok() const noexcept;
+    void                        write(std::span<const std::byte> msg);
     [[nodiscard]] std::uint64_t messages() const noexcept;
 
 private:
-    std::FILE*    m_file = nullptr;
+    std::FILE*    m_file     = nullptr;
     std::uint64_t m_messages = 0;
 };
 
-}
+}   // namespace abt::replay

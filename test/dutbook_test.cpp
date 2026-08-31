@@ -2,11 +2,11 @@
 // Unit test for the DUT feed-driven order book (abt::dut::BookBuilder).
 //
 
+#include "TestHarness.hpp"
+
 #include <cstddef>
 #include <cstdint>
 #include <span>
-
-#include "TestHarness.hpp"
 
 #include "abt/dut/BookBuilder.hpp"
 #include "abt/protocol/Itch50.hpp"
@@ -23,25 +23,25 @@ std::span<const std::byte> bytesOf(const T& msg) {
 itch::AddOrder mkAdd(OrderId ref, char side, Quantity shares, Price price) {
     itch::AddOrder a{};
     a.messageType = 'A';
-    a.orderRef = ref;
-    a.side = side;
-    a.shares = shares;
-    a.price = static_cast<std::uint32_t>(price);
+    a.orderRef    = ref;
+    a.side        = side;
+    a.shares      = shares;
+    a.price       = static_cast<std::uint32_t>(price);
     return a;
 }
 
 itch::OrderExecuted mkExec(OrderId ref, Quantity executed) {
     itch::OrderExecuted e{};
-    e.messageType = 'E';
-    e.orderRef = ref;
+    e.messageType    = 'E';
+    e.orderRef       = ref;
     e.executedShares = executed;
     return e;
 }
 
 itch::OrderCancel mkCancel(OrderId ref, Quantity cancelled) {
     itch::OrderCancel x{};
-    x.messageType = 'X';
-    x.orderRef = ref;
+    x.messageType     = 'X';
+    x.orderRef        = ref;
     x.cancelledShares = cancelled;
     return x;
 }
@@ -49,17 +49,17 @@ itch::OrderCancel mkCancel(OrderId ref, Quantity cancelled) {
 itch::OrderDelete mkDelete(OrderId ref) {
     itch::OrderDelete d{};
     d.messageType = 'D';
-    d.orderRef = ref;
+    d.orderRef    = ref;
     return d;
 }
 
 itch::OrderReplace mkReplace(OrderId oldRef, OrderId newRef, Quantity shares, Price price) {
     itch::OrderReplace r{};
-    r.messageType = 'U';
+    r.messageType  = 'U';
     r.origOrderRef = oldRef;
-    r.newOrderRef = newRef;
-    r.shares = shares;
-    r.price = static_cast<std::uint32_t>(price);
+    r.newOrderRef  = newRef;
+    r.shares       = shares;
+    r.price        = static_cast<std::uint32_t>(price);
     return r;
 }
 
@@ -98,11 +98,11 @@ void test_book() {
     CHECK_EQ(book.liveOrders(), 1u);
 }
 
-}
+}   // namespace
 
 void test_own_orders_excluded_from_view() {
     constexpr OrderId kOwn = 1ull << 62;
-    dut::BookBuilder b(1, 1000, 1, 64, kOwn);
+    dut::BookBuilder  b(1, 1000, 1, 64, kOwn);
     b.apply(bytesOf(mkAdd(1u, 'B', 100u, 100)));
     b.apply(bytesOf(mkAdd(2u, 'S', 100u, 103)));
     b.apply(bytesOf(mkAdd(kOwn, 'B', 50u, 101)));

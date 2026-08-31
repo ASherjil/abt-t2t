@@ -3,9 +3,9 @@
 // wired up and the wrapper records + reports percentiles within HdrHistogram's precision.
 //
 
-#include <cstdint>
-
 #include "TestHarness.hpp"
+
+#include <cstdint>
 
 #include "abt/util/Histogram.hpp"
 
@@ -36,7 +36,7 @@ void test_histogram() {
     CHECK_EQ(h.percentile(50.0), 0);
 }
 
-}
+}   // namespace
 
 int main() {
     test_histogram();

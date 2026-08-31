@@ -29,4 +29,4 @@ struct QuoteTargets {
     Quantity askQty   = 0;
 };
 
-}
+}   // namespace abt::dut

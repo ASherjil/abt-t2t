@@ -14,7 +14,7 @@
 namespace abt {
 
 struct ReplayConfig {
-    bool          enabled      = false;
+    bool          enabled = false;
     std::string   file{};
     double        speed        = 1.0;
     std::uint32_t loops        = 0;
@@ -40,34 +40,36 @@ class MarketReplay {
 public:
     MarketReplay(Session& session, const ReplayConfig& cfg);
 
-    [[nodiscard]] bool open();
-    [[nodiscard]] bool pump(std::uint64_t nowMono);
+    [[nodiscard]] bool                  open();
+    [[nodiscard]] bool                  pump(std::uint64_t nowMono);
     [[nodiscard]] const ReplayProgress& progress() const noexcept;
-    [[nodiscard]] std::uint64_t fileMessages() const noexcept;
+    [[nodiscard]] std::uint64_t         fileMessages() const noexcept;
 
 private:
     [[nodiscard]] bool fetch();
     [[nodiscard]] bool restart();
-    void endOfLoop();
+    void               endOfLoop();
 
-    Session&                             m_session;
-    ReplayConfig                         m_cfg;
-    ReplayProgress                       m_progress{};
-    std::vector<std::byte>               m_store;
-    std::size_t                          m_cursor = 0;
+    Session&                              m_session;
+    ReplayConfig                          m_cfg;
+    ReplayProgress                        m_progress{};
+    std::vector<std::byte>                m_store;
+    std::size_t                           m_cursor = 0;
     std::optional<replay::ItchFileReader> m_reader;
-    std::uint64_t                        m_fileMessages = 0;
-    std::span<const std::byte>           m_cur{};
-    bool                                 m_have = false;
-    bool                                 m_anchored = false;
-    std::uint64_t                        m_anchorMono = 0;
-    std::uint64_t                        m_anchorTs = 0;
-    double                               m_nsPerNs = 1.0;
+    std::uint64_t                         m_fileMessages = 0;
+    std::span<const std::byte>            m_cur{};
+    bool                                  m_have       = false;
+    bool                                  m_anchored   = false;
+    std::uint64_t                         m_anchorMono = 0;
+    std::uint64_t                         m_anchorTs   = 0;
+    double                                m_nsPerNs    = 1.0;
 };
 
 template <class Session>
 MarketReplay<Session>::MarketReplay(Session& session, const ReplayConfig& cfg)
-    : m_session(session), m_cfg(cfg), m_nsPerNs(cfg.speed > 0.0 ? 1.0 / cfg.speed : 0.0) {
+    : m_session(session),
+      m_cfg(cfg),
+      m_nsPerNs(cfg.speed > 0.0 ? 1.0 / cfg.speed : 0.0) {
 }
 
 template <class Session>
@@ -76,7 +78,7 @@ bool MarketReplay<Session>::open() {
     if (!probe.ok()) {
         return false;
     }
-    const std::size_t cap = m_cfg.preloadMaxMb << 20;
+    const std::size_t          cap = m_cfg.preloadMaxMb << 20;
     std::span<const std::byte> msg;
     while (probe.next(msg)) {
         if (m_store.size() + msg.size() + 2 > cap) {
@@ -96,8 +98,8 @@ bool MarketReplay<Session>::open() {
 
 template <class Session>
 bool MarketReplay<Session>::restart() {
-    m_cursor = 0;
-    m_have = false;
+    m_cursor   = 0;
+    m_have     = false;
     m_anchored = false;
     if (m_progress.preloaded) {
         return true;
@@ -174,15 +176,16 @@ bool MarketReplay<Session>::pump(std::uint64_t nowMono) {
             continue;
         }
         if (!m_anchored && m_nsPerNs > 0.0 && (m_cfg.skipToNs == 0 || ts >= m_cfg.skipToNs)) {
-            m_anchored = true;
+            m_anchored   = true;
             m_anchorMono = nowMono;
-            m_anchorTs = ts;
+            m_anchorTs   = ts;
         }
         if (m_anchored) {
-            const std::uint64_t due =
-                ts > m_anchorTs
-                    ? m_anchorMono + static_cast<std::uint64_t>(static_cast<double>(ts - m_anchorTs) * m_nsPerNs)
-                    : m_anchorMono;
+            const std::uint64_t due = ts > m_anchorTs
+                                          ? m_anchorMono +
+                                                static_cast<std::uint64_t>(
+                                                    static_cast<double>(ts - m_anchorTs) * m_nsPerNs)
+                                          : m_anchorMono;
             if (due > nowMono) {
                 nowMono = monotonicNs();
                 if (due > nowMono) {
@@ -219,4 +222,4 @@ std::uint64_t MarketReplay<Session>::fileMessages() const noexcept {
     return m_fileMessages;
 }
 
-}
+}   // namespace abt

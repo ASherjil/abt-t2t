@@ -41,4 +41,4 @@ void UdpFramer::patch(std::byte* frame, std::size_t payloadLen) const noexcept {
     ip->checksum = computeChecksum({frame + kEthHeaderSize, kIpv4HeaderSize});
 }
 
-}
+}   // namespace abt::net

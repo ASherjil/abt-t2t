@@ -11,25 +11,25 @@
 namespace abt::replay {
 
 struct ReplayStats {
-    std::uint64_t messages     = 0;
-    std::uint64_t adds         = 0;
-    std::uint64_t executes     = 0;
-    std::uint64_t cancels      = 0;
-    std::uint64_t deletes      = 0;
-    std::uint64_t replaces     = 0;
-    std::uint64_t trades       = 0;
-    std::uint64_t unknownRef   = 0;
-    std::uint64_t overReduce   = 0;
-    std::uint64_t crossed      = 0;
-    std::uint64_t outOfBand    = 0;
-    std::uint64_t maxLive      = 0;
-    std::uint64_t firstTs      = 0;
-    std::uint64_t lastTs       = 0;
-    std::uint64_t marketOpenTs = 0;
+    std::uint64_t messages      = 0;
+    std::uint64_t adds          = 0;
+    std::uint64_t executes      = 0;
+    std::uint64_t cancels       = 0;
+    std::uint64_t deletes       = 0;
+    std::uint64_t replaces      = 0;
+    std::uint64_t trades        = 0;
+    std::uint64_t unknownRef    = 0;
+    std::uint64_t overReduce    = 0;
+    std::uint64_t crossed       = 0;
+    std::uint64_t outOfBand     = 0;
+    std::uint64_t maxLive       = 0;
+    std::uint64_t firstTs       = 0;
+    std::uint64_t lastTs        = 0;
+    std::uint64_t marketOpenTs  = 0;
     std::uint64_t marketCloseTs = 0;
-    std::uint64_t peakPerMs    = 0;
-    std::uint64_t peakPerSec   = 0;
-    std::uint64_t peakMsBucket = 0;
+    std::uint64_t peakPerMs     = 0;
+    std::uint64_t peakPerSec    = 0;
+    std::uint64_t peakMsBucket  = 0;
     std::uint64_t peakSecBucket = 0;
 };
 
@@ -40,10 +40,10 @@ public:
     void onMessage(std::span<const std::byte> msg);
     void finish() noexcept;
 
-    [[nodiscard]] const ReplayStats& stats() const noexcept;
+    [[nodiscard]] const ReplayStats&      stats() const noexcept;
     [[nodiscard]] const dut::BookBuilder& book() const noexcept;
-    [[nodiscard]] const util::Histogram& interArrivalNs() const noexcept;
-    [[nodiscard]] bool inContinuousSession() const noexcept;
+    [[nodiscard]] const util::Histogram&  interArrivalNs() const noexcept;
+    [[nodiscard]] bool                    inContinuousSession() const noexcept;
 
 private:
     void checkReference(OrderId ref, Quantity reduceBy) noexcept;
@@ -65,4 +65,4 @@ private:
     std::uint64_t    m_secCount    = 0;
 };
 
-}
+}   // namespace abt::replay

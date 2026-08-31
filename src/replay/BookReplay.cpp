@@ -27,7 +27,7 @@ template <class M>
     return v;
 }
 
-}
+}   // namespace
 
 BookReplay::BookReplay(std::uint16_t stockLocate, Price minPrice, Price maxPrice, Price tickWire)
     : m_locate(stockLocate),
@@ -41,9 +41,9 @@ void BookReplay::onMessage(std::span<const std::byte> msg) {
     if (msg.size() < 11) {
         return;
     }
-    const char type = static_cast<char>(msg[0]);
+    const char          type   = static_cast<char>(msg[0]);
     const std::uint16_t locate = locateOf(msg);
-    const std::uint64_t ts = timestampOf(msg);
+    const std::uint64_t ts     = timestampOf(msg);
 
     if (type == 'S') {
         const auto* s = as<itch::SystemEvent>(msg);
@@ -52,11 +52,11 @@ void BookReplay::onMessage(std::span<const std::byte> msg) {
         }
         switch (static_cast<itch::SystemEventCode>(s->eventCode)) {
             case itch::SystemEventCode::StartOfMarketHours:
-                m_marketHours = true;
+                m_marketHours        = true;
                 m_stats.marketOpenTs = ts;
                 break;
             case itch::SystemEventCode::EndOfMarketHours:
-                m_marketHours = false;
+                m_marketHours         = false;
                 m_stats.marketCloseTs = ts;
                 break;
             default:
@@ -163,11 +163,11 @@ void BookReplay::onMessage(std::span<const std::byte> msg) {
 
 void BookReplay::finish() noexcept {
     if (m_msCount > m_stats.peakPerMs) {
-        m_stats.peakPerMs = m_msCount;
+        m_stats.peakPerMs    = m_msCount;
         m_stats.peakMsBucket = m_msBucket;
     }
     if (m_secCount > m_stats.peakPerSec) {
-        m_stats.peakPerSec = m_secCount;
+        m_stats.peakPerSec    = m_secCount;
         m_stats.peakSecBucket = m_secBucket;
     }
 }
@@ -208,22 +208,22 @@ void BookReplay::rate(std::uint64_t ts) noexcept {
     const std::uint64_t ms = ts / 1'000'000ull;
     if (ms != m_msBucket) {
         if (m_msCount > m_stats.peakPerMs) {
-            m_stats.peakPerMs = m_msCount;
+            m_stats.peakPerMs    = m_msCount;
             m_stats.peakMsBucket = m_msBucket;
         }
         m_msBucket = ms;
-        m_msCount = 0;
+        m_msCount  = 0;
     }
     ++m_msCount;
 
     const std::uint64_t sec = ts / 1'000'000'000ull;
     if (sec != m_secBucket) {
         if (m_secCount > m_stats.peakPerSec) {
-            m_stats.peakPerSec = m_secCount;
+            m_stats.peakPerSec    = m_secCount;
             m_stats.peakSecBucket = m_secBucket;
         }
         m_secBucket = sec;
-        m_secCount = 0;
+        m_secCount  = 0;
     }
     ++m_secCount;
 }
@@ -239,4 +239,4 @@ void BookReplay::checkCrossed() noexcept {
     }
 }
 
-}
+}   // namespace abt::replay

@@ -17,30 +17,29 @@ using namespace abt;
 namespace {
 
 struct Args {
-    std::string file;
-    std::string symbol;
+    std::string                file;
+    std::string                symbol;
     std::optional<std::string> extractTo;
-    Price minPrice = 0;
-    Price maxPrice = 20'000'000;
-    Price tickWire = 100;
-    std::uint64_t progressEvery = 50'000'000;
+    Price                      minPrice      = 0;
+    Price                      maxPrice      = 20'000'000;
+    Price                      tickWire      = 100;
+    std::uint64_t              progressEvery = 50'000'000;
 };
 
 void usage() {
-    fmt::print(stderr,
-               "usage: itch_replay <file.itch|.gz> <SYMBOL> [--extract <out.itch>] "
-               "[--max-price <wire>] [--tick <wire>]\n");
+    fmt::print(stderr, "usage: itch_replay <file.itch|.gz> <SYMBOL> [--extract <out.itch>] "
+                       "[--max-price <wire>] [--tick <wire>]\n");
 }
 
 bool parseArgs(int argc, char** argv, Args& a) {
     if (argc < 3) {
         return false;
     }
-    a.file = argv[1];
+    a.file   = argv[1];
     a.symbol = argv[2];
     for (int i = 3; i < argc; ++i) {
-        const std::string_view opt = argv[i];
-        const bool hasValue = i + 1 < argc;
+        const std::string_view opt      = argv[i];
+        const bool             hasValue = i + 1 < argc;
         if (opt == "--extract" && hasValue) {
             a.extractTo = argv[++i];
         } else if (opt == "--max-price" && hasValue) {
@@ -54,7 +53,7 @@ bool parseArgs(int argc, char** argv, Args& a) {
     return true;
 }
 
-}
+}   // namespace
 
 int main(int argc, char** argv) {
     Args a{};
@@ -77,10 +76,10 @@ int main(int argc, char** argv) {
         }
     }
 
-    replay::SymbolFilter filter(a.symbol);
+    replay::SymbolFilter              filter(a.symbol);
     std::optional<replay::BookReplay> book;
-    std::span<const std::byte> msg;
-    std::uint64_t kept = 0;
+    std::span<const std::byte>        msg;
+    std::uint64_t                     kept = 0;
     while (reader.next(msg)) {
         if (reader.messages() % a.progressEvery == 0) {
             fmt::print(stderr, "  ... {} messages read, {} kept\n", reader.messages(), kept);
@@ -108,8 +107,8 @@ int main(int argc, char** argv) {
     }
     book->finish();
 
-    const replay::ReplayStats& s = book->stats();
-    const util::Histogram& gap = book->interArrivalNs();
+    const replay::ReplayStats& s   = book->stats();
+    const util::Histogram&     gap = book->interArrivalNs();
     fmt::print("file           {}\n", a.file);
     fmt::print("symbol         {} (locate {})\n", a.symbol, filter.stockLocate());
     fmt::print("read           {} messages, {} bytes{}\n", reader.messages(), reader.bytes(),

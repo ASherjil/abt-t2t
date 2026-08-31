@@ -21,8 +21,7 @@ namespace abt::util {
 inline constexpr std::size_t kNoIndex = std::numeric_limits<std::size_t>::max();
 
 // Largest index j in [0, start] with a[j] != 0, else kNoIndex.
-[[nodiscard]] inline std::size_t scanDownNonZeroScalar(const std::uint32_t* a,
-                                                       std::size_t start) noexcept {
+[[nodiscard]] inline std::size_t scanDownNonZeroScalar(const std::uint32_t* a, std::size_t start) noexcept {
     std::size_t i = start;
     for (;;) {
         if (a[i] != 0) {
@@ -48,16 +47,14 @@ inline constexpr std::size_t kNoIndex = std::numeric_limits<std::size_t>::max();
 
 #if defined(__AVX2__)
 
-[[nodiscard]] inline std::size_t scanDownNonZeroAvx2(const std::uint32_t* a,
-                                                     std::size_t start) noexcept {
+[[nodiscard]] inline std::size_t scanDownNonZeroAvx2(const std::uint32_t* a, std::size_t start) noexcept {
     const __m256i zero = _mm256_setzero_si256();
-    std::size_t i = start;
+    std::size_t   i    = start;
     while (i >= 7) {
-        const std::size_t base = i - 7;
-        const __m256i v = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(a + base));
-        const int zmask = _mm256_movemask_ps(
-            _mm256_castsi256_ps(_mm256_cmpeq_epi32(v, zero)));
-        const unsigned nz = static_cast<unsigned>(~zmask) & 0xFFu;
+        const std::size_t base  = i - 7;
+        const __m256i     v     = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(a + base));
+        const int         zmask = _mm256_movemask_ps(_mm256_castsi256_ps(_mm256_cmpeq_epi32(v, zero)));
+        const unsigned    nz    = static_cast<unsigned>(~zmask) & 0xFFu;
         if (nz != 0) {
             const int lane = 31 - __builtin_clz(nz);   // highest non-zero lane
             return base + static_cast<std::size_t>(lane);
@@ -81,12 +78,11 @@ inline constexpr std::size_t kNoIndex = std::numeric_limits<std::size_t>::max();
 [[nodiscard]] inline std::size_t scanUpNonZeroAvx2(const std::uint32_t* a, std::size_t start,
                                                    std::size_t last) noexcept {
     const __m256i zero = _mm256_setzero_si256();
-    std::size_t i = start;
+    std::size_t   i    = start;
     while (i + 7 <= last) {
-        const __m256i v = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(a + i));
-        const int zmask = _mm256_movemask_ps(
-            _mm256_castsi256_ps(_mm256_cmpeq_epi32(v, zero)));
-        const unsigned nz = static_cast<unsigned>(~zmask) & 0xFFu;
+        const __m256i  v     = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(a + i));
+        const int      zmask = _mm256_movemask_ps(_mm256_castsi256_ps(_mm256_cmpeq_epi32(v, zero)));
+        const unsigned nz    = static_cast<unsigned>(~zmask) & 0xFFu;
         if (nz != 0) {
             const int lane = __builtin_ctz(nz);   // lowest non-zero lane
             return i + static_cast<std::size_t>(lane);
@@ -120,4 +116,4 @@ inline constexpr std::size_t kNoIndex = std::numeric_limits<std::size_t>::max();
 #endif
 }
 
-}
+}   // namespace abt::util

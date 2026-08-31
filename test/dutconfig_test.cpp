@@ -1,9 +1,9 @@
+#include "TestHarness.hpp"
+
 #include <cstdint>
 #include <cstdio>
 #include <fstream>
 #include <string>
-
-#include "TestHarness.hpp"
 
 #include "abt/dut/DutAppConfig.hpp"
 
@@ -60,7 +60,7 @@ dst_port = 40001
 
 std::string writeTemp() {
     const std::string path = "dutconfig_test_tmp.toml";
-    std::ofstream f(path);
+    std::ofstream     f(path);
     f << kToml;
     return path;
 }
@@ -70,8 +70,8 @@ int octet(std::uint32_t ip, int shift) {
 }
 
 void test_load() {
-    const std::string path = writeTemp();
-    const dut::DutAppConfig c = dut::loadDutConfig(path);
+    const std::string       path = writeTemp();
+    const dut::DutAppConfig c    = dut::loadDutConfig(path);
     std::remove(path.c_str());
 
     CHECK(c.session.symbol == "MSFT");
@@ -125,7 +125,7 @@ void test_defaults() {
     CHECK_EQ(c.measure.histogramCore, -1);
 }
 
-}
+}   // namespace
 
 int main() {
     test_load();

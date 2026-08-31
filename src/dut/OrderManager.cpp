@@ -12,8 +12,7 @@ namespace {
 }
 
 [[nodiscard]] char ouchSide(Side side) noexcept {
-    return side == Side::Buy ? static_cast<char>(ouch::Side::Buy)
-                             : static_cast<char>(ouch::Side::Sell);
+    return side == Side::Buy ? static_cast<char>(ouch::Side::Buy) : static_cast<char>(ouch::Side::Sell);
 }
 
 template <class M>
@@ -25,18 +24,17 @@ template <class M>
     return true;
 }
 
-}
+}   // namespace
 
 OrderManager::OrderManager(const OmsConfig& cfg)
     : m_cfg(cfg),
       m_nextUserRef(cfg.firstUserRef == 0 ? 1u : cfg.firstUserRef) {
 }
 
-std::size_t OrderManager::reconcile(const QuoteTargets& t,
-                                    std::span<Outbound, kMaxOutbound> out) noexcept {
-    std::size_t n = 0;
-    const QuoteSlot& ask = m_slots[idx(Side::Sell)];
-    const bool sellFirst = t.quoteBid && ask.state != QuoteState::Idle && t.bidPrice >= ask.price;
+std::size_t OrderManager::reconcile(const QuoteTargets& t, std::span<Outbound, kMaxOutbound> out) noexcept {
+    std::size_t      n         = 0;
+    const QuoteSlot& ask       = m_slots[idx(Side::Sell)];
+    const bool       sellFirst = t.quoteBid && ask.state != QuoteState::Idle && t.bidPrice >= ask.price;
     if (sellFirst) {
         n += reconcileSide(Side::Sell, t.quoteAsk, t.askPrice, t.askQty, out[n]);
         n += reconcileSide(Side::Buy, t.quoteBid, t.bidPrice, t.bidQty, out[n]);
@@ -60,12 +58,12 @@ std::size_t OrderManager::reconcileSide(Side side, bool want, Price price, Quant
             }
             const std::uint32_t ref = allocRef(side);
             encodeEnter(out, ref, side, price, qty);
-            s.state = QuoteState::PendingNew;
-            s.userRef = ref;
+            s.state      = QuoteState::PendingNew;
+            s.userRef    = ref;
             s.pendingRef = 0;
-            s.price = price;
-            s.qty = qty;
-            s.leaves = qty;
+            s.price      = price;
+            s.qty        = qty;
+            s.leaves     = qty;
             ++m_stats.enters;
             return 1;
         }
@@ -81,7 +79,7 @@ std::size_t OrderManager::reconcileSide(Side side, bool want, Price price, Quant
             }
             const std::uint32_t ref = allocRef(side);
             encodeReplace(out, s.userRef, ref, price, qty);
-            s.state = QuoteState::PendingReplace;
+            s.state      = QuoteState::PendingReplace;
             s.pendingRef = ref;
             ++m_stats.replaces;
             return 1;
@@ -203,50 +201,50 @@ QuoteSlot* OrderManager::slotByPending(std::uint32_t userRef) noexcept {
 void OrderManager::encodeEnter(Outbound& out, std::uint32_t userRef, Side side, Price price,
                                Quantity qty) const noexcept {
     ouch::EnterOrder o{};
-    o.type = static_cast<char>(ouch::InType::EnterOrder);
-    o.userRefNum = userRef;
-    o.side = ouchSide(side);
-    o.quantity = qty;
-    o.symbol = std::string_view{m_cfg.symbol};
-    o.price = static_cast<std::uint64_t>(static_cast<std::uint32_t>(price));
-    o.timeInForce = static_cast<char>(ouch::TimeInForce::Day);
-    o.display = static_cast<char>(ouch::Display::Visible);
-    o.capacity = static_cast<char>(ouch::Capacity::Principal);
+    o.type               = static_cast<char>(ouch::InType::EnterOrder);
+    o.userRefNum         = userRef;
+    o.side               = ouchSide(side);
+    o.quantity           = qty;
+    o.symbol             = std::string_view{m_cfg.symbol};
+    o.price              = static_cast<std::uint64_t>(static_cast<std::uint32_t>(price));
+    o.timeInForce        = static_cast<char>(ouch::TimeInForce::Day);
+    o.display            = static_cast<char>(ouch::Display::Visible);
+    o.capacity           = static_cast<char>(ouch::Capacity::Principal);
     o.imSweepEligibility = static_cast<char>(ouch::ImSweep::NotEligible);
-    o.crossType = static_cast<char>(ouch::CrossType::Continuous);
-    o.clOrdId = std::string_view{};
-    o.appendageLength = 0;
+    o.crossType          = static_cast<char>(ouch::CrossType::Continuous);
+    o.clOrdId            = std::string_view{};
+    o.appendageLength    = 0;
     std::memcpy(out.buf.data(), &o, sizeof o);
-    out.len = sizeof o;
+    out.len     = sizeof o;
     out.userRef = userRef;
 }
 
-void OrderManager::encodeReplace(Outbound& out, std::uint32_t origRef, std::uint32_t userRef,
-                                 Price price, Quantity qty) const noexcept {
+void OrderManager::encodeReplace(Outbound& out, std::uint32_t origRef, std::uint32_t userRef, Price price,
+                                 Quantity qty) const noexcept {
     ouch::ReplaceOrder u{};
-    u.type = static_cast<char>(ouch::InType::ReplaceOrder);
-    u.origUserRefNum = origRef;
-    u.userRefNum = userRef;
-    u.quantity = qty;
-    u.price = static_cast<std::uint64_t>(static_cast<std::uint32_t>(price));
-    u.timeInForce = static_cast<char>(ouch::TimeInForce::Day);
-    u.display = static_cast<char>(ouch::Display::Visible);
+    u.type               = static_cast<char>(ouch::InType::ReplaceOrder);
+    u.origUserRefNum     = origRef;
+    u.userRefNum         = userRef;
+    u.quantity           = qty;
+    u.price              = static_cast<std::uint64_t>(static_cast<std::uint32_t>(price));
+    u.timeInForce        = static_cast<char>(ouch::TimeInForce::Day);
+    u.display            = static_cast<char>(ouch::Display::Visible);
     u.imSweepEligibility = static_cast<char>(ouch::ImSweep::NotEligible);
-    u.clOrdId = std::string_view{};
-    u.appendageLength = 0;
+    u.clOrdId            = std::string_view{};
+    u.appendageLength    = 0;
     std::memcpy(out.buf.data(), &u, sizeof u);
-    out.len = sizeof u;
+    out.len     = sizeof u;
     out.userRef = userRef;
 }
 
 void OrderManager::encodeCancel(Outbound& out, std::uint32_t userRef) const noexcept {
     ouch::CancelOrder x{};
-    x.type = static_cast<char>(ouch::InType::CancelOrder);
-    x.userRefNum = userRef;
-    x.quantity = 0;
+    x.type            = static_cast<char>(ouch::InType::CancelOrder);
+    x.userRefNum      = userRef;
+    x.quantity        = 0;
     x.appendageLength = 0;
     std::memcpy(out.buf.data(), &x, sizeof x);
-    out.len = sizeof x;
+    out.len     = sizeof x;
     out.userRef = userRef;
 }
 
@@ -257,7 +255,7 @@ void OrderManager::onAccepted(const ouch::Accepted& m) noexcept {
         return;
     }
     ++m_stats.accepts;
-    s->qty = m.quantity.value();
+    s->qty    = m.quantity.value();
     s->leaves = s->qty;
     if (m.orderState == static_cast<char>(ouch::OrderState::Dead)) {
         s->leaves = 0;
@@ -274,12 +272,12 @@ void OrderManager::onReplaced(const ouch::Replaced& m) noexcept {
         return;
     }
     ++m_stats.accepts;
-    s->userRef = m.userRefNum.value();
+    s->userRef    = m.userRefNum.value();
     s->pendingRef = 0;
-    s->price = static_cast<Price>(m.price.value());
-    s->qty = m.quantity.value();
-    s->leaves = s->qty;
-    s->state = QuoteState::Live;
+    s->price      = static_cast<Price>(m.price.value());
+    s->qty        = m.quantity.value();
+    s->leaves     = s->qty;
+    s->state      = QuoteState::Live;
     if (m.orderState == static_cast<char>(ouch::OrderState::Dead)) {
         s->leaves = 0;
         settle(*s);
@@ -287,9 +285,9 @@ void OrderManager::onReplaced(const ouch::Replaced& m) noexcept {
 }
 
 void OrderManager::onExecuted(const ouch::Executed& m) noexcept {
-    const std::uint32_t ref = m.userRefNum.value();
-    const Quantity qty = m.quantity.value();
-    Side side = Side::Buy;
+    const std::uint32_t ref  = m.userRefNum.value();
+    const Quantity      qty  = m.quantity.value();
+    Side                side = Side::Buy;
     if (!sideOf(ref, side)) {
         ++m_stats.unknown;
         return;
@@ -317,7 +315,7 @@ void OrderManager::onCanceled(const ouch::Canceled& m) noexcept {
         return;
     }
     const Quantity qty = m.quantity.value();
-    s->leaves = qty >= s->leaves ? 0 : s->leaves - qty;
+    s->leaves          = qty >= s->leaves ? 0 : s->leaves - qty;
     if (s->leaves == 0 || s->state == QuoteState::PendingCancel) {
         s->leaves = 0;
         settle(*s);
@@ -363,12 +361,12 @@ void OrderManager::onCancelReject(const ouch::CancelReject& m) noexcept {
 }
 
 void OrderManager::settle(QuoteSlot& s) noexcept {
-    s.state = QuoteState::Idle;
-    s.userRef = 0;
+    s.state      = QuoteState::Idle;
+    s.userRef    = 0;
     s.pendingRef = 0;
-    s.price = 0;
-    s.qty = 0;
-    s.leaves = 0;
+    s.price      = 0;
+    s.qty        = 0;
+    s.leaves     = 0;
 }
 
-}
+}   // namespace abt::dut

@@ -1,6 +1,6 @@
-#include <cstdint>
-
 #include "TestHarness.hpp"
+
+#include <cstdint>
 
 #include "abt/dut/LatencyRecorder.hpp"
 
@@ -46,7 +46,7 @@ void test_overflow_counts_drops() {
 void test_consumer_thread() {
     dut::LatencyRecorder a("a", 1u << 12, 1.0, 3);
     dut::LatencyRecorder b("b", 1u << 12, 1.0, 3);
-    dut::RecorderThread consumer({&a, &b}, -1);
+    dut::RecorderThread  consumer({&a, &b}, -1);
     consumer.start();
     CHECK(consumer.running());
     for (std::uint64_t v = 1; v <= 100000; ++v) {
@@ -62,7 +62,7 @@ void test_consumer_thread() {
     CHECK(a.max() >= 999 && a.max() <= 1001);
 }
 
-}
+}   // namespace
 
 int main() {
     test_drain_and_percentiles();

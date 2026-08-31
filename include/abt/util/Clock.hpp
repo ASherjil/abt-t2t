@@ -11,8 +11,7 @@ namespace abt {
 inline std::uint64_t monotonicNs() noexcept {
     timespec ts{};
     clock_gettime(CLOCK_MONOTONIC, &ts);
-    return static_cast<std::uint64_t>(ts.tv_sec) * 1'000'000'000ull +
-           static_cast<std::uint64_t>(ts.tv_nsec);
+    return static_cast<std::uint64_t>(ts.tv_sec) * 1'000'000'000ull + static_cast<std::uint64_t>(ts.tv_nsec);
 }
 
 inline std::uint64_t nsSinceMidnightUtc() noexcept {
@@ -22,4 +21,4 @@ inline std::uint64_t nsSinceMidnightUtc() noexcept {
     return secOfDay * 1'000'000'000ull + static_cast<std::uint64_t>(ts.tv_nsec);
 }
 
-}
+}   // namespace abt

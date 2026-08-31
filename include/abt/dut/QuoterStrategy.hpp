@@ -38,4 +38,4 @@ private:
     QuoterConfig m_cfg;
 };
 
-}
+}   // namespace abt::dut

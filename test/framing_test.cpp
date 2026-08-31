@@ -2,6 +2,8 @@
 // Verifies MoldUDP64 and SoupBinTCP framing round-trip and sequencing.
 //
 
+#include "TestHarness.hpp"
+
 #include <array>
 #include <cstddef>
 #include <cstring>
@@ -12,7 +14,6 @@
 
 #include "abt/protocol/MoldUdp64.hpp"
 #include "abt/protocol/SoupBinTcp.hpp"
-#include "TestHarness.hpp"
 
 using namespace abt;
 
@@ -28,7 +29,7 @@ void test_mold_pack_and_read() {
     const unsigned char m3[] = {0x02, 0x03, 0x04};
 
     std::array<std::byte, 256> buf{};
-    mold::Packer packer("SESSION001", 1);
+    mold::Packer               packer("SESSION001", 1);
 
     packer.reset(buf.data(), buf.size());
     CHECK(packer.append(bytes(m1, sizeof m1)));
@@ -42,8 +43,7 @@ void test_mold_pack_and_read() {
     CHECK_EQ(packer.nextSequence(), 4u);
 
     std::vector<std::pair<std::uint64_t, std::vector<std::byte>>> got;
-    const std::size_t n = mold::forEachMessage(pkt, [&](std::uint64_t seq,
-                                                        std::span<const std::byte> msg) {
+    const std::size_t n = mold::forEachMessage(pkt, [&](std::uint64_t seq, std::span<const std::byte> msg) {
         got.emplace_back(seq, std::vector<std::byte>(msg.begin(), msg.end()));
     });
     CHECK_EQ(n, 3u);
@@ -66,34 +66,37 @@ void test_mold_pack_and_read() {
 
 void test_mold_heartbeat_and_eos() {
     std::array<std::byte, 64> buf{};
-    mold::Packer packer("SESSION001", 7);
+    mold::Packer              packer("SESSION001", 7);
 
     const auto hb = packer.heartbeat(buf.data());
     CHECK_EQ(hb.size(), mold::kHeaderSize);
     CHECK_EQ(mold::countOf(hb), mold::kHeartbeat);
     CHECK_EQ(mold::sequenceOf(hb), 7u);
-    CHECK_EQ(mold::forEachMessage(hb, [](std::uint64_t, std::span<const std::byte>) {}), 0u);
+    CHECK_EQ(mold::forEachMessage(hb,
+                                  [](std::uint64_t, std::span<const std::byte>) {
+                                  }),
+             0u);
 
     const auto eos = packer.endOfSession(buf.data());
     CHECK_EQ(mold::countOf(eos), mold::kEndOfSession);
 }
 
 void test_mold_overflow_stops_cleanly() {
-    const unsigned char big[100] = {};
+    const unsigned char       big[100] = {};
     std::array<std::byte, 64> small{};
-    mold::Packer packer("SESSION001", 1);
+    mold::Packer              packer("SESSION001", 1);
     packer.reset(small.data(), small.size());
     CHECK(!packer.append(bytes(big, sizeof big)));
     CHECK_EQ(packer.count(), 0u);
 }
 
 void test_soup_sequenced_data_roundtrip() {
-    const unsigned char ouch[] = {0x11, 0x22, 0x33};
+    const unsigned char       ouch[] = {0x11, 0x22, 0x33};
     std::array<std::byte, 64> buf{};
-    const auto pkt = soup::packSequencedData(buf.data(), bytes(ouch, sizeof ouch));
+    const auto                pkt = soup::packSequencedData(buf.data(), bytes(ouch, sizeof ouch));
     CHECK_EQ(pkt.size(), 2u + 1u + 3u);
 
-    soup::Packet p{};
+    soup::Packet      p{};
     const std::size_t consumed = soup::parse(pkt, p);
     CHECK_EQ(consumed, pkt.size());
     CHECK(p.type == soup::Type::SequencedData);
@@ -103,8 +106,8 @@ void test_soup_sequenced_data_roundtrip() {
 
 void test_soup_login_accepted() {
     std::array<std::byte, 64> buf{};
-    const auto pkt = soup::packLoginAccepted(buf.data(), "SESSION001", 42);
-    soup::Packet p{};
+    const auto                pkt = soup::packLoginAccepted(buf.data(), "SESSION001", 42);
+    soup::Packet              p{};
     CHECK_EQ(soup::parse(pkt, p), pkt.size());
     CHECK(p.type == soup::Type::LoginAccepted);
     CHECK_EQ(p.payload.size(), sizeof(soup::LoginAccepted));
@@ -125,14 +128,14 @@ void test_soup_seq_field_format() {
 
 void test_soup_stream_two_packets() {
     std::array<std::byte, 128> buf{};
-    const unsigned char ouch[] = {0x55};
-    const auto a = soup::packSequencedData(buf.data(), bytes(ouch, sizeof ouch));
-    const auto b = soup::packServerHeartbeat(buf.data() + a.size());
-    const std::size_t totalLen = a.size() + b.size();
+    const unsigned char        ouch[]   = {0x55};
+    const auto                 a        = soup::packSequencedData(buf.data(), bytes(ouch, sizeof ouch));
+    const auto                 b        = soup::packServerHeartbeat(buf.data() + a.size());
+    const std::size_t          totalLen = a.size() + b.size();
 
     std::span<const std::byte> stream{buf.data(), totalLen};
-    soup::Packet p{};
-    const std::size_t c1 = soup::parse(stream, p);
+    soup::Packet               p{};
+    const std::size_t          c1 = soup::parse(stream, p);
     CHECK(c1 > 0);
     CHECK(p.type == soup::Type::SequencedData);
 
@@ -144,7 +147,7 @@ void test_soup_stream_two_packets() {
     CHECK_EQ(soup::parse(stream.subspan(0, 2), p), 0u);
 }
 
-}
+}   // namespace
 
 int main() {
     test_mold_pack_and_read();

@@ -1,5 +1,3 @@
-#include "abt/sim/SimConfig.hpp"
-
 #include <cstdint>
 #include <cstdlib>
 #include <string>
@@ -9,6 +7,7 @@
 
 #include "abt/config/NetParse.hpp"
 #include "abt/replay/SymbolFilter.hpp"
+#include "abt/sim/SimConfig.hpp"
 
 namespace abt {
 
@@ -23,12 +22,12 @@ SimConfig loadConfig(const std::string& path) {
         std::exit(1);
     }
 
-    c.venue.symbol      = t["venue"]["symbol"].value_or(c.venue.symbol);
-    c.venue.stockLocate = t["venue"]["stock_locate"].value_or(c.venue.stockLocate);
-    c.venue.session     = t["venue"]["session"].value_or(c.venue.session);
-    c.venue.minTick     = t["venue"]["min_tick"].value_or(c.venue.minTick);
-    c.venue.maxTick     = t["venue"]["max_tick"].value_or(c.venue.maxTick);
-    c.venue.wirePerTick = t["venue"]["wire_per_tick"].value_or(c.venue.wirePerTick);
+    c.venue.symbol       = t["venue"]["symbol"].value_or(c.venue.symbol);
+    c.venue.stockLocate  = t["venue"]["stock_locate"].value_or(c.venue.stockLocate);
+    c.venue.session      = t["venue"]["session"].value_or(c.venue.session);
+    c.venue.minTick      = t["venue"]["min_tick"].value_or(c.venue.minTick);
+    c.venue.maxTick      = t["venue"]["max_tick"].value_or(c.venue.maxTick);
+    c.venue.wirePerTick  = t["venue"]["wire_per_tick"].value_or(c.venue.wirePerTick);
     c.venue.mdMaxPayload = t["venue"]["md_max_payload"].value_or(c.venue.mdMaxPayload);
     c.venue.liveReserve  = t["venue"]["order_reserve"].value_or(c.venue.liveReserve);
 
@@ -42,8 +41,7 @@ SimConfig loadConfig(const std::string& path) {
     c.replay.skipToNs     = replay::parseTimeOfDay(t["replay"]["skip_to"].value_or(std::string{}));
     c.replay.stopAtNs     = replay::parseTimeOfDay(t["replay"]["stop_at"].value_or(std::string{}));
     const std::int64_t defaultFirstRef = c.replay.enabled ? (std::int64_t{1} << 62) : 1;
-    c.venue.firstOrderRef =
-        static_cast<OrderId>(t["venue"]["first_order_ref"].value_or(defaultFirstRef));
+    c.venue.firstOrderRef = static_cast<OrderId>(t["venue"]["first_order_ref"].value_or(defaultFirstRef));
 
     c.flow.midTick    = t["flow"]["mid_tick"].value_or(c.flow.midTick);
     c.flow.halfSpread = t["flow"]["half_spread"].value_or(c.flow.halfSpread);
@@ -61,12 +59,10 @@ SimConfig loadConfig(const std::string& path) {
     c.transport.driver    = t["transport"]["driver"].value_or(c.transport.driver);
     c.transport.cpuCore   = t["transport"]["cpu_core"].value_or(c.transport.cpuCore);
 
-    const net::MacAddr lmac = config::parseMac(t["network"]["local_mac"].value_or(std::string{}));
-    const net::MacAddr pmac = config::parseMac(t["network"]["peer_mac"].value_or(std::string{}));
-    const std::uint32_t lip =
-        config::parseIp(t["network"]["local_ip"].value_or(std::string{"0.0.0.0"}));
-    const std::uint32_t pip =
-        config::parseIp(t["network"]["peer_ip"].value_or(std::string{"0.0.0.0"}));
+    const net::MacAddr  lmac = config::parseMac(t["network"]["local_mac"].value_or(std::string{}));
+    const net::MacAddr  pmac = config::parseMac(t["network"]["peer_mac"].value_or(std::string{}));
+    const std::uint32_t lip  = config::parseIp(t["network"]["local_ip"].value_or(std::string{"0.0.0.0"}));
+    const std::uint32_t pip  = config::parseIp(t["network"]["peer_ip"].value_or(std::string{"0.0.0.0"}));
 
     for (net::Endpoints* ep : {&c.transport.marketData, &c.transport.orderEntry}) {
         ep->srcMac = lmac;
@@ -86,4 +82,4 @@ SimConfig loadConfig(const std::string& path) {
     return c;
 }
 
-}
+}   // namespace abt

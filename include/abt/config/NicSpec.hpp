@@ -10,4 +10,4 @@ struct NicSpec {
     int         cpuCore   = -1;
 };
 
-}
+}   // namespace abt

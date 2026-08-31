@@ -1,6 +1,6 @@
-#include <cstdint>
-
 #include "TestHarness.hpp"
+
+#include <cstdint>
 
 #include "abt/dut/SequenceTracker.hpp"
 #include "abt/protocol/MoldUdp64.hpp"
@@ -64,7 +64,7 @@ void test_reset() {
     CHECK(s.onPacket(100, 1) == R::InOrder);
 }
 
-}
+}   // namespace
 
 int main() {
     test_in_order();

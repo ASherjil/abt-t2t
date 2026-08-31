@@ -4,10 +4,10 @@
 // backward-shift deletion and probe chains far harder than hand-written cases could.
 //
 
+#include "TestHarness.hpp"
+
 #include <cstdint>
 #include <unordered_map>
-
-#include "TestHarness.hpp"
 
 #include "abt/util/FlatHashMap.hpp"
 
@@ -87,11 +87,11 @@ void test_grow() {
 }
 
 void test_oracle() {
-    Map map(16);
+    Map                                              map(16);
     std::unordered_map<std::uint64_t, std::uint32_t> oracle;
 
-    std::uint64_t rng = 0x123456789ull;
-    const auto next = [&rng]() noexcept -> std::uint64_t {
+    std::uint64_t rng  = 0x123456789ull;
+    const auto    next = [&rng]() noexcept -> std::uint64_t {
         rng ^= rng << 13;
         rng ^= rng >> 7;
         rng ^= rng << 17;
@@ -99,7 +99,7 @@ void test_oracle() {
     };
 
     bool eraseMatched = true;
-    bool spotMatched = true;
+    bool spotMatched  = true;
     for (int i = 0; i < 200000; ++i) {
         const std::uint64_t key = (next() % 4000) + 1;   // keys 1..4000 (never the 0 sentinel)
         if ((next() & 1u) != 0u) {
@@ -114,9 +114,9 @@ void test_oracle() {
             }
         }
         if ((i & 63) == 0) {
-            const std::uint64_t q = (next() % 4000) + 1;
-            const std::uint32_t* p = map.find(q);
-            const auto it = oracle.find(q);
+            const std::uint64_t  q  = (next() % 4000) + 1;
+            const std::uint32_t* p  = map.find(q);
+            const auto           it = oracle.find(q);
             if (it == oracle.end()) {
                 if (p != nullptr) {
                     spotMatched = false;
@@ -140,7 +140,7 @@ void test_oracle() {
     CHECK(fullSweep);
 }
 
-}
+}   // namespace
 
 int main() {
     test_basic();

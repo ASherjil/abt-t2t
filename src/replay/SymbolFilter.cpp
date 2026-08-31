@@ -25,7 +25,7 @@ bool SymbolFilter::accept(std::span<const std::byte> msg) noexcept {
         }
         const auto* r = reinterpret_cast<const itch::StockDirectory*>(msg.data());
         if (r->stock.view() == m_symbol) {
-            m_locate = locateOf(msg);
+            m_locate   = locateOf(msg);
             m_resolved = true;
             return true;
         }
@@ -60,19 +60,19 @@ std::uint64_t SymbolFilter::timestampOf(std::span<const std::byte> msg) noexcept
 }
 
 std::string formatTimeOfDay(std::uint64_t ns) {
-    const std::uint64_t s = ns / 1'000'000'000ull;
+    const std::uint64_t s  = ns / 1'000'000'000ull;
     const std::uint64_t ms = (ns / 1'000'000ull) % 1000ull;
-    char buf[32];
-    std::snprintf(buf, sizeof buf, "%02llu:%02llu:%02llu.%03llu",
-                  static_cast<unsigned long long>(s / 3600), static_cast<unsigned long long>((s / 60) % 60),
-                  static_cast<unsigned long long>(s % 60), static_cast<unsigned long long>(ms));
+    char                buf[32];
+    std::snprintf(buf, sizeof buf, "%02llu:%02llu:%02llu.%03llu", static_cast<unsigned long long>(s / 3600),
+                  static_cast<unsigned long long>((s / 60) % 60), static_cast<unsigned long long>(s % 60),
+                  static_cast<unsigned long long>(ms));
     return buf;
 }
 
 std::uint64_t parseTimeOfDay(std::string_view v) {
-    unsigned h = 0;
-    unsigned m = 0;
-    unsigned s = 0;
+    unsigned h  = 0;
+    unsigned m  = 0;
+    unsigned s  = 0;
     unsigned ms = 0;
     if (v.empty()) {
         return 0;
@@ -85,4 +85,4 @@ std::uint64_t parseTimeOfDay(std::string_view v) {
            static_cast<std::uint64_t>(ms) * 1'000'000ull;
 }
 
-}
+}   // namespace abt::replay

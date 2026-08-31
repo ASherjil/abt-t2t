@@ -14,8 +14,8 @@ public:
 
     [[nodiscard]] bool accept(std::span<const std::byte> msg) noexcept;
 
-    [[nodiscard]] bool resolved() const noexcept;
-    [[nodiscard]] std::uint16_t stockLocate() const noexcept;
+    [[nodiscard]] bool               resolved() const noexcept;
+    [[nodiscard]] std::uint16_t      stockLocate() const noexcept;
     [[nodiscard]] const std::string& symbol() const noexcept;
 
     [[nodiscard]] static std::uint16_t locateOf(std::span<const std::byte> msg) noexcept;
@@ -27,7 +27,7 @@ private:
     bool          m_resolved = false;
 };
 
-[[nodiscard]] std::string formatTimeOfDay(std::uint64_t nsSinceMidnight);
+[[nodiscard]] std::string   formatTimeOfDay(std::uint64_t nsSinceMidnight);
 [[nodiscard]] std::uint64_t parseTimeOfDay(std::string_view hhmmss);
 
-}
+}   // namespace abt::replay

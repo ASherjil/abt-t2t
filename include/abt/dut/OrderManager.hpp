@@ -17,7 +17,13 @@ struct OmsConfig {
     std::uint32_t firstUserRef = 1;
 };
 
-enum class QuoteState : std::uint8_t { Idle, PendingNew, Live, PendingReplace, PendingCancel };
+enum class QuoteState : std::uint8_t {
+    Idle,
+    PendingNew,
+    Live,
+    PendingReplace,
+    PendingCancel
+};
 
 struct QuoteSlot {
     QuoteState    state      = QuoteState::Idle;
@@ -52,12 +58,12 @@ public:
     explicit OrderManager(const OmsConfig& cfg);
 
     std::size_t reconcile(const QuoteTargets& t, std::span<Outbound, kMaxOutbound> out) noexcept;
-    void onAck(std::span<const std::byte> ouch) noexcept;
+    void        onAck(std::span<const std::byte> ouch) noexcept;
 
-    [[nodiscard]] const Account& account() const noexcept;
+    [[nodiscard]] const Account&   account() const noexcept;
     [[nodiscard]] const QuoteSlot& slot(Side side) const noexcept;
-    [[nodiscard]] const OmsStats& stats() const noexcept;
-    [[nodiscard]] std::uint32_t nextUserRef() const noexcept;
+    [[nodiscard]] const OmsStats&  stats() const noexcept;
+    [[nodiscard]] std::uint32_t    nextUserRef() const noexcept;
 
 private:
     static constexpr std::size_t kRefRing = 1024;
@@ -67,12 +73,12 @@ private:
         Side          side    = Side::Buy;
     };
 
-    [[nodiscard]] std::size_t reconcileSide(Side side, bool want, Price price, Quantity qty,
-                                            Outbound& out) noexcept;
+    [[nodiscard]] std::size_t   reconcileSide(Side side, bool want, Price price, Quantity qty,
+                                              Outbound& out) noexcept;
     [[nodiscard]] std::uint32_t allocRef(Side side) noexcept;
-    [[nodiscard]] bool sideOf(std::uint32_t userRef, Side& side) const noexcept;
-    [[nodiscard]] QuoteSlot* slotByRef(std::uint32_t userRef) noexcept;
-    [[nodiscard]] QuoteSlot* slotByPending(std::uint32_t userRef) noexcept;
+    [[nodiscard]] bool          sideOf(std::uint32_t userRef, Side& side) const noexcept;
+    [[nodiscard]] QuoteSlot*    slotByRef(std::uint32_t userRef) noexcept;
+    [[nodiscard]] QuoteSlot*    slotByPending(std::uint32_t userRef) noexcept;
 
     void encodeEnter(Outbound& out, std::uint32_t userRef, Side side, Price price,
                      Quantity qty) const noexcept;
@@ -88,12 +94,12 @@ private:
     void onCancelReject(const ouch::CancelReject& m) noexcept;
     void settle(QuoteSlot& s) noexcept;
 
-    OmsConfig                       m_cfg;
-    Account                         m_acct{};
-    OmsStats                        m_stats{};
-    std::uint32_t                   m_nextUserRef;
-    std::array<QuoteSlot, 2>        m_slots{};
-    std::array<RefSide, kRefRing>   m_refs{};
+    OmsConfig                     m_cfg;
+    Account                       m_acct{};
+    OmsStats                      m_stats{};
+    std::uint32_t                 m_nextUserRef;
+    std::array<QuoteSlot, 2>      m_slots{};
+    std::array<RefSide, kRefRing> m_refs{};
 };
 
-}
+}   // namespace abt::dut

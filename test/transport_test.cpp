@@ -4,6 +4,8 @@
 // mirrors ABTRDA3's prefillRing/acquire/commit contract. No DPDK/NIC needed.
 //
 
+#include "TestHarness.hpp"
+
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
@@ -11,8 +13,6 @@
 #include <span>
 #include <string_view>
 #include <vector>
-
-#include "TestHarness.hpp"
 
 #include "third_party/abtrda3/RxFrame.hpp"
 
@@ -32,14 +32,22 @@ struct MockTx {
     std::vector<std::uint8_t>              scratch;
     std::vector<std::vector<std::uint8_t>> frames;
 
-    void prefillRing(std::span<const std::uint8_t> t) noexcept { tmpl.assign(t.begin(), t.end()); }
+    void prefillRing(std::span<const std::uint8_t> t) noexcept {
+        tmpl.assign(t.begin(), t.end());
+    }
+
     std::uint8_t* acquire(std::uint32_t n) noexcept {
         scratch.assign(n, 0);
-        if (!tmpl.empty())
+        if (!tmpl.empty()) {
             std::memcpy(scratch.data(), tmpl.data(), std::min<std::size_t>(tmpl.size(), n));
+        }
         return scratch.data();
     }
-    void commit() noexcept { frames.emplace_back(scratch); }
+
+    void commit() noexcept {
+        frames.emplace_back(scratch);
+    }
+
     bool send(std::span<const std::uint8_t> frame) noexcept {
         frames.emplace_back(frame.begin(), frame.end());
         return true;
@@ -48,35 +56,42 @@ struct MockTx {
     std::vector<std::vector<std::uint8_t>> inbound;
     std::vector<std::uint8_t>              rxCur;
     std::size_t                            rxIdx = 0;
+
     RxFrame tryReceive() noexcept {
-        if (rxIdx >= inbound.size()) return RxFrame{{}, 0, 0, 0};
+        if (rxIdx >= inbound.size()) {
+            return RxFrame{{}, 0, 0, 0};
+        }
         rxCur = inbound[rxIdx];
         return RxFrame{{rxCur.data(), rxCur.size()}, 0, 0, 1};
     }
-    void release() noexcept { ++rxIdx; }
+
+    void release() noexcept {
+        ++rxIdx;
+    }
 };
 
 net::Endpoints makeEndpoints(std::uint16_t srcPort, std::uint16_t dstPort) {
-    return net::Endpoints{
-        .srcMac  = {0x11, 0x22, 0x33, 0x44, 0x55, 0x66},
-        .dstMac  = {0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff},
-        .srcIp   = net::ipv4(10, 0, 0, 1),
-        .dstIp   = net::ipv4(10, 0, 0, 2),
-        .srcPort = srcPort,
-        .dstPort = dstPort};
+    return net::Endpoints{.srcMac  = {0x11, 0x22, 0x33, 0x44, 0x55, 0x66},
+                          .dstMac  = {0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff},
+                          .srcIp   = net::ipv4(10, 0, 0, 1),
+                          .dstIp   = net::ipv4(10, 0, 0, 2),
+                          .srcPort = srcPort,
+                          .dstPort = dstPort};
 }
 
 void testMarketDataFrame() {
     ExchangeSession<IoMode::Transport, MockTx> ex{};
-    MockTx tx;
+    MockTx                                     tx;
     ex.prepareTransport(tx, makeEndpoints(40000, 41000), makeEndpoints(40001, 41001));
 
     ex.injectSynthetic(Side::Buy, 5000, 100, 1000);
 
     CHECK_EQ(tx.frames.size(), 1u);
-    if (tx.frames.empty()) return;
+    if (tx.frames.empty()) {
+        return;
+    }
 
-    const auto& f = tx.frames.front();
+    const auto&                f = tx.frames.front();
     std::span<const std::byte> frame{reinterpret_cast<const std::byte*>(f.data()), f.size()};
 
     CHECK(frame.size() > net::kL2L3L4Overhead);
@@ -89,20 +104,21 @@ void testMarketDataFrame() {
     CHECK_EQ(std::to_integer<int>(frame[29]), 1);
 
     CHECK_EQ(mold::getU16(frame.data() + 16), frame.size() - net::kEthHeaderSize);
-    CHECK_EQ(mold::getU16(frame.data() + 38),
-             frame.size() - net::kEthHeaderSize - net::kIpv4HeaderSize);
+    CHECK_EQ(mold::getU16(frame.data() + 38), frame.size() - net::kEthHeaderSize - net::kIpv4HeaderSize);
     CHECK_EQ(net::computeChecksum({frame.data() + net::kEthHeaderSize, net::kIpv4HeaderSize}), 0u);
 
     auto payload = frame.subspan(net::kL2L3L4Overhead);
     CHECK_EQ(mold::countOf(payload), 1u);
 
-    int msgs = 0;
+    int         msgs    = 0;
     std::size_t msgSize = 0;
-    char msgType = 0;
+    char        msgType = 0;
     mold::forEachMessage(payload, [&](std::uint64_t, std::span<const std::byte> m) {
         ++msgs;
         msgSize = m.size();
-        if (!m.empty()) msgType = static_cast<char>(m[0]);
+        if (!m.empty()) {
+            msgType = static_cast<char>(m[0]);
+        }
     });
     CHECK_EQ(msgs, 1);
     CHECK_EQ(msgSize, 36u);
@@ -111,12 +127,12 @@ void testMarketDataFrame() {
 
 void testLoginHandshake() {
     ExchangeSession<IoMode::Transport, MockTx> ex{};
-    MockTx tx;
+    MockTx                                     tx;
     ex.prepareTransport(tx, makeEndpoints(40000, 41000), makeEndpoints(40001, 41001));
     CHECK(!ex.clientSeen());
 
     std::array<std::byte, 64> soupBuf{};
-    const auto login = soup::packLoginRequest(soupBuf.data(), "DUT001", "SIM0000001");
+    const auto                login = soup::packLoginRequest(soupBuf.data(), "DUT001", "SIM0000001");
     std::vector<std::uint8_t> frame(net::kL2L3L4Overhead + login.size(), 0);
     std::memcpy(frame.data() + net::kL2L3L4Overhead, login.data(), login.size());
     tx.inbound.push_back(frame);
@@ -126,7 +142,7 @@ void testLoginHandshake() {
     CHECK_EQ(ex.stats().logins, 1u);
     CHECK(ex.clientSeen());
     CHECK_EQ(tx.frames.size(), 1u);
-    const auto& fv = tx.frames[0];
+    const auto&                fv = tx.frames[0];
     std::span<const std::byte> fr{reinterpret_cast<const std::byte*>(fv.data()), fv.size()};
     CHECK_EQ(mold::getU16(fr.data() + 36), 41001u);
     soup::Packet sp{};
@@ -136,26 +152,26 @@ void testLoginHandshake() {
 
 void testOrderEntryRx() {
     ExchangeSession<IoMode::Transport, MockTx> ex{};
-    MockTx tx;
+    MockTx                                     tx;
     ex.prepareTransport(tx, makeEndpoints(40000, 41000), makeEndpoints(40001, 41001));
 
     ex.injectSynthetic(Side::Sell, 5200, 100, 1000);
     tx.frames.clear();
 
     ouch::EnterOrder o{};
-    o.type = static_cast<char>(ouch::InType::EnterOrder);
-    o.userRefNum = 1000u;
-    o.side = static_cast<char>(ouch::Side::Buy);
-    o.quantity = 100u;
-    o.symbol = std::string_view{"AAPL"};
-    o.price = 520000u;
-    o.timeInForce = static_cast<char>(ouch::TimeInForce::Day);
-    o.display = static_cast<char>(ouch::Display::Visible);
-    o.capacity = static_cast<char>(ouch::Capacity::Agency);
+    o.type               = static_cast<char>(ouch::InType::EnterOrder);
+    o.userRefNum         = 1000u;
+    o.side               = static_cast<char>(ouch::Side::Buy);
+    o.quantity           = 100u;
+    o.symbol             = std::string_view{"AAPL"};
+    o.price              = 520000u;
+    o.timeInForce        = static_cast<char>(ouch::TimeInForce::Day);
+    o.display            = static_cast<char>(ouch::Display::Visible);
+    o.capacity           = static_cast<char>(ouch::Capacity::Agency);
     o.imSweepEligibility = static_cast<char>(ouch::ImSweep::NotEligible);
-    o.crossType = static_cast<char>(ouch::CrossType::Continuous);
-    o.clOrdId = std::string_view{"CID1"};
-    o.appendageLength = 0;
+    o.crossType          = static_cast<char>(ouch::CrossType::Continuous);
+    o.clOrdId            = std::string_view{"CID1"};
+    o.appendageLength    = 0;
 
     std::vector<std::uint8_t> frame(net::kL2L3L4Overhead + sizeof o, 0);
     std::memcpy(frame.data() + net::kL2L3L4Overhead, &o, sizeof o);
@@ -166,18 +182,20 @@ void testOrderEntryRx() {
     CHECK_EQ(ex.bestAsk(), kNoPrice);
     CHECK_EQ(tx.frames.size(), 3u);
 
-    int mdCount = 0;
-    int oeCount = 0;
-    char mdMsg = 0;
+    int  mdCount = 0;
+    int  oeCount = 0;
+    char mdMsg   = 0;
     for (const auto& fv : tx.frames) {
         std::span<const std::byte> fr{reinterpret_cast<const std::byte*>(fv.data()), fv.size()};
-        const std::uint16_t dstPort = mold::getU16(fr.data() + 36);
+        const std::uint16_t        dstPort = mold::getU16(fr.data() + 36);
         if (dstPort == 41000) {
             ++mdCount;
             mold::forEachMessage(fr.subspan(net::kL2L3L4Overhead),
                                  [&](std::uint64_t, std::span<const std::byte> m) {
-                if (!m.empty()) mdMsg = static_cast<char>(m[0]);
-            });
+                                     if (!m.empty()) {
+                                         mdMsg = static_cast<char>(m[0]);
+                                     }
+                                 });
         } else if (dstPort == 41001) {
             ++oeCount;
         }
@@ -187,7 +205,7 @@ void testOrderEntryRx() {
     CHECK_EQ(mdMsg, 'E');
 }
 
-}
+}   // namespace
 
 int main() {
     testMarketDataFrame();

@@ -2,6 +2,8 @@
 // Verifies ITCH 5.0 wire layouts and big-endian overlay encoding.
 //
 
+#include "TestHarness.hpp"
+
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -9,7 +11,6 @@
 
 #include "abt/protocol/Endian.hpp"
 #include "abt/protocol/Itch50.hpp"
-#include "TestHarness.hpp"
 
 using namespace abt;
 
@@ -39,9 +40,9 @@ void test_bigendian() {
 }
 
 void test_uint48() {
-    wire::Uint48 ts{};
+    wire::Uint48        ts{};
     const std::uint64_t ns = 34200000000000ull;
-    ts = ns;
+    ts                     = ns;
     CHECK_EQ(ts.value(), ns);
     CHECK_EQ(byte_at(ts, 0), 0x1Fu);
     CHECK_EQ(byte_at(ts, 5), 0x00u);
@@ -126,7 +127,7 @@ void test_overlay_roundtrip() {
     CHECK_EQ(dst.price.value() / itch::kPriceScale, 420u);
 }
 
-}
+}   // namespace
 
 int main() {
     test_bigendian();

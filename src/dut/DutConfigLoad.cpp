@@ -1,5 +1,3 @@
-#include "abt/dut/DutAppConfig.hpp"
-
 #include <cstdint>
 #include <cstdlib>
 #include <string>
@@ -8,6 +6,7 @@
 #include <toml++/toml.hpp>
 
 #include "abt/config/NetParse.hpp"
+#include "abt/dut/DutAppConfig.hpp"
 
 namespace abt::dut {
 
@@ -22,15 +21,15 @@ DutAppConfig loadDutConfig(const std::string& path) {
         std::exit(1);
     }
 
-    c.session.symbol        = t["venue"]["symbol"].value_or(c.session.symbol);
-    c.session.minPrice      = t["venue"]["min_price"].value_or(c.session.minPrice);
-    c.session.maxPrice      = t["venue"]["max_price"].value_or(c.session.maxPrice);
-    c.session.tickWire      = t["venue"]["tick_wire"].value_or(c.session.tickWire);
-    c.session.firstUserRef  = t["venue"]["first_user_ref"].value_or(c.session.firstUserRef);
-    c.session.maxOrders     = t["venue"]["max_orders"].value_or(c.session.maxOrders);
-    c.session.stockLocate   = t["venue"]["stock_locate"].value_or(c.session.stockLocate);
+    c.session.symbol          = t["venue"]["symbol"].value_or(c.session.symbol);
+    c.session.minPrice        = t["venue"]["min_price"].value_or(c.session.minPrice);
+    c.session.maxPrice        = t["venue"]["max_price"].value_or(c.session.maxPrice);
+    c.session.tickWire        = t["venue"]["tick_wire"].value_or(c.session.tickWire);
+    c.session.firstUserRef    = t["venue"]["first_user_ref"].value_or(c.session.firstUserRef);
+    c.session.maxOrders       = t["venue"]["max_orders"].value_or(c.session.maxOrders);
+    c.session.stockLocate     = t["venue"]["stock_locate"].value_or(c.session.stockLocate);
     c.session.marketHoursOnly = t["venue"]["market_hours_only"].value_or(c.session.marketHoursOnly);
-    c.session.ownRefMin     = static_cast<OrderId>(t["venue"]["own_ref_min"].value_or(std::int64_t{0}));
+    c.session.ownRefMin       = static_cast<OrderId>(t["venue"]["own_ref_min"].value_or(std::int64_t{0}));
 
     c.quoter.tickWire         = c.session.tickWire;
     c.quoter.minPrice         = c.session.minPrice;
@@ -56,12 +55,10 @@ DutAppConfig loadDutConfig(const std::string& path) {
     c.transport.driver    = t["transport"]["driver"].value_or(c.transport.driver);
     c.transport.cpuCore   = t["transport"]["cpu_core"].value_or(c.transport.cpuCore);
 
-    const net::MacAddr lmac = config::parseMac(t["network"]["local_mac"].value_or(std::string{}));
-    const net::MacAddr pmac = config::parseMac(t["network"]["peer_mac"].value_or(std::string{}));
-    const std::uint32_t lip =
-        config::parseIp(t["network"]["local_ip"].value_or(std::string{"0.0.0.0"}));
-    const std::uint32_t pip =
-        config::parseIp(t["network"]["peer_ip"].value_or(std::string{"0.0.0.0"}));
+    const net::MacAddr  lmac = config::parseMac(t["network"]["local_mac"].value_or(std::string{}));
+    const net::MacAddr  pmac = config::parseMac(t["network"]["peer_mac"].value_or(std::string{}));
+    const std::uint32_t lip  = config::parseIp(t["network"]["local_ip"].value_or(std::string{"0.0.0.0"}));
+    const std::uint32_t pip  = config::parseIp(t["network"]["peer_ip"].value_or(std::string{"0.0.0.0"}));
 
     for (net::Endpoints* ep : {&c.transport.marketData, &c.transport.orderEntry}) {
         ep->srcMac = lmac;
@@ -69,16 +66,12 @@ DutAppConfig loadDutConfig(const std::string& path) {
         ep->srcIp  = lip;
         ep->dstIp  = pip;
     }
-    c.transport.marketData.srcPort =
-        t["market_data"]["src_port"].value_or(c.transport.marketData.srcPort);
-    c.transport.marketData.dstPort =
-        t["market_data"]["dst_port"].value_or(c.transport.marketData.dstPort);
-    c.transport.orderEntry.srcPort =
-        t["order_entry"]["src_port"].value_or(c.transport.orderEntry.srcPort);
-    c.transport.orderEntry.dstPort =
-        t["order_entry"]["dst_port"].value_or(c.transport.orderEntry.dstPort);
+    c.transport.marketData.srcPort = t["market_data"]["src_port"].value_or(c.transport.marketData.srcPort);
+    c.transport.marketData.dstPort = t["market_data"]["dst_port"].value_or(c.transport.marketData.dstPort);
+    c.transport.orderEntry.srcPort = t["order_entry"]["src_port"].value_or(c.transport.orderEntry.srcPort);
+    c.transport.orderEntry.dstPort = t["order_entry"]["dst_port"].value_or(c.transport.orderEntry.dstPort);
 
     return c;
 }
 
-}
+}   // namespace abt::dut

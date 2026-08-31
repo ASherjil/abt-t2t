@@ -9,10 +9,10 @@
 #include <span>
 
 struct RxFrame {
-  std::span<const std::uint8_t> data;
-  std::uint32_t sec;
-  std::uint32_t nsec;
-  std::uint32_t status;
+    std::span<const std::uint8_t> data;
+    std::uint32_t                 sec;
+    std::uint32_t                 nsec;
+    std::uint32_t                 status;
 };
 
-#endif // ABTRDA3_RXFRAME_HPP
+#endif   // ABTRDA3_RXFRAME_HPP

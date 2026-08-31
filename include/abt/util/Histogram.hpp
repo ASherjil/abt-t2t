@@ -20,7 +20,7 @@ public:
     Histogram(std::int64_t lowest, std::int64_t highest, int sigFigs);
     ~Histogram();
 
-    Histogram(const Histogram&) = delete;
+    Histogram(const Histogram&)            = delete;
     Histogram& operator=(const Histogram&) = delete;
 
     void record(std::int64_t value) noexcept;
@@ -37,4 +37,4 @@ private:
     hdr_histogram* m_h = nullptr;
 };
 
-}
+}   // namespace abt::util

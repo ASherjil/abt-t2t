@@ -6,6 +6,8 @@
 // release build for meaningful numbers (ASan inflates them ~10-50x).
 //
 
+#include "TestHarness.hpp"
+
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -14,8 +16,6 @@
 #include <vector>
 
 #include <fmt/format.h>
-
-#include "TestHarness.hpp"
 
 #include "abt/dut/BookBuilder.hpp"
 #include "abt/dut/DutSession.hpp"
@@ -36,17 +36,17 @@ std::span<const std::byte> bytesOf(const T& msg) {
 itch::AddOrder mkAdd(OrderId ref, char side, Quantity shares, Price price) {
     itch::AddOrder a{};
     a.messageType = 'A';
-    a.orderRef = ref;
-    a.side = side;
-    a.shares = shares;
-    a.price = static_cast<std::uint32_t>(price);
+    a.orderRef    = ref;
+    a.side        = side;
+    a.shares      = shares;
+    a.price       = static_cast<std::uint32_t>(price);
     return a;
 }
 
 itch::OrderDelete mkDelete(OrderId ref) {
     itch::OrderDelete d{};
     d.messageType = 'D';
-    d.orderRef = ref;
+    d.orderRef    = ref;
     return d;
 }
 
@@ -58,10 +58,10 @@ struct NeverSend {
 
 void bench_proc() {
     dut::DutConfig cfg{};
-    cfg.minPrice = 0;
-    cfg.maxPrice = 100000;
-    cfg.tickWire = 100;
-    cfg.symbol = "ABT";
+    cfg.minPrice      = 0;
+    cfg.maxPrice      = 100000;
+    cfg.tickWire      = 100;
+    cfg.symbol        = "ABT";
     cfg.queueCapacity = 1u << 17;
     dut::DutSession<dut::IoMode::Loopback, NeverSend> sess(cfg, NeverSend{});
 
@@ -70,17 +70,17 @@ void bench_proc() {
     constexpr std::uint64_t kLevels  = 32;
 
     std::array<std::byte, 512> buf{};
-    mold::Packer packer("BENCHSESS", 1);
+    mold::Packer               packer("BENCHSESS", 1);
 
     for (std::uint64_t i = 0; i < kPackets; ++i) {
         packer.reset(buf.data(), buf.size());
         Price price = 0;
-        char side = 0;
+        char  side  = 0;
         if ((i & 1u) == 0u) {
-            side = 'B';
+            side  = 'B';
             price = 4000 + static_cast<Price>((i % kLevels) * 100);
         } else {
-            side = 'S';
+            side  = 'S';
             price = 8000 + static_cast<Price>((i % kLevels) * 100);
         }
         (void)packer.append(bytesOf(mkAdd(i + 1, side, 100u, price)));
@@ -97,8 +97,7 @@ void bench_proc() {
 }
 
 template <class T>
-void pushMsg(std::vector<std::array<std::byte, 40>>& msgs, std::vector<std::size_t>& lens,
-             const T& m) {
+void pushMsg(std::vector<std::array<std::byte, 40>>& msgs, std::vector<std::size_t>& lens, const T& m) {
     std::array<std::byte, 40> buf{};
     std::memcpy(buf.data(), &m, sizeof m);
     msgs.push_back(buf);
@@ -117,8 +116,7 @@ double runBookThroughput(std::size_t maxOrders, const std::vector<std::array<std
             book.apply({msgs[k].data(), lens[k]});
         }
         const std::uint64_t t1 = tsc::now();
-        const double perMsg =
-            static_cast<double>(tsc::toNs(t1 - t0)) / static_cast<double>(msgs.size());
+        const double perMsg    = static_cast<double>(tsc::toNs(t1 - t0)) / static_cast<double>(msgs.size());
         if (perMsg < best) {
             best = perMsg;
         }
@@ -140,17 +138,17 @@ void bench_book_throughput() {
     constexpr std::uint64_t kLevels = 32;
 
     std::vector<std::array<std::byte, 40>> msgs;
-    std::vector<std::size_t> lens;
+    std::vector<std::size_t>               lens;
     msgs.reserve(kAdds * 2);
     lens.reserve(kAdds * 2);
     for (std::uint64_t i = 0; i < kAdds; ++i) {
-        char side = 0;
+        char  side  = 0;
         Price price = 0;
         if ((i & 1u) == 0u) {
-            side = 'B';
+            side  = 'B';
             price = 4000 + static_cast<Price>((i % kLevels) * 100);
         } else {
-            side = 'S';
+            side  = 'S';
             price = 8000 + static_cast<Price>((i % kLevels) * 100);
         }
         pushMsg(msgs, lens, mkAdd(i + 1, side, 100u, price));
@@ -162,8 +160,7 @@ void bench_book_throughput() {
     const std::size_t sizes[] = {512u, 1024u, 2048u, 4096u, 16384u, 65536u};
     for (std::size_t s : sizes) {
         const double perMsg = runBookThroughput(s, msgs, lens);
-        fmt::print("[dut-book] map={:>6} slots ({:>5} KB): {:.2f} ns/msg\n",
-                   s, (s * 24u) / 1024u, perMsg);
+        fmt::print("[dut-book] map={:>6} slots ({:>5} KB): {:.2f} ns/msg\n", s, (s * 24u) / 1024u, perMsg);
     }
 }
 
@@ -171,32 +168,32 @@ void bench_book_throughput() {
 // scan traverses almost the whole array. Compares the scalar path to the dispatched (AVX2) path.
 void bench_scan() {
     tsc::warmUp();
-    constexpr std::size_t kLevels = 1u << 16;
+    constexpr std::size_t      kLevels = 1u << 16;
     std::vector<std::uint32_t> ladder(kLevels, 0u);
-    ladder[3] = 1u;   // one populated level near the bottom
+    ladder[3]            = 1u;   // one populated level near the bottom
     constexpr int kIters = 20000;
 
-    std::size_t sink = 0;
-    const std::uint64_t s0 = tsc::now();
+    std::size_t         sink = 0;
+    const std::uint64_t s0   = tsc::now();
     for (int r = 0; r < kIters; ++r) {
         sink += util::scanDownNonZeroScalar(ladder.data(), kLevels - 1 - static_cast<std::size_t>(r & 7));
     }
-    const std::uint64_t s1 = tsc::now();
-    const double scalarNs = static_cast<double>(tsc::toNs(s1 - s0)) / kIters;
+    const std::uint64_t s1       = tsc::now();
+    const double        scalarNs = static_cast<double>(tsc::toNs(s1 - s0)) / kIters;
 
     const std::uint64_t v0 = tsc::now();
     for (int r = 0; r < kIters; ++r) {
         sink += util::scanDownNonZero(ladder.data(), kLevels - 1 - static_cast<std::size_t>(r & 7));
     }
-    const std::uint64_t v1 = tsc::now();
-    const double simdNs = static_cast<double>(tsc::toNs(v1 - v0)) / kIters;
+    const std::uint64_t v1     = tsc::now();
+    const double        simdNs = static_cast<double>(tsc::toNs(v1 - v0)) / kIters;
 
-    fmt::print("[dut-scan] rescan {} empty levels: scalar {:.0f} ns, simd {:.0f} ns ({:.1f}x)\n",
-               kLevels, scalarNs, simdNs, simdNs > 0.0 ? scalarNs / simdNs : 0.0);
+    fmt::print("[dut-scan] rescan {} empty levels: scalar {:.0f} ns, simd {:.0f} ns ({:.1f}x)\n", kLevels,
+               scalarNs, simdNs, simdNs > 0.0 ? scalarNs / simdNs : 0.0);
     CHECK(sink > 0);
 }
 
-}
+}   // namespace
 
 int main() {
     bench_proc();

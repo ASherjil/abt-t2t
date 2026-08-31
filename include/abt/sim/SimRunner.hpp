@@ -7,9 +7,9 @@
 
 #include "abt/config/BackendTraits.hpp"
 #include "abt/protocol/Itch50.hpp"
+#include "abt/replay/SymbolFilter.hpp"
 #include "abt/sim/ExchangeSession.hpp"
 #include "abt/sim/FlowGenerator.hpp"
-#include "abt/replay/SymbolFilter.hpp"
 #include "abt/sim/SimConfig.hpp"
 #include "abt/util/Affinity.hpp"
 #include "abt/util/Clock.hpp"
@@ -21,25 +21,28 @@ inline constexpr std::uint64_t kSimLogPeriodNs = 1'000'000'000ull;
 template <class Session>
 void logSim(const Session& ex, std::uint64_t elapsedNs) {
     const SessionStats& s = ex.stats();
-    fmt::print(stderr,
-               "[sim +{:>4}s] md_pkts={} oe_pkts={} tx_drop={} enter={} replace={} cancel={} unknown={} trades={} "
-               "bid={} ask={} live={}\n",
-               elapsedNs / 1'000'000'000ull, s.mdPackets, s.oePackets, s.txDropped, s.enters, s.replaces,
-               s.cancels, s.unknown, ex.trades(), ex.bestBid(), ex.bestAsk(), ex.liveOrders());
+    fmt::print(
+        stderr,
+        "[sim +{:>4}s] md_pkts={} oe_pkts={} tx_drop={} enter={} replace={} cancel={} unknown={} trades={} "
+        "bid={} ask={} live={}\n",
+        elapsedNs / 1'000'000'000ull, s.mdPackets, s.oePackets, s.txDropped, s.enters, s.replaces, s.cancels,
+        s.unknown, ex.trades(), ex.bestBid(), ex.bestAsk(), ex.liveOrders());
 }
 
 template <class Session>
 void logReplay(const Session& ex, const ReplayProgress& p, std::uint64_t elapsedNs) {
     const SessionStats& s = ex.stats();
-    const MirrorStats& m = ex.mirrorStats();
+    const MirrorStats&  m = ex.mirrorStats();
     fmt::print(stderr,
-               "[sim +{:>5}s] loop={} t={} sent={} mir={} late_max={}us late>1ms={} md_pkts={} oe_pkts={} tx_drop={} "
+               "[sim +{:>5}s] loop={} t={} sent={} mir={} late_max={}us late>1ms={} md_pkts={} oe_pkts={} "
+               "tx_drop={} "
                "enter={} replace={} cancel={} shadow={}/{} cross={} impact={} self={} unk={} over={} oob={} "
                "bid={} ask={} live={} clients={}\n",
                elapsedNs / 1'000'000'000ull, p.loop, replay::formatTimeOfDay(p.virtualTs), p.sent, s.mirrored,
                p.maxLateNs / 1000, p.lateOver1ms, s.mdPackets, s.oePackets, s.txDropped, s.enters, s.replaces,
-               s.cancels, m.shadowFills, m.shadowShares, m.crossFills, m.impactFills, m.selfTrades, m.unknownRef,
-               m.overReduce, m.outOfBand, ex.bestBid(), ex.bestAsk(), ex.liveOrders(), ex.clientOrders());
+               s.cancels, m.shadowFills, m.shadowShares, m.crossFills, m.impactFills, m.selfTrades,
+               m.unknownRef, m.overReduce, m.outOfBand, ex.bestBid(), ex.bestAsk(), ex.liveOrders(),
+               ex.clientOrders());
 }
 
 template <class Session>
@@ -62,8 +65,8 @@ int runReplay(Session& ex, const SimConfig& cfg, volatile std::sig_atomic_t& sto
         }
         fmt::print(stderr, "exchange-sim: DUT session logged in, starting replay\n");
     }
-    const std::uint64_t start = monotonicNs();
-    std::uint64_t nextLog = start + kSimLogPeriodNs;
+    const std::uint64_t start   = monotonicNs();
+    std::uint64_t       nextLog = start + kSimLogPeriodNs;
     while (stop == 0) {
         if (!ex.pollOrderEntry(rp.progress().virtualTs)) {
             break;
@@ -90,8 +93,8 @@ int runVenue(Session& ex, const SimConfig& cfg, volatile std::sig_atomic_t& stop
     FlowGenerator<Session> gen(ex, cfg.flow);
     ex.sessionEvent(itch::SystemEventCode::StartOfMarketHours, nsSinceMidnightUtc());
     gen.run(cfg.warmupSteps, nsSinceMidnightUtc(), 0);
-    const std::uint64_t start = monotonicNs();
-    std::uint64_t nextLog = start + kSimLogPeriodNs;
+    const std::uint64_t start   = monotonicNs();
+    std::uint64_t       nextLog = start + kSimLogPeriodNs;
     ex.run(stop, cfg.tickIntervalNs, [&](std::uint64_t ts) {
         gen.step(ts);
         const std::uint64_t now = monotonicNs();
@@ -113,8 +116,8 @@ int runSim(const SimConfig& cfg, typename T::Type& backend, volatile std::sig_at
             fmt::print(stderr, "exchange-sim: interrupted before a client connected.\n");
             return 0;
         }
-        fmt::print(stderr, "exchange-sim: publishing market data to udp/{}:{}\n",
-                   cfg.socket.mdHost, cfg.socket.mdPort);
+        fmt::print(stderr, "exchange-sim: publishing market data to udp/{}:{}\n", cfg.socket.mdHost,
+                   cfg.socket.mdPort);
         return runVenue(ex, cfg, stop);
     } else {
         if (!util::pinThread(cfg.transport.cpuCore)) {
@@ -123,10 +126,10 @@ int runSim(const SimConfig& cfg, typename T::Type& backend, volatile std::sig_at
         }
         ExchangeSession<IoMode::Transport, typename T::Type> ex{cfg.venue};
         ex.prepareTransport(backend, cfg.transport.marketData, cfg.transport.orderEntry, T::kMaxTxFrame);
-        fmt::print(stderr, "exchange-sim: {} on {} (core {}), md udp/{} -> {}, oe udp/{} -> {}\n",
-                   T::kName, cfg.transport.interface, cfg.transport.cpuCore,
-                   cfg.transport.marketData.srcPort, cfg.transport.marketData.dstPort,
-                   cfg.transport.orderEntry.srcPort, cfg.transport.orderEntry.dstPort);
+        fmt::print(stderr, "exchange-sim: {} on {} (core {}), md udp/{} -> {}, oe udp/{} -> {}\n", T::kName,
+                   cfg.transport.interface, cfg.transport.cpuCore, cfg.transport.marketData.srcPort,
+                   cfg.transport.marketData.dstPort, cfg.transport.orderEntry.srcPort,
+                   cfg.transport.orderEntry.dstPort);
         return runVenue(ex, cfg, stop);
     }
 }
@@ -135,4 +138,4 @@ int runSim(const SimConfig& cfg, typename T::Type& backend, volatile std::sig_at
     return NicSpec{cfg.transport.interface, cfg.transport.driver, cfg.transport.cpuCore};
 }
 
-}
+}   // namespace abt

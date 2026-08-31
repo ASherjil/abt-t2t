@@ -1,3 +1,5 @@
+#include "TestHarness.hpp"
+
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -6,14 +8,12 @@
 #include <string_view>
 #include <vector>
 
-#include "TestHarness.hpp"
-
 #include "abt/dut/DutSession.hpp"
 #include "abt/dut/Strategy.hpp"
 #include "abt/dut/TxStamp.hpp"
+#include "abt/protocol/EthIpUdp.hpp"
 #include "abt/protocol/Itch50.hpp"
 #include "abt/protocol/MoldUdp64.hpp"
-#include "abt/protocol/EthIpUdp.hpp"
 #include "abt/protocol/Ouch50.hpp"
 #include "abt/protocol/SoupBinTcp.hpp"
 
@@ -29,10 +29,10 @@ std::span<const std::byte> bytesOf(const T& msg) {
 itch::AddOrder mkAdd(OrderId ref, char side, Quantity shares, Price price) {
     itch::AddOrder a{};
     a.messageType = 'A';
-    a.orderRef = ref;
-    a.side = side;
-    a.shares = shares;
-    a.price = static_cast<std::uint32_t>(price);
+    a.orderRef    = ref;
+    a.side        = side;
+    a.shares      = shares;
+    a.price       = static_cast<std::uint32_t>(price);
     return a;
 }
 
@@ -44,7 +44,7 @@ struct JoinBid {
         if (book.bestBid() != kNoPrice) {
             t.quoteBid = true;
             t.bidPrice = book.bestBid();
-            t.bidQty = qty;
+            t.bidQty   = qty;
         }
         return t;
     }
@@ -57,14 +57,14 @@ struct TakeOnce {
 
     dut::QuoteTargets onBook(const dut::BookBuilder& book, const dut::Account&) noexcept {
         dut::QuoteTargets t{};
-        const Price ask = book.bestAsk();
+        const Price       ask = book.bestAsk();
         if (ask == kNoPrice || ask > trigger || !armed) {
             return t;
         }
-        armed = false;
+        armed      = false;
         t.quoteBid = true;
         t.bidPrice = ask;
-        t.bidQty = qty;
+        t.bidQty   = qty;
         return t;
     }
 };
@@ -87,25 +87,25 @@ static_assert(dut::TxStampSource<FakeStampSource>);
 
 dut::DutConfig baseCfg() {
     dut::DutConfig cfg{};
-    cfg.minPrice = 1;
-    cfg.maxPrice = 1000;
-    cfg.tickWire = 1;
-    cfg.symbol = "ABT";
+    cfg.minPrice     = 1;
+    cfg.maxPrice     = 1000;
+    cfg.tickWire     = 1;
+    cfg.symbol       = "ABT";
     cfg.firstUserRef = 7;
     return cfg;
 }
 
 ouch::Accepted accepted(std::uint32_t ref, Quantity qty) {
     ouch::Accepted a{};
-    a.type = 'A';
+    a.type       = 'A';
     a.userRefNum = ref;
-    a.quantity = qty;
+    a.quantity   = qty;
     a.orderState = 'L';
     return a;
 }
 
 void test_quote_lifecycle_through_session() {
-    mold::Packer packer("SESSION01", 1);
+    mold::Packer                packer("SESSION01", 1);
     std::array<std::byte, 2048> buf{};
 
     dut::DutSession<dut::IoMode::Loopback, JoinBid> sess(baseCfg(), JoinBid{10u});
@@ -157,10 +157,10 @@ void test_quote_lifecycle_through_session() {
 
 void test_take_and_t2t() {
     dut::DutConfig cfg = baseCfg();
-    cfg.firstUserRef = 1;
+    cfg.firstUserRef   = 1;
     dut::DutSession<dut::IoMode::Loopback, TakeOnce> sess(cfg, TakeOnce{101, 5u});
 
-    mold::Packer packer("SESSION01", 1);
+    mold::Packer                packer("SESSION01", 1);
     std::array<std::byte, 2048> buf{};
     packer.reset(buf.data(), buf.size());
     (void)packer.append(bytesOf(mkAdd(1u, 'B', 500u, 100)));
@@ -203,7 +203,7 @@ void test_take_and_t2t() {
 
 void test_sequence_gap_and_stale() {
     dut::DutSession<dut::IoMode::Loopback, JoinBid> sess(baseCfg(), JoinBid{10u});
-    std::array<std::byte, 2048> buf{};
+    std::array<std::byte, 2048>                     buf{};
 
     mold::Packer p1("SESSION01", 1);
     p1.reset(buf.data(), buf.size());
@@ -228,35 +228,35 @@ void test_sequence_gap_and_stale() {
     CHECK_EQ(sess.feed().expected(), 6u);
 }
 
-}
+}   // namespace
 
 itch::AddOrder mkAddAt(std::uint16_t locate, OrderId ref, char side, Quantity shares, Price price) {
     itch::AddOrder a = mkAdd(ref, side, shares, price);
-    a.stockLocate = locate;
+    a.stockLocate    = locate;
     return a;
 }
 
 itch::SystemEvent mkSys(char code) {
     itch::SystemEvent s{};
     s.messageType = 'S';
-    s.eventCode = code;
+    s.eventCode   = code;
     return s;
 }
 
 itch::StockTradingAction mkHalt(std::uint16_t locate, char state) {
     itch::StockTradingAction h{};
-    h.messageType = 'H';
-    h.stockLocate = locate;
+    h.messageType  = 'H';
+    h.stockLocate  = locate;
     h.tradingState = state;
     return h;
 }
 
 void test_locate_filter_session_gating_and_reset() {
-    mold::Packer packer("SESSION01", 1);
+    mold::Packer                packer("SESSION01", 1);
     std::array<std::byte, 2048> buf{};
-    dut::DutConfig cfg = baseCfg();
-    cfg.stockLocate = 13;
-    cfg.marketHoursOnly = true;
+    dut::DutConfig              cfg = baseCfg();
+    cfg.stockLocate                 = 13;
+    cfg.marketHoursOnly             = true;
     dut::DutSession<dut::IoMode::Loopback, JoinBid> sess(cfg, JoinBid{10u});
 
     packer.reset(buf.data(), buf.size());
@@ -314,12 +314,19 @@ struct MockIo {
     std::vector<std::uint8_t>              scratch;
     std::vector<std::vector<std::uint8_t>> frames;
 
-    void prefillRing(std::span<const std::uint8_t> t) noexcept { tmpl.assign(t.begin(), t.end()); }
+    void prefillRing(std::span<const std::uint8_t> t) noexcept {
+        tmpl.assign(t.begin(), t.end());
+    }
+
     std::uint8_t* acquire(std::uint32_t n) noexcept {
         scratch.assign(n, 0);
         return scratch.data();
     }
-    void commit() noexcept { frames.emplace_back(scratch); }
+
+    void commit() noexcept {
+        frames.emplace_back(scratch);
+    }
+
     bool send(std::span<const std::uint8_t> frame) noexcept {
         frames.emplace_back(frame.begin(), frame.end());
         return true;
@@ -328,6 +335,7 @@ struct MockIo {
     std::vector<std::vector<std::uint8_t>> inbound;
     std::vector<std::uint8_t>              rxCur;
     std::size_t                            rxIdx = 0;
+
     RxFrame tryReceive() noexcept {
         if (rxIdx >= inbound.size()) {
             return RxFrame{{}, 0, 0, 0};
@@ -335,13 +343,16 @@ struct MockIo {
         rxCur = inbound[rxIdx];
         return RxFrame{{rxCur.data(), rxCur.size()}, 0, 0, 1};
     }
-    void release() noexcept { ++rxIdx; }
+
+    void release() noexcept {
+        ++rxIdx;
+    }
 };
 
 void test_transport_login_roundtrip() {
     dut::DutSession<dut::IoMode::Transport, JoinBid, MockIo> sess(baseCfg(), JoinBid{10u});
-    MockIo io;
-    net::Endpoints oeEp{};
+    MockIo                                                   io;
+    net::Endpoints                                           oeEp{};
     oeEp.srcPort = 41001;
     oeEp.dstPort = 40001;
     CHECK(sess.prepareTransport(io, oeEp));
@@ -351,7 +362,7 @@ void test_transport_login_roundtrip() {
     CHECK_EQ(io.frames.size(), 1u);
     std::span<const std::byte> fr{reinterpret_cast<const std::byte*>(io.frames[0].data()),
                                   io.frames[0].size()};
-    soup::Packet sp{};
+    soup::Packet               sp{};
     CHECK(soup::parse(fr.subspan(net::kL2L3L4Overhead), sp) != 0);
     CHECK(sp.type == soup::Type::LoginRequest);
     soup::LoginRequest lr{};
@@ -360,7 +371,7 @@ void test_transport_login_roundtrip() {
     CHECK(lr.requestedSession.view() == std::string_view{"SIM0000001"});
 
     std::array<std::byte, 64> soupBuf{};
-    const auto ack = soup::packLoginAccepted(soupBuf.data(), "SIM0000001", 1);
+    const auto                ack = soup::packLoginAccepted(soupBuf.data(), "SIM0000001", 1);
     std::vector<std::uint8_t> frame(net::kL2L3L4Overhead + ack.size(), 0);
     frame[36] = static_cast<std::uint8_t>(41001u >> 8);
     frame[37] = static_cast<std::uint8_t>(41001u & 0xff);

@@ -9,7 +9,7 @@
 
 namespace abt::test {
 
-inline int g_checks = 0;
+inline int g_checks   = 0;
 inline int g_failures = 0;
 
 inline void record(bool ok, const char* expr, const char* file, int line) {
@@ -20,8 +20,7 @@ inline void record(bool ok, const char* expr, const char* file, int line) {
     }
 }
 
-inline void record_eq(std::uint64_t a, std::uint64_t b, const char* expr,
-                       const char* file, int line) {
+inline void record_eq(std::uint64_t a, std::uint64_t b, const char* expr, const char* file, int line) {
     ++g_checks;
     if (a != b) {
         ++g_failures;
@@ -35,9 +34,9 @@ inline int summary(const char* name) {
     return g_failures == 0 ? 0 : 1;
 }
 
-}
+}   // namespace abt::test
 
-#define CHECK(cond)      ::abt::test::record((cond), #cond, __FILE__, __LINE__)
-#define CHECK_EQ(a, b)   ::abt::test::record_eq(static_cast<std::uint64_t>(a),          \
-                                                static_cast<std::uint64_t>(b),          \
-                                                #a " == " #b, __FILE__, __LINE__)
+#define CHECK(cond) ::abt::test::record((cond), #cond, __FILE__, __LINE__)
+#define CHECK_EQ(a, b)                                                                                 \
+    ::abt::test::record_eq(static_cast<std::uint64_t>(a), static_cast<std::uint64_t>(b), #a " == " #b, \
+                           __FILE__, __LINE__)

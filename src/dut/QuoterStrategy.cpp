@@ -15,8 +15,8 @@ QuoterStrategy::QuoterStrategy(const QuoterConfig& cfg) noexcept
 
 QuoteTargets QuoterStrategy::onBook(const BookBuilder& book, const Account& acct) noexcept {
     QuoteTargets q{};
-    const Price bb = book.bestBid();
-    const Price ba = book.bestAsk();
+    const Price  bb = book.bestBid();
+    const Price  ba = book.bestAsk();
     if (bb == kNoPrice || ba == kNoPrice) {
         return q;   // no two-sided market to anchor to -> pull quotes
     }
@@ -27,7 +27,7 @@ QuoteTargets QuoterStrategy::onBook(const BookBuilder& book, const Account& acct
     // Size-weighted micro-price: bid weighted by ask size and ask weighted by bid size, so the fair
     // leans toward the side with the larger resting size (the side under more pressure).
     const std::uint64_t total = static_cast<std::uint64_t>(bidSz) + static_cast<std::uint64_t>(askSz);
-    double fair = 0.0;
+    double              fair  = 0.0;
     if (total == 0) {
         fair = (static_cast<double>(bb) + static_cast<double>(ba)) * 0.5;
     } else {
@@ -51,10 +51,10 @@ QuoteTargets QuoterStrategy::onBook(const BookBuilder& book, const Account& acct
 
     q.quoteBid = true;
     q.bidPrice = bidPrice;
-    q.bidQty = m_cfg.quoteQty;
+    q.bidQty   = m_cfg.quoteQty;
     q.quoteAsk = true;
     q.askPrice = askPrice;
-    q.askQty = m_cfg.quoteQty;
+    q.askQty   = m_cfg.quoteQty;
     return q;
 }
 
@@ -63,7 +63,7 @@ Price QuoterStrategy::roundDownToTick(double price) const noexcept {
         return m_cfg.minPrice;
     }
     const double offset = price - static_cast<double>(m_cfg.minPrice);
-    const double ticks = std::floor(offset / static_cast<double>(m_cfg.tickWire));
+    const double ticks  = std::floor(offset / static_cast<double>(m_cfg.tickWire));
     return m_cfg.minPrice + static_cast<Price>(ticks) * m_cfg.tickWire;
 }
 
@@ -72,7 +72,7 @@ Price QuoterStrategy::roundUpToTick(double price) const noexcept {
         return m_cfg.minPrice;
     }
     const double offset = price - static_cast<double>(m_cfg.minPrice);
-    const double ticks = std::ceil(offset / static_cast<double>(m_cfg.tickWire));
+    const double ticks  = std::ceil(offset / static_cast<double>(m_cfg.tickWire));
     return m_cfg.minPrice + static_cast<Price>(ticks) * m_cfg.tickWire;
 }
 
@@ -86,4 +86,4 @@ Price QuoterStrategy::clampToBand(Price price) const noexcept {
     return price;
 }
 
-}
+}   // namespace abt::dut

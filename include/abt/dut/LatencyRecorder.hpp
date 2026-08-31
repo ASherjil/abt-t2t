@@ -16,24 +16,23 @@ namespace abt::dut {
 
 class LatencyRecorder {
 public:
-    LatencyRecorder(std::string name, std::size_t queueCapacity, double nsPerUnit,
-                    int sigFigs = 3);
+    LatencyRecorder(std::string name, std::size_t queueCapacity, double nsPerUnit, int sigFigs = 3);
 
-    LatencyRecorder(const LatencyRecorder&) = delete;
+    LatencyRecorder(const LatencyRecorder&)            = delete;
     LatencyRecorder& operator=(const LatencyRecorder&) = delete;
 
     void record(std::uint64_t raw) noexcept;
 
-    bool drainOne() noexcept;
+    bool        drainOne() noexcept;
     std::size_t drain() noexcept;
 
-    [[nodiscard]] std::string_view name() const noexcept;
+    [[nodiscard]] std::string_view       name() const noexcept;
     [[nodiscard]] const util::Histogram& histogram() const noexcept;
-    [[nodiscard]] std::int64_t count() const noexcept;
-    [[nodiscard]] std::int64_t min() const noexcept;
-    [[nodiscard]] std::int64_t max() const noexcept;
-    [[nodiscard]] std::int64_t percentile(double p) const noexcept;
-    [[nodiscard]] std::uint64_t dropped() const noexcept;
+    [[nodiscard]] std::int64_t           count() const noexcept;
+    [[nodiscard]] std::int64_t           min() const noexcept;
+    [[nodiscard]] std::int64_t           max() const noexcept;
+    [[nodiscard]] std::int64_t           percentile(double p) const noexcept;
+    [[nodiscard]] std::uint64_t          dropped() const noexcept;
 
     void reset() noexcept;
     void summary() const;
@@ -51,11 +50,11 @@ public:
     explicit RecorderThread(std::vector<LatencyRecorder*> recorders, int cpuCore = -1);
     ~RecorderThread();
 
-    RecorderThread(const RecorderThread&) = delete;
+    RecorderThread(const RecorderThread&)            = delete;
     RecorderThread& operator=(const RecorderThread&) = delete;
 
-    void start();
-    void stop();
+    void               start();
+    void               stop();
     [[nodiscard]] bool running() const noexcept;
 
 private:
@@ -73,4 +72,4 @@ inline void LatencyRecorder::record(std::uint64_t raw) noexcept {
     }
 }
 
-}
+}   // namespace abt::dut

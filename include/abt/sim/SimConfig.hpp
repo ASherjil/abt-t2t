@@ -28,15 +28,15 @@ struct TransportConfig {
 };
 
 struct SimConfig {
-    ExchangeConfig venue;
-    FlowConfig     flow;
-    SocketConfig   socket;
-    TransportConfig     transport;
-    ReplayConfig   replay;
-    std::size_t    warmupSteps    = 200;
-    std::uint64_t  tickIntervalNs = 100000;
+    ExchangeConfig  venue;
+    FlowConfig      flow;
+    SocketConfig    socket;
+    TransportConfig transport;
+    ReplayConfig    replay;
+    std::size_t     warmupSteps    = 200;
+    std::uint64_t   tickIntervalNs = 100000;
 };
 
 [[nodiscard]] SimConfig loadConfig(const std::string& path);
 
-}
+}   // namespace abt

@@ -1,3 +1,5 @@
+#include "TestHarness.hpp"
+
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -8,7 +10,6 @@
 #include "abt/protocol/Itch50.hpp"
 #include "abt/protocol/Ouch50.hpp"
 #include "abt/sim/Venue.hpp"
-#include "TestHarness.hpp"
 
 using namespace abt;
 
@@ -17,9 +18,19 @@ namespace {
 struct RecSink {
     std::vector<std::vector<std::byte>> md;
     std::vector<std::vector<std::byte>> oe;
-    void marketData(std::span<const std::byte> b) { md.emplace_back(b.begin(), b.end()); }
-    void orderEntry(std::span<const std::byte> b) { oe.emplace_back(b.begin(), b.end()); }
-    void clear() { md.clear(); oe.clear(); }
+
+    void marketData(std::span<const std::byte> b) {
+        md.emplace_back(b.begin(), b.end());
+    }
+
+    void orderEntry(std::span<const std::byte> b) {
+        oe.emplace_back(b.begin(), b.end());
+    }
+
+    void clear() {
+        md.clear();
+        oe.clear();
+    }
 };
 
 template <class M>
@@ -32,7 +43,9 @@ M decode(const std::vector<std::byte>& v) {
 std::size_t countOe(const RecSink& s, char type) {
     std::size_t n = 0;
     for (const auto& m : s.oe) {
-        if (static_cast<char>(m[0]) == type) ++n;
+        if (static_cast<char>(m[0]) == type) {
+            ++n;
+        }
     }
     return n;
 }
@@ -40,37 +53,39 @@ std::size_t countOe(const RecSink& s, char type) {
 std::size_t countMd(const RecSink& s, char type) {
     std::size_t n = 0;
     for (const auto& m : s.md) {
-        if (static_cast<char>(m[0]) == type) ++n;
+        if (static_cast<char>(m[0]) == type) {
+            ++n;
+        }
     }
     return n;
 }
 
 ouch::EnterOrder enter(std::uint32_t user, char side, std::uint32_t qty, std::uint64_t price) {
     ouch::EnterOrder o{};
-    o.type = static_cast<char>(ouch::InType::EnterOrder);
-    o.userRefNum = user;
-    o.side = side;
-    o.quantity = qty;
-    o.symbol = std::string_view{"AAPL"};
-    o.price = price;
-    o.timeInForce = static_cast<char>(ouch::TimeInForce::Day);
-    o.display = static_cast<char>(ouch::Display::Visible);
-    o.capacity = static_cast<char>(ouch::Capacity::Agency);
+    o.type               = static_cast<char>(ouch::InType::EnterOrder);
+    o.userRefNum         = user;
+    o.side               = side;
+    o.quantity           = qty;
+    o.symbol             = std::string_view{"AAPL"};
+    o.price              = price;
+    o.timeInForce        = static_cast<char>(ouch::TimeInForce::Day);
+    o.display            = static_cast<char>(ouch::Display::Visible);
+    o.capacity           = static_cast<char>(ouch::Capacity::Agency);
     o.imSweepEligibility = static_cast<char>(ouch::ImSweep::NotEligible);
-    o.crossType = static_cast<char>(ouch::CrossType::Continuous);
-    o.clOrdId = std::string_view{"CID"};
-    o.appendageLength = 0;
+    o.crossType          = static_cast<char>(ouch::CrossType::Continuous);
+    o.clOrdId            = std::string_view{"CID"};
+    o.appendageLength    = 0;
     return o;
 }
 
-constexpr OrderId kClientBase = 1ull << 62;
-constexpr std::uint32_t kPx320 = 3'200'000;
-constexpr std::uint32_t kPx321 = 3'210'000;
-constexpr std::uint32_t kPx322 = 3'220'000;
-constexpr std::uint32_t kPx319 = 3'190'000;
+constexpr OrderId       kClientBase = 1ull << 62;
+constexpr std::uint32_t kPx320      = 3'200'000;
+constexpr std::uint32_t kPx321      = 3'210'000;
+constexpr std::uint32_t kPx322      = 3'220'000;
+constexpr std::uint32_t kPx319      = 3'190'000;
 
 struct Fx {
-    RecSink sink;
+    RecSink        sink;
     Venue<RecSink> v{sink, "AAPL", 13, 1, 100000, 100, kClientBase, 1u << 10};
 };
 
@@ -212,7 +227,7 @@ void test_reset_day_cancels_clients_and_clears() {
     CHECK_EQ(f.v.mirrorStats().unknownRef, 0u);
 }
 
-}
+}   // namespace
 
 int main() {
     test_mirror_builds_book_silently();

@@ -43,4 +43,4 @@ struct DutAppConfig {
 
 [[nodiscard]] DutAppConfig loadDutConfig(const std::string& path);
 
-}
+}   // namespace abt::dut

@@ -29,10 +29,10 @@ public:
     void apply(std::span<const std::byte> itchMessage);
     void clear() noexcept;
 
-    [[nodiscard]] Price bestBid() const noexcept;
-    [[nodiscard]] Price bestAsk() const noexcept;
-    [[nodiscard]] Quantity sizeAt(Side side, Price price) const noexcept;
-    [[nodiscard]] Quantity restingShares(OrderId ref) const noexcept;
+    [[nodiscard]] Price       bestBid() const noexcept;
+    [[nodiscard]] Price       bestAsk() const noexcept;
+    [[nodiscard]] Quantity    sizeAt(Side side, Price price) const noexcept;
+    [[nodiscard]] Quantity    restingShares(OrderId ref) const noexcept;
     [[nodiscard]] std::size_t liveOrders() const noexcept;
     [[nodiscard]] std::size_t ownOrders() const noexcept;
 
@@ -51,10 +51,10 @@ private:
     void addShares(Side side, Price price, Quantity shares) noexcept;
     void removeShares(Side side, Price price, Quantity shares) noexcept;
 
-    [[nodiscard]] bool inBand(Price price) const noexcept;
+    [[nodiscard]] bool        inBand(Price price) const noexcept;
     [[nodiscard]] std::size_t index(Price price) const noexcept;
-    void rescanBestBid() noexcept;
-    void rescanBestAsk() noexcept;
+    void                      rescanBestBid() noexcept;
+    void                      rescanBestAsk() noexcept;
 
     Price       m_minPrice;
     Price       m_maxPrice;
@@ -65,9 +65,9 @@ private:
     Price       m_bestBid = kNoPrice;
     Price       m_bestAsk = kNoPrice;
 
-    std::vector<Quantity>              m_bidSize;
-    std::vector<Quantity>              m_askSize;
+    std::vector<Quantity>               m_bidSize;
+    std::vector<Quantity>               m_askSize;
     util::FlatHashMap<OrderId, Resting> m_orders;
 };
 
-}
+}   // namespace abt::dut

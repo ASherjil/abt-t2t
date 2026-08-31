@@ -17,6 +17,7 @@ struct FrameHeader {
     Ipv4Header ip;
     UdpHeader  udp;
 };
+
 static_assert(sizeof(FrameHeader) == kL2L3L4Overhead);
 static_assert(alignof(FrameHeader) == 1);
 static_assert(std::is_trivially_copyable_v<FrameHeader>);
@@ -44,4 +45,4 @@ private:
     FrameHeader m_hdr{};
 };
 
-}
+}   // namespace abt::net

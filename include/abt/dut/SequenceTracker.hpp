@@ -6,12 +6,16 @@ namespace abt::dut {
 
 class SequenceTracker {
 public:
-    enum class Result : std::uint8_t { InOrder, Gap, Stale };
+    enum class Result : std::uint8_t {
+        InOrder,
+        Gap,
+        Stale
+    };
 
     Result onPacket(std::uint64_t seq, std::uint16_t count) noexcept;
-    void reset() noexcept;
+    void   reset() noexcept;
 
-    [[nodiscard]] bool started() const noexcept;
+    [[nodiscard]] bool          started() const noexcept;
     [[nodiscard]] std::uint64_t expected() const noexcept;
     [[nodiscard]] std::uint64_t gaps() const noexcept;
     [[nodiscard]] std::uint64_t missed() const noexcept;
@@ -25,4 +29,4 @@ private:
     bool          m_started  = false;
 };
 
-}
+}   // namespace abt::dut

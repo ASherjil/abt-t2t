@@ -1,10 +1,10 @@
+#include "TestHarness.hpp"
+
 #include <array>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
 #include <span>
-
-#include "TestHarness.hpp"
 
 #include "abt/dut/OrderManager.hpp"
 #include "abt/protocol/Ouch50.hpp"
@@ -28,7 +28,7 @@ M decode(const dut::Outbound& o) {
 
 dut::OrderManager makeOms() {
     dut::OmsConfig cfg{};
-    cfg.symbol = "ABT";
+    cfg.symbol       = "ABT";
     cfg.firstUserRef = 1;
     return dut::OrderManager(cfg);
 }
@@ -37,66 +37,66 @@ dut::QuoteTargets both(Price bid, Price ask, Quantity qty = 100) {
     dut::QuoteTargets t{};
     t.quoteBid = true;
     t.bidPrice = bid;
-    t.bidQty = qty;
+    t.bidQty   = qty;
     t.quoteAsk = true;
     t.askPrice = ask;
-    t.askQty = qty;
+    t.askQty   = qty;
     return t;
 }
 
 ouch::Accepted accepted(std::uint32_t ref, Quantity qty, char state = 'L') {
     ouch::Accepted a{};
-    a.type = 'A';
+    a.type       = 'A';
     a.userRefNum = ref;
-    a.quantity = qty;
+    a.quantity   = qty;
     a.orderState = state;
     return a;
 }
 
 ouch::Replaced replaced(std::uint32_t orig, std::uint32_t ref, Quantity qty, Price price) {
     ouch::Replaced r{};
-    r.type = 'U';
+    r.type           = 'U';
     r.origUserRefNum = orig;
-    r.userRefNum = ref;
-    r.quantity = qty;
-    r.price = static_cast<std::uint64_t>(static_cast<std::uint32_t>(price));
-    r.orderState = 'L';
+    r.userRefNum     = ref;
+    r.quantity       = qty;
+    r.price          = static_cast<std::uint64_t>(static_cast<std::uint32_t>(price));
+    r.orderState     = 'L';
     return r;
 }
 
 ouch::Executed executed(std::uint32_t ref, Quantity qty) {
     ouch::Executed e{};
-    e.type = 'E';
+    e.type       = 'E';
     e.userRefNum = ref;
-    e.quantity = qty;
+    e.quantity   = qty;
     return e;
 }
 
 ouch::Canceled canceled(std::uint32_t ref, Quantity qty) {
     ouch::Canceled c{};
-    c.type = 'C';
+    c.type       = 'C';
     c.userRefNum = ref;
-    c.quantity = qty;
-    c.reason = 'U';
+    c.quantity   = qty;
+    c.reason     = 'U';
     return c;
 }
 
 ouch::Rejected rejected(std::uint32_t ref) {
     ouch::Rejected j{};
-    j.type = 'J';
+    j.type       = 'J';
     j.userRefNum = ref;
     return j;
 }
 
 ouch::CancelReject cancelReject(std::uint32_t ref) {
     ouch::CancelReject i{};
-    i.type = 'I';
+    i.type       = 'I';
     i.userRefNum = ref;
     return i;
 }
 
 void test_enter_both_sides_then_idle_while_pending() {
-    auto oms = makeOms();
+    auto                         oms = makeOms();
     std::array<dut::Outbound, 2> out{};
 
     CHECK_EQ(oms.reconcile(both(99, 101), out), 2u);
@@ -128,7 +128,7 @@ void test_enter_both_sides_then_idle_while_pending() {
 }
 
 void test_replace_on_price_move() {
-    auto oms = makeOms();
+    auto                         oms = makeOms();
     std::array<dut::Outbound, 2> out{};
     (void)oms.reconcile(both(99, 101), out);
     oms.onAck(bytesOf(accepted(1, 100)));
@@ -153,14 +153,14 @@ void test_replace_on_price_move() {
 }
 
 void test_pull_side_cancels() {
-    auto oms = makeOms();
+    auto                         oms = makeOms();
     std::array<dut::Outbound, 2> out{};
     (void)oms.reconcile(both(99, 101), out);
     oms.onAck(bytesOf(accepted(1, 100)));
     oms.onAck(bytesOf(accepted(2, 100)));
 
     dut::QuoteTargets t = both(99, 101);
-    t.quoteAsk = false;
+    t.quoteAsk          = false;
     CHECK_EQ(oms.reconcile(t, out), 1u);
     const auto x = decode<ouch::CancelOrder>(out[0]);
     CHECK_EQ(out[0].len, sizeof(ouch::CancelOrder));
@@ -176,7 +176,7 @@ void test_pull_side_cancels() {
 }
 
 void test_fills_drive_position_and_requote() {
-    auto oms = makeOms();
+    auto                         oms = makeOms();
     std::array<dut::Outbound, 2> out{};
     (void)oms.reconcile(both(99, 101), out);
     oms.onAck(bytesOf(accepted(1, 100)));
@@ -204,7 +204,7 @@ void test_fills_drive_position_and_requote() {
 }
 
 void test_fill_during_pending_replace() {
-    auto oms = makeOms();
+    auto                         oms = makeOms();
     std::array<dut::Outbound, 2> out{};
     (void)oms.reconcile(both(99, 101), out);
     oms.onAck(bytesOf(accepted(1, 100)));
@@ -221,7 +221,7 @@ void test_fill_during_pending_replace() {
 }
 
 void test_rejects() {
-    auto oms = makeOms();
+    auto                         oms = makeOms();
     std::array<dut::Outbound, 2> out{};
     (void)oms.reconcile(both(99, 101), out);
     oms.onAck(bytesOf(rejected(1)));
@@ -247,28 +247,28 @@ void test_rejects() {
 }
 
 void test_ioc_dead_on_accept() {
-    auto oms = makeOms();
+    auto                         oms = makeOms();
     std::array<dut::Outbound, 2> out{};
-    dut::QuoteTargets t{};
+    dut::QuoteTargets            t{};
     t.quoteBid = true;
     t.bidPrice = 101;
-    t.bidQty = 10;
+    t.bidQty   = 10;
     (void)oms.reconcile(t, out);
     oms.onAck(bytesOf(accepted(1, 10, 'D')));
     CHECK(oms.slot(Side::Buy).state == QuoteState::Idle);
 }
 
-}
+}   // namespace
 
 void test_rising_quote_moves_ask_before_bid() {
-    auto oms = makeOms();
+    auto                         oms = makeOms();
     std::array<dut::Outbound, 2> out{};
     (void)oms.reconcile(both(99, 101), out);
     oms.onAck(bytesOf(accepted(1, 100)));
     oms.onAck(bytesOf(accepted(2, 100)));
 
     CHECK_EQ(oms.reconcile(both(101, 103), out), 2u);
-    const auto first = decode<ouch::ReplaceOrder>(out[0]);
+    const auto first  = decode<ouch::ReplaceOrder>(out[0]);
     const auto second = decode<ouch::ReplaceOrder>(out[1]);
     CHECK_EQ(first.origUserRefNum.value(), 2u);
     CHECK_EQ(first.price.value(), 103u);

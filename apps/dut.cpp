@@ -1,8 +1,8 @@
+#include "Backend.hpp"
+
 #include <csignal>
 
 #include <fmt/core.h>
-
-#include "Backend.hpp"
 
 #include "abt/dut/DutAppConfig.hpp"
 #include "abt/dut/DutRunner.hpp"
@@ -21,7 +21,8 @@ void onSignal(int) {
 }
 
 void installSignals() {
-    struct sigaction sa{};
+    struct sigaction sa {};
+
     sa.sa_handler = onSignal;
     ::sigemptyset(&sa.sa_mask);
     sa.sa_flags = 0;
@@ -29,15 +30,15 @@ void installSignals() {
     ::sigaction(SIGTERM, &sa, nullptr);
 }
 
-}
+}   // namespace
 
 int main() {
     const dut::DutAppConfig cfg = dut::loadDutConfig(ABT_DUT_CONFIG_PATH);
     installSignals();
     tsc::warmUp();
 
-    const NicSpec nic = dut::nicOf(cfg);
-    auto backend = Backend::make(nic);
+    const NicSpec nic     = dut::nicOf(cfg);
+    auto          backend = Backend::make(nic);
     if (!Backend::init(backend, nic)) {
         fmt::print(stderr, "dut: backend '{}' init failed\n", Backend::kName);
         return 1;

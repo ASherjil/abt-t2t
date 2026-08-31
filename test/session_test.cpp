@@ -2,6 +2,8 @@
 // End-to-end: SoupBinTCP in -> matching -> ITCH (MoldUDP64) + OUCH out, over loopback.
 //
 
+#include "TestHarness.hpp"
+
 #include <array>
 #include <cstddef>
 #include <cstring>
@@ -14,7 +16,6 @@
 #include "abt/protocol/Ouch50.hpp"
 #include "abt/protocol/SoupBinTcp.hpp"
 #include "abt/sim/ExchangeSession.hpp"
-#include "TestHarness.hpp"
 
 using namespace abt;
 
@@ -29,8 +30,8 @@ std::vector<std::vector<std::byte>> moldMessages(const std::vector<std::byte>& d
     std::vector<std::vector<std::byte>> out;
     mold::forEachMessage({datagram.data(), datagram.size()},
                          [&](std::uint64_t, std::span<const std::byte> m) {
-        out.emplace_back(m.begin(), m.end());
-    });
+                             out.emplace_back(m.begin(), m.end());
+                         });
     return out;
 }
 
@@ -46,7 +47,7 @@ void test_end_to_end() {
     std::array<std::byte, 256> feed{};
 
     soup::LoginRequest lr{};
-    lr.username = std::string_view{"USER01"};
+    lr.username         = std::string_view{"USER01"};
     lr.requestedSession = std::string_view{"SIM0000001"};
     {
         const auto pkt = soup::pack(feed.data(), soup::Type::LoginRequest, bytesOf(lr));
@@ -75,19 +76,19 @@ void test_end_to_end() {
     ex.clearCaptured();
 
     ouch::EnterOrder o{};
-    o.type = static_cast<char>(ouch::InType::EnterOrder);
-    o.userRefNum = 1000u;
-    o.side = static_cast<char>(ouch::Side::Buy);
-    o.quantity = 100u;
-    o.symbol = std::string_view{"AAPL"};
-    o.price = 520000u;
-    o.timeInForce = static_cast<char>(ouch::TimeInForce::Day);
-    o.display = static_cast<char>(ouch::Display::Visible);
-    o.capacity = static_cast<char>(ouch::Capacity::Agency);
+    o.type               = static_cast<char>(ouch::InType::EnterOrder);
+    o.userRefNum         = 1000u;
+    o.side               = static_cast<char>(ouch::Side::Buy);
+    o.quantity           = 100u;
+    o.symbol             = std::string_view{"AAPL"};
+    o.price              = 520000u;
+    o.timeInForce        = static_cast<char>(ouch::TimeInForce::Day);
+    o.display            = static_cast<char>(ouch::Display::Visible);
+    o.capacity           = static_cast<char>(ouch::Capacity::Agency);
     o.imSweepEligibility = static_cast<char>(ouch::ImSweep::NotEligible);
-    o.crossType = static_cast<char>(ouch::CrossType::Continuous);
-    o.clOrdId = std::string_view{"CID1"};
-    o.appendageLength = 0;
+    o.crossType          = static_cast<char>(ouch::CrossType::Continuous);
+    o.clOrdId            = std::string_view{"CID1"};
+    o.appendageLength    = 0;
     {
         const auto pkt = soup::packUnsequencedData(feed.data(), bytesOf(o));
         ex.onOrderEntryBytes(pkt, 2'000);
@@ -127,8 +128,8 @@ void test_partial_stream() {
     ExchangeSession<IoMode::Loopback> ex{};
 
     std::array<std::byte, 256> feed{};
-    soup::LoginRequest lr{};
-    lr.username = std::string_view{"USER01"};
+    soup::LoginRequest         lr{};
+    lr.username    = std::string_view{"USER01"};
     const auto pkt = soup::pack(feed.data(), soup::Type::LoginRequest, bytesOf(lr));
 
     ex.onOrderEntryBytes(pkt.subspan(0, 5), 1'000);
@@ -138,7 +139,7 @@ void test_partial_stream() {
     CHECK(soupOf(ex.capturedOrderEntry()[0]).type == soup::Type::LoginAccepted);
 }
 
-}
+}   // namespace
 
 int main() {
     test_end_to_end();

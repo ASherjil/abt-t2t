@@ -40,6 +40,7 @@ struct BigEndian {
             return host;
         }
     }
+
     void store(T v) noexcept {
         if constexpr (std::endian::native == std::endian::little) {
             v = bswap(v);
@@ -47,9 +48,16 @@ struct BigEndian {
         std::memcpy(bytes.data(), &v, sizeof(T));
     }
 
-    [[nodiscard]] operator T() const noexcept { return value(); }
-    BigEndian& operator=(T v) noexcept { store(v); return *this; }
+    [[nodiscard]] operator T() const noexcept {
+        return value();
+    }
+
+    BigEndian& operator=(T v) noexcept {
+        store(v);
+        return *this;
+    }
 };
+
 static_assert(sizeof(BigEndian<std::uint16_t>) == 2);
 static_assert(sizeof(BigEndian<std::uint32_t>) == 4);
 static_assert(sizeof(BigEndian<std::uint64_t>) == 8);
@@ -67,15 +75,24 @@ struct Uint48 {
         }
         return v;
     }
+
     void store(std::uint64_t v) noexcept {
         for (std::size_t i = 6; i-- > 0;) {
             bytes[i] = static_cast<std::byte>(v & 0xFFu);
             v >>= 8;
         }
     }
-    [[nodiscard]] operator std::uint64_t() const noexcept { return value(); }
-    Uint48& operator=(std::uint64_t v) noexcept { store(v); return *this; }
+
+    [[nodiscard]] operator std::uint64_t() const noexcept {
+        return value();
+    }
+
+    Uint48& operator=(std::uint64_t v) noexcept {
+        store(v);
+        return *this;
+    }
 };
+
 static_assert(sizeof(Uint48) == 6);
 static_assert(alignof(Uint48) == 1);
 
@@ -90,6 +107,7 @@ struct Alpha {
         }
         return {chars.data(), len};
     }
+
     void store(std::string_view s) noexcept {
         const std::size_t n = s.size() < N ? s.size() : N;
         std::memcpy(chars.data(), s.data(), n);
@@ -97,8 +115,13 @@ struct Alpha {
             chars[i] = ' ';
         }
     }
-    Alpha& operator=(std::string_view s) noexcept { store(s); return *this; }
+
+    Alpha& operator=(std::string_view s) noexcept {
+        store(s);
+        return *this;
+    }
 };
+
 static_assert(sizeof(Alpha<8>) == 8);
 static_assert(alignof(Alpha<8>) == 1);
 
@@ -106,4 +129,4 @@ using u16be = BigEndian<std::uint16_t>;
 using u32be = BigEndian<std::uint32_t>;
 using u64be = BigEndian<std::uint64_t>;
 
-}
+}   // namespace abt::wire

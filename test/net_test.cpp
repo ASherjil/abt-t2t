@@ -2,13 +2,13 @@
 // Unit tests for the Ethernet/IPv4/UDP framing layer (abt::net).
 //
 
+#include "TestHarness.hpp"
+
 #include <array>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
 #include <span>
-
-#include "TestHarness.hpp"
 
 #include "abt/protocol/Checksum.hpp"
 #include "abt/protocol/EthIpUdp.hpp"
@@ -19,11 +19,10 @@ using namespace abt;
 namespace {
 
 constexpr std::array<std::byte, 20> kIpVector{
-    std::byte{0x45}, std::byte{0x00}, std::byte{0x00}, std::byte{0x73},
-    std::byte{0x00}, std::byte{0x00}, std::byte{0x40}, std::byte{0x00},
-    std::byte{0x40}, std::byte{0x11}, std::byte{0x00}, std::byte{0x00},
-    std::byte{0xc0}, std::byte{0xa8}, std::byte{0x00}, std::byte{0x01},
-    std::byte{0xc0}, std::byte{0xa8}, std::byte{0x00}, std::byte{0xc7}};
+    std::byte{0x45}, std::byte{0x00}, std::byte{0x00}, std::byte{0x73}, std::byte{0x00},
+    std::byte{0x00}, std::byte{0x40}, std::byte{0x00}, std::byte{0x40}, std::byte{0x11},
+    std::byte{0x00}, std::byte{0x00}, std::byte{0xc0}, std::byte{0xa8}, std::byte{0x00},
+    std::byte{0x01}, std::byte{0xc0}, std::byte{0xa8}, std::byte{0x00}, std::byte{0xc7}};
 static_assert(net::computeChecksum(kIpVector) == 0xB861u);
 
 int byteAt(std::span<const std::byte> s, std::size_t i) {
@@ -31,13 +30,12 @@ int byteAt(std::span<const std::byte> s, std::size_t i) {
 }
 
 net::Endpoints makeEndpoints() {
-    return net::Endpoints{
-        .srcMac  = {0x11, 0x22, 0x33, 0x44, 0x55, 0x66},
-        .dstMac  = {0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff},
-        .srcIp   = net::ipv4(10, 0, 0, 1),
-        .dstIp   = net::ipv4(10, 0, 0, 2),
-        .srcPort = 40000,
-        .dstPort = 41000};
+    return net::Endpoints{.srcMac  = {0x11, 0x22, 0x33, 0x44, 0x55, 0x66},
+                          .dstMac  = {0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff},
+                          .srcIp   = net::ipv4(10, 0, 0, 1),
+                          .dstIp   = net::ipv4(10, 0, 0, 2),
+                          .srcPort = 40000,
+                          .dstPort = 41000};
 }
 
 void testChecksum() {
@@ -46,7 +44,7 @@ void testChecksum() {
 
 void testTemplate() {
     net::UdpFramer fr{makeEndpoints()};
-    auto h = fr.header();
+    auto           h = fr.header();
 
     CHECK_EQ(h.size(), net::kL2L3L4Overhead);
     CHECK_EQ(byteAt(h, 0), 0xaa);
@@ -70,7 +68,7 @@ void testTemplate() {
 void testPatch() {
     net::UdpFramer fr{makeEndpoints()};
 
-    constexpr std::size_t payloadLen = 18;
+    constexpr std::size_t                                    payloadLen = 18;
     std::array<std::byte, net::kL2L3L4Overhead + payloadLen> frame{};
     std::memcpy(frame.data(), fr.header().data(), net::kL2L3L4Overhead);
     fr.patch(frame.data(), payloadLen);
@@ -84,7 +82,7 @@ void testPatch() {
     CHECK_EQ(byteAt(frame, 41), 0x00);
 }
 
-}
+}   // namespace
 
 int main() {
     testChecksum();

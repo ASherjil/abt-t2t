@@ -4,10 +4,10 @@
 // boundary, with all-zero, single-populated, gapped, and random contents.
 //
 
+#include "TestHarness.hpp"
+
 #include <cstdint>
 #include <vector>
-
-#include "TestHarness.hpp"
 
 #include "abt/util/Scan.hpp"
 
@@ -16,9 +16,9 @@ using namespace abt;
 namespace {
 
 void checkArray(const std::vector<std::uint32_t>& a) {
-    const std::size_t n = a.size();
-    bool downOk = true;
-    bool upOk = true;
+    const std::size_t n      = a.size();
+    bool              downOk = true;
+    bool              upOk   = true;
     for (std::size_t start = 0; start < n; ++start) {
         if (util::scanDownNonZero(a.data(), start) != util::scanDownNonZeroScalar(a.data(), start)) {
             downOk = false;
@@ -35,8 +35,8 @@ void checkArray(const std::vector<std::uint32_t>& a) {
 void test_scan() {
     const std::size_t sizes[] = {1, 2, 7, 8, 9, 15, 16, 17, 31, 64, 100, 257};
 
-    std::uint64_t rng = 0xabcdef123ull;
-    const auto next = [&rng]() noexcept -> std::uint64_t {
+    std::uint64_t rng  = 0xabcdef123ull;
+    const auto    next = [&rng]() noexcept -> std::uint64_t {
         rng ^= rng << 13;
         rng ^= rng >> 7;
         rng ^= rng << 17;
@@ -68,7 +68,7 @@ void test_scan() {
     }
 }
 
-}
+}   // namespace
 
 int main() {
     test_scan();

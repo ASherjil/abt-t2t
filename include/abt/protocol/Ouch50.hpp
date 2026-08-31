@@ -51,7 +51,12 @@ enum class OutType : char {
     CancelReject  = 'I',
 };
 
-enum class Side : char { Buy = 'B', Sell = 'S', SellShort = 'T', SellShortExempt = 'E' };
+enum class Side : char {
+    Buy             = 'B',
+    Sell            = 'S',
+    SellShort       = 'T',
+    SellShortExempt = 'E'
+};
 
 enum class TimeInForce : char {
     Day        = '0',
@@ -61,11 +66,24 @@ enum class TimeInForce : char {
     AfterHours = 'E',
 };
 
-enum class Display : char { Visible = 'Y', Hidden = 'N', Attributable = 'A', Conformant = 'Z' };
+enum class Display : char {
+    Visible      = 'Y',
+    Hidden       = 'N',
+    Attributable = 'A',
+    Conformant   = 'Z'
+};
 
-enum class Capacity : char { Agency = 'A', Principal = 'P', Riskless = 'R', Other = 'O' };
+enum class Capacity : char {
+    Agency    = 'A',
+    Principal = 'P',
+    Riskless  = 'R',
+    Other     = 'O'
+};
 
-enum class ImSweep : char { Eligible = 'Y', NotEligible = 'N' };
+enum class ImSweep : char {
+    Eligible    = 'Y',
+    NotEligible = 'N'
+};
 
 enum class CrossType : char {
     Continuous      = 'N',
@@ -78,9 +96,15 @@ enum class CrossType : char {
     AfterHoursClose = 'A',
 };
 
-enum class OrderState : char { Live = 'L', Dead = 'D' };
+enum class OrderState : char {
+    Live = 'L',
+    Dead = 'D'
+};
 
-enum class EventCode : char { StartOfDay = 'S', EndOfDay = 'E' };
+enum class EventCode : char {
+    StartOfDay = 'S',
+    EndOfDay   = 'E'
+};
 
 enum class CancelReason : char {
     Regulatory          = 'D',
@@ -99,12 +123,12 @@ enum class CancelReason : char {
 };
 
 enum class RejectReason : std::uint16_t {
-    InvalidSide        = 0x0009,
-    InvalidQuantity    = 0x0013,
-    ReplaceNotAllowed  = 0x0015,
-    InvalidSymbol      = 0x0017,
-    InvalidPrice       = 0x001D,
-    Other              = 0x000F,
+    InvalidSide       = 0x0009,
+    InvalidQuantity   = 0x0013,
+    ReplaceNotAllowed = 0x0015,
+    InvalidSymbol     = 0x0017,
+    InvalidPrice      = 0x001D,
+    Other             = 0x000F,
 };
 
 enum class OptionTag : std::uint8_t {
@@ -135,42 +159,45 @@ enum class OptionTag : std::uint8_t {
 };
 
 struct EnterOrder {
-    char        type;
-    userref_t   userRefNum;
-    char        side;
-    qty_t       quantity;
-    symbol_t    symbol;
-    price_t     price;
-    char        timeInForce;
-    char        display;
-    char        capacity;
-    char        imSweepEligibility;
-    char        crossType;
-    clordid_t   clOrdId;
-    u16be       appendageLength;
+    char      type;
+    userref_t userRefNum;
+    char      side;
+    qty_t     quantity;
+    symbol_t  symbol;
+    price_t   price;
+    char      timeInForce;
+    char      display;
+    char      capacity;
+    char      imSweepEligibility;
+    char      crossType;
+    clordid_t clOrdId;
+    u16be     appendageLength;
 };
+
 static_assert(sizeof(EnterOrder) == 47);
 
 struct ReplaceOrder {
-    char        type;
-    userref_t   origUserRefNum;
-    userref_t   userRefNum;
-    qty_t       quantity;
-    price_t     price;
-    char        timeInForce;
-    char        display;
-    char        imSweepEligibility;
-    clordid_t   clOrdId;
-    u16be       appendageLength;
+    char      type;
+    userref_t origUserRefNum;
+    userref_t userRefNum;
+    qty_t     quantity;
+    price_t   price;
+    char      timeInForce;
+    char      display;
+    char      imSweepEligibility;
+    clordid_t clOrdId;
+    u16be     appendageLength;
 };
+
 static_assert(sizeof(ReplaceOrder) == 40);
 
 struct CancelOrder {
-    char        type;
-    userref_t   userRefNum;
-    qty_t       quantity;
-    u16be       appendageLength;
+    char      type;
+    userref_t userRefNum;
+    qty_t     quantity;
+    u16be     appendageLength;
 };
+
 static_assert(sizeof(CancelOrder) == 11);
 
 struct SystemEvent {
@@ -178,6 +205,7 @@ struct SystemEvent {
     timestamp_t timestamp;
     char        eventCode;
 };
+
 static_assert(sizeof(SystemEvent) == 10);
 
 struct Accepted {
@@ -198,6 +226,7 @@ struct Accepted {
     clordid_t   clOrdId;
     u16be       appendageLength;
 };
+
 static_assert(sizeof(Accepted) == 64);
 
 struct Replaced {
@@ -219,6 +248,7 @@ struct Replaced {
     clordid_t   clOrdId;
     u16be       appendageLength;
 };
+
 static_assert(sizeof(Replaced) == 68);
 
 struct Canceled {
@@ -229,6 +259,7 @@ struct Canceled {
     char        reason;
     u16be       appendageLength;
 };
+
 static_assert(sizeof(Canceled) == 20);
 
 struct Executed {
@@ -241,6 +272,7 @@ struct Executed {
     matchnum_t  matchNumber;
     u16be       appendageLength;
 };
+
 static_assert(sizeof(Executed) == 36);
 
 struct Rejected {
@@ -251,6 +283,7 @@ struct Rejected {
     clordid_t   clOrdId;
     u16be       appendageLength;
 };
+
 static_assert(sizeof(Rejected) == 31);
 
 struct CancelReject {
@@ -259,11 +292,12 @@ struct CancelReject {
     userref_t   userRefNum;
     u16be       appendageLength;
 };
+
 static_assert(sizeof(CancelReject) == 15);
 
 template <class M>
-inline constexpr bool is_wire_message_v =
-    std::is_trivially_copyable_v<M> && std::is_standard_layout_v<M> && alignof(M) == 1;
+inline constexpr bool is_wire_message_v = std::is_trivially_copyable_v<M> && std::is_standard_layout_v<M> &&
+                                          alignof(M) == 1;
 
 static_assert(is_wire_message_v<EnterOrder>);
 static_assert(is_wire_message_v<ReplaceOrder>);
@@ -302,4 +336,4 @@ void forEachOption(std::span<const std::byte> appendage, Fn&& fn) {
     }
 }
 
-}
+}   // namespace abt::ouch

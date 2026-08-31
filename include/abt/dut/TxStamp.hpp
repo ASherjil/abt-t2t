@@ -19,12 +19,14 @@ struct TxCompletion {
     std::uint32_t userRef;   // OUCH userRefNum the order was tagged with
     std::uint32_t sec;
     std::uint32_t nsec;
-    std::uint32_t status;    // 0 = no completion available
+    std::uint32_t status;   // 0 = no completion available
 };
 
 template <typename S>
-concept TxStampSource = requires(S s) {
-    { s.pollTxTimestamp() } noexcept -> std::same_as<TxCompletion>;
+concept TxStampSource = requires (S s) {
+    {
+        s.pollTxTimestamp()
+    } noexcept -> std::same_as<TxCompletion>;
 };
 
-}
+}   // namespace abt::dut

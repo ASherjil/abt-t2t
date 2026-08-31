@@ -2,12 +2,13 @@
 // Flow generator keeps an uncrossed book, emits only ITCH, and is deterministic.
 //
 
+#include "TestHarness.hpp"
+
 #include <cstddef>
 #include <span>
 
 #include "abt/sim/FlowGenerator.hpp"
 #include "abt/sim/Venue.hpp"
-#include "TestHarness.hpp"
 
 using namespace abt;
 
@@ -16,13 +17,19 @@ namespace {
 struct CountSink {
     std::size_t md = 0;
     std::size_t oe = 0;
-    void marketData(std::span<const std::byte>) { ++md; }
-    void orderEntry(std::span<const std::byte>) { ++oe; }
+
+    void marketData(std::span<const std::byte>) {
+        ++md;
+    }
+
+    void orderEntry(std::span<const std::byte>) {
+        ++oe;
+    }
 };
 
 void test_generator_book_invariant() {
-    CountSink sink;
-    Venue<CountSink> v(sink, "AAPL", 1, 1, 100000, 100);
+    CountSink                       sink;
+    Venue<CountSink>                v(sink, "AAPL", 1, 1, 100000, 100);
     FlowGenerator<Venue<CountSink>> gen(v, {});
 
     for (int i = 0; i < 2000; ++i) {
@@ -36,7 +43,7 @@ void test_generator_book_invariant() {
 }
 
 void test_generator_deterministic() {
-    CountSink s1, s2;
+    CountSink        s1, s2;
     Venue<CountSink> v1(s1, "AAPL", 1, 1, 100000, 100);
     Venue<CountSink> v2(s2, "AAPL", 1, 1, 100000, 100);
 
@@ -53,7 +60,7 @@ void test_generator_deterministic() {
     CHECK_EQ(v1.bestAsk(), v2.bestAsk());
 }
 
-}
+}   // namespace
 
 int main() {
     test_generator_book_invariant();

@@ -1,15 +1,16 @@
+#include "TestHarness.hpp"
+
 #include <array>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
 #include <span>
 #include <string_view>
+#include <vector>
+
 #include <sys/socket.h>
 #include <sys/time.h>
 #include <unistd.h>
-#include <vector>
-
-#include "TestHarness.hpp"
 
 #include "abt/dut/DutSession.hpp"
 #include "abt/protocol/Ouch50.hpp"
@@ -28,14 +29,14 @@ struct TakeOnce {
 
     dut::QuoteTargets onBook(const dut::BookBuilder& book, const dut::Account&) noexcept {
         dut::QuoteTargets t{};
-        const Price ask = book.bestAsk();
+        const Price       ask = book.bestAsk();
         if (ask == kNoPrice || ask > trigger || !armed) {
             return t;
         }
-        armed = false;
+        armed      = false;
         t.quoteBid = true;
         t.bidPrice = ask;
-        t.bidQty = qty;
+        t.bidQty   = qty;
         return t;
     }
 };
@@ -47,7 +48,7 @@ void setRecvTimeout(int fd, int ms) {
 
 std::vector<std::byte> recvSome(int fd) {
     std::array<std::byte, 8192> buf{};
-    const ssize_t n = ::recv(fd, buf.data(), buf.size(), 0);
+    const ssize_t               n = ::recv(fd, buf.data(), buf.size(), 0);
     if (n <= 0) {
         return {};
     }
@@ -55,8 +56,8 @@ std::vector<std::byte> recvSome(int fd) {
 }
 
 std::size_t countSoupPackets(const std::vector<std::byte>& buf) {
-    std::size_t n = 0;
-    std::size_t off = 0;
+    std::size_t  n   = 0;
+    std::size_t  off = 0;
     soup::Packet p{};
     while (true) {
         const std::size_t c = soup::parse({buf.data() + off, buf.size() - off}, p);
@@ -90,15 +91,15 @@ void test_socket_integration() {
         setRecvTimeout(fd, 2000);
     }
 
-    ExchangeConfig simCfg{};
+    ExchangeConfig                  simCfg{};
     ExchangeSession<IoMode::Socket> sim{simCfg};
     sim.attachSockets(oe[0], md[0]);
 
     dut::DutConfig dutCfg{};
-    dutCfg.minPrice = 0;
-    dutCfg.maxPrice = 100000;
-    dutCfg.tickWire = 100;
-    dutCfg.symbol = "AAPL";
+    dutCfg.minPrice     = 0;
+    dutCfg.maxPrice     = 100000;
+    dutCfg.tickWire     = 100;
+    dutCfg.symbol       = "AAPL";
     dutCfg.firstUserRef = 1;
     dut::DutSession<dut::IoMode::Socket, TakeOnce> dutSess(dutCfg, TakeOnce{5200, 5u});
     dutSess.attachSockets(oe[1], md[1]);
@@ -133,7 +134,7 @@ void test_socket_integration() {
     CHECK_EQ(dutSess.feed().gaps(), 0u);
 }
 
-}
+}   // namespace
 
 int main() {
     test_socket_integration();

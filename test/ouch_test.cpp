@@ -2,6 +2,8 @@
 // Verifies OUCH 5.0 wire layouts, 8-byte price/timestamp, and TagValue appendages.
 //
 
+#include "TestHarness.hpp"
+
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -10,7 +12,6 @@
 
 #include "abt/protocol/Endian.hpp"
 #include "abt/protocol/Ouch50.hpp"
-#include "TestHarness.hpp"
 
 using namespace abt;
 
@@ -107,30 +108,29 @@ void test_appendage_tlv() {
     std::array<std::byte, 32> buf{};
 
     wire::u32be minQty{};
-    minQty = 100u;
+    minQty              = 100u;
     const std::size_t n = ouch::writeOption(
-        buf, ouch::OptionTag::MinQty,
-        std::span<const std::byte>{minQty.bytes.data(), minQty.bytes.size()});
+        buf, ouch::OptionTag::MinQty, std::span<const std::byte>{minQty.bytes.data(), minQty.bytes.size()});
     CHECK_EQ(n, 6u);
     CHECK_EQ(byte_at(buf[0], 0), 5u);
     CHECK_EQ(byte_at(buf[1], 0), static_cast<std::uint8_t>(ouch::OptionTag::MinQty));
 
-    int seen = 0;
+    int           seen    = 0;
     std::uint32_t decoded = 0;
     ouch::forEachOption(std::span<const std::byte>{buf.data(), n},
                         [&](ouch::OptionTag tag, std::span<const std::byte> value) {
-        ++seen;
-        if (tag == ouch::OptionTag::MinQty && value.size() == 4) {
-            wire::u32be v{};
-            std::memcpy(v.bytes.data(), value.data(), 4);
-            decoded = v.value();
-        }
-    });
+                            ++seen;
+                            if (tag == ouch::OptionTag::MinQty && value.size() == 4) {
+                                wire::u32be v{};
+                                std::memcpy(v.bytes.data(), value.data(), 4);
+                                decoded = v.value();
+                            }
+                        });
     CHECK_EQ(seen, 1);
     CHECK_EQ(decoded, 100u);
 }
 
-}
+}   // namespace
 
 int main() {
     test_message_sizes();

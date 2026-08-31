@@ -28,7 +28,7 @@ void BookBuilder::apply(std::span<const std::byte> itchMessage) {
     // through the wire pointer is well-defined (C++20 implicit object creation) and avoids copying
     // the whole message onto the stack just to read a handful of fields.
     const std::byte* data = itchMessage.data();
-    const char type = static_cast<char>(itchMessage[0]);
+    const char       type = static_cast<char>(itchMessage[0]);
     switch (type) {
         case 'A':
         case 'F': {
@@ -81,7 +81,7 @@ void BookBuilder::clear() noexcept {
     std::fill(m_bidSize.begin(), m_bidSize.end(), 0u);
     std::fill(m_askSize.begin(), m_askSize.end(), 0u);
     m_orders.clear();
-    m_own = 0;
+    m_own     = 0;
     m_bestBid = kNoPrice;
     m_bestAsk = kNoPrice;
 }
@@ -122,10 +122,10 @@ void BookBuilder::onAddOrder(const itch::AddOrder& msg) {
     if (shares == 0) {
         return;
     }
-    const OrderId ref = msg.orderRef.value();
-    const Side side = (msg.side == static_cast<char>(itch::Side::Buy)) ? Side::Buy : Side::Sell;
-    const Price price = static_cast<Price>(msg.price.value());
-    const bool own = m_ownRefMin != 0 && ref >= m_ownRefMin;
+    const OrderId ref   = msg.orderRef.value();
+    const Side    side  = (msg.side == static_cast<char>(itch::Side::Buy)) ? Side::Buy : Side::Sell;
+    const Price   price = static_cast<Price>(msg.price.value());
+    const bool    own   = m_ownRefMin != 0 && ref >= m_ownRefMin;
     m_orders.insertOrAssign(ref, Resting{price, shares, side, own});
     if (own) [[unlikely]] {
         ++m_own;
@@ -253,7 +253,7 @@ void BookBuilder::rescanBestBid() noexcept {
 
 void BookBuilder::rescanBestAsk() noexcept {
     const std::size_t last = m_askSize.size() - 1;
-    const std::size_t j = util::scanUpNonZero(m_askSize.data(), index(m_bestAsk), last);
+    const std::size_t j    = util::scanUpNonZero(m_askSize.data(), index(m_bestAsk), last);
     if (j == util::kNoIndex) {
         m_bestAsk = kNoPrice;
     } else {
@@ -261,4 +261,4 @@ void BookBuilder::rescanBestAsk() noexcept {
     }
 }
 
-}
+}   // namespace abt::dut

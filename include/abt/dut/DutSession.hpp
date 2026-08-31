@@ -43,22 +43,26 @@
 
 namespace abt::dut {
 
-enum class IoMode { Loopback, Socket, Transport };
+enum class IoMode {
+    Loopback,
+    Socket,
+    Transport
+};
 
 struct NoTransport {};
 
 struct DutConfig {
-    Price         minPrice      = 0;
-    Price         maxPrice      = 0;
-    Price         tickWire      = 1;
+    Price         minPrice = 0;
+    Price         maxPrice = 0;
+    Price         tickWire = 1;
     std::string   symbol{};
-    std::uint16_t stockLocate   = 0;
+    std::uint16_t stockLocate     = 0;
     bool          marketHoursOnly = false;
-    OrderId       ownRefMin     = 0;
-    std::uint32_t firstUserRef  = 1;
-    std::size_t   maxOrders     = 1u << 12;
-    std::size_t   queueCapacity = 1u << 16;
-    int           sigFigs       = 3;
+    OrderId       ownRefMin       = 0;
+    std::uint32_t firstUserRef    = 1;
+    std::size_t   maxOrders       = 1u << 12;
+    std::size_t   queueCapacity   = 1u << 16;
+    int           sigFigs         = 3;
 };
 
 template <IoMode Mode, Strategy Strat, class Io = NoTransport>
@@ -66,46 +70,52 @@ class DutSession {
 public:
     DutSession(const DutConfig& cfg, Strat strat);
     ~DutSession();
-    DutSession(const DutSession&) = delete;
+    DutSession(const DutSession&)            = delete;
     DutSession& operator=(const DutSession&) = delete;
 
-    void onMarketData(std::span<const std::byte> moldPacket, std::uint64_t rxHwts,
-                      std::uint64_t rxTsc = 0)
+    void onMarketData(std::span<const std::byte> moldPacket, std::uint64_t rxHwts, std::uint64_t rxTsc = 0)
         requires (Mode == IoMode::Loopback || Mode == IoMode::Socket);
     void onAck(std::span<const std::byte> ouch) noexcept;
 
-    [[nodiscard]] bool connectVenue(const char* oeHost, std::uint16_t oePort,
-                                    const char* mdBindHost, std::uint16_t mdPort)
+    [[nodiscard]] bool connectVenue(const char* oeHost, std::uint16_t oePort, const char* mdBindHost,
+                                    std::uint16_t mdPort)
         requires (Mode == IoMode::Socket);
-    void attachSockets(int oeFd, int mdFd) requires (Mode == IoMode::Socket);
-    void login(std::string_view session, std::string_view user) requires (Mode == IoMode::Socket);
-    void onOrderEntry(std::span<const std::byte> data) requires (Mode == IoMode::Socket);
-    [[nodiscard]] bool sessionEstablished() const noexcept requires (Mode == IoMode::Socket);
+    void attachSockets(int oeFd, int mdFd)
+        requires (Mode == IoMode::Socket);
+    void login(std::string_view session, std::string_view user)
+        requires (Mode == IoMode::Socket);
+    void onOrderEntry(std::span<const std::byte> data)
+        requires (Mode == IoMode::Socket);
+    [[nodiscard]] bool sessionEstablished() const noexcept
+        requires (Mode == IoMode::Socket);
     template <class Periodic>
-    void run(volatile std::sig_atomic_t& stop, Periodic&& periodic) requires (Mode == IoMode::Socket);
+    void run(volatile std::sig_atomic_t& stop, Periodic&& periodic)
+        requires (Mode == IoMode::Socket);
 
     [[nodiscard]] bool prepareTransport(Io& io, const net::Endpoints& oeEp, std::uint32_t maxTxFrame = 0)
         requires (Mode == IoMode::Transport && TxRing<Io>);
-    void poll() requires (Mode == IoMode::Transport && RxRing<Io> && TxRing<Io>);
+    void poll()
+        requires (Mode == IoMode::Transport && RxRing<Io> && TxRing<Io>);
     void sendLogin(std::string_view session, std::string_view user)
         requires (Mode == IoMode::Transport && TxRing<Io>);
-    [[nodiscard]] bool sessionEstablished() const noexcept requires (Mode == IoMode::Transport);
+    [[nodiscard]] bool sessionEstablished() const noexcept
+        requires (Mode == IoMode::Transport);
 
     template <TxStampSource Src>
     void pollTxCompletions(Src& src);
     void completeTx(std::uint32_t userRef, std::uint64_t txHwts) noexcept;
 
-    [[nodiscard]] const BookBuilder& book() const noexcept;
-    [[nodiscard]] const OrderManager& oms() const noexcept;
+    [[nodiscard]] const BookBuilder&     book() const noexcept;
+    [[nodiscard]] const OrderManager&    oms() const noexcept;
     [[nodiscard]] const SequenceTracker& feed() const noexcept;
-    [[nodiscard]] LatencyRecorder& t2t() noexcept;
-    [[nodiscard]] LatencyRecorder& t2tSw() noexcept;
-    [[nodiscard]] LatencyRecorder& proc() noexcept;
-    [[nodiscard]] std::uint32_t ordersSent() const noexcept;
-    [[nodiscard]] std::uint64_t packetsReceived() const noexcept;
-    [[nodiscard]] std::uint64_t foreignMessages() const noexcept;
-    [[nodiscard]] std::uint32_t sessionResets() const noexcept;
-    [[nodiscard]] bool tradingAllowed() const noexcept;
+    [[nodiscard]] LatencyRecorder&       t2t() noexcept;
+    [[nodiscard]] LatencyRecorder&       t2tSw() noexcept;
+    [[nodiscard]] LatencyRecorder&       proc() noexcept;
+    [[nodiscard]] std::uint32_t          ordersSent() const noexcept;
+    [[nodiscard]] std::uint64_t          packetsReceived() const noexcept;
+    [[nodiscard]] std::uint64_t          foreignMessages() const noexcept;
+    [[nodiscard]] std::uint32_t          sessionResets() const noexcept;
+    [[nodiscard]] bool                   tradingAllowed() const noexcept;
 
     [[nodiscard]] const std::vector<std::vector<std::byte>>& capturedOrders() const
         requires (Mode == IoMode::Loopback);
@@ -122,13 +132,16 @@ private:
     struct Capture {
         std::vector<std::vector<std::byte>> oe;
     };
+
     struct Empty {};
+
     struct TransportState {
         Io*                           io = nullptr;
         std::optional<net::UdpFramer> oeFramer;
-        std::uint16_t                 ackPort = 0;
+        std::uint16_t                 ackPort  = 0;
         bool                          loggedIn = false;
     };
+
     struct SocketState {
         int                        mdFd = -1;
         int                        oeFd = -1;
@@ -137,12 +150,11 @@ private:
         bool                       loggedIn = false;
     };
 
-    void applyPacket(std::span<const std::byte> moldPacket, std::uint64_t rxHwts,
-                     std::uint64_t rxTsc);
+    void applyPacket(std::span<const std::byte> moldPacket, std::uint64_t rxHwts, std::uint64_t rxTsc);
     void applyMessage(std::span<const std::byte> msg);
     void onSystemEvent(std::span<const std::byte> msg) noexcept;
-    [[nodiscard]] bool sendOrder(std::span<const std::byte> ouch);
-    void recordSend(std::uint32_t userRef, std::uint64_t rxHwts) noexcept;
+    [[nodiscard]] bool                 sendOrder(std::span<const std::byte> ouch);
+    void                               recordSend(std::uint32_t userRef, std::uint64_t rxHwts) noexcept;
     [[nodiscard]] static std::uint16_t udpDstPort(const std::uint8_t* frame) noexcept;
 
     DutConfig       m_cfg;
@@ -163,10 +175,9 @@ private:
     std::array<Outbound, OrderManager::kMaxOutbound> m_out{};
     std::array<InFlight, kInFlight>                  m_inflight{};
 
-    [[no_unique_address]] std::conditional_t<Mode == IoMode::Loopback, Capture, Empty> m_cap{};
-    [[no_unique_address]] std::conditional_t<Mode == IoMode::Socket, SocketState, Empty> m_sock{};
-    [[no_unique_address]] std::conditional_t<Mode == IoMode::Transport, TransportState, Empty>
-        m_io{};
+    [[no_unique_address]] std::conditional_t<Mode == IoMode::Loopback, Capture, Empty>         m_cap{};
+    [[no_unique_address]] std::conditional_t<Mode == IoMode::Socket, SocketState, Empty>       m_sock{};
+    [[no_unique_address]] std::conditional_t<Mode == IoMode::Transport, TransportState, Empty> m_io{};
 };
 
 template <IoMode Mode, Strategy Strat, class Io>
@@ -193,9 +204,10 @@ DutSession<Mode, Strat, Io>::~DutSession() {
 }
 
 template <IoMode Mode, Strategy Strat, class Io>
-void DutSession<Mode, Strat, Io>::onMarketData(std::span<const std::byte> moldPacket,
-                                               std::uint64_t rxHwts, std::uint64_t rxTsc)
-    requires (Mode == IoMode::Loopback || Mode == IoMode::Socket) {
+void DutSession<Mode, Strat, Io>::onMarketData(std::span<const std::byte> moldPacket, std::uint64_t rxHwts,
+                                               std::uint64_t rxTsc)
+    requires (Mode == IoMode::Loopback || Mode == IoMode::Socket)
+{
     applyPacket(moldPacket, rxHwts, rxTsc == 0 ? tsc::now() : rxTsc);
 }
 
@@ -207,7 +219,8 @@ void DutSession<Mode, Strat, Io>::onAck(std::span<const std::byte> ouch) noexcep
 template <IoMode Mode, Strategy Strat, class Io>
 bool DutSession<Mode, Strat, Io>::connectVenue(const char* oeHost, std::uint16_t oePort,
                                                const char* mdBindHost, std::uint16_t mdPort)
-    requires (Mode == IoMode::Socket) {
+    requires (Mode == IoMode::Socket)
+{
     m_sock.oeFd = ::socket(AF_INET, SOCK_STREAM, 0);
     if (m_sock.oeFd < 0) {
         fmt::print(stderr, "dut: socket(tcp): {}\n", std::strerror(errno));
@@ -215,7 +228,7 @@ bool DutSession<Mode, Strat, Io>::connectVenue(const char* oeHost, std::uint16_t
     }
     sockaddr_in oe{};
     oe.sin_family = AF_INET;
-    oe.sin_port = htons(oePort);
+    oe.sin_port   = htons(oePort);
     if (::inet_pton(AF_INET, oeHost, &oe.sin_addr) != 1) {
         fmt::print(stderr, "dut: bad order-entry host {}\n", oeHost);
         return false;
@@ -236,7 +249,7 @@ bool DutSession<Mode, Strat, Io>::connectVenue(const char* oeHost, std::uint16_t
     ::setsockopt(m_sock.mdFd, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof reuse);
     sockaddr_in md{};
     md.sin_family = AF_INET;
-    md.sin_port = htons(mdPort);
+    md.sin_port   = htons(mdPort);
     if (::inet_pton(AF_INET, mdBindHost, &md.sin_addr) != 1) {
         fmt::print(stderr, "dut: bad market-data bind host {}\n", mdBindHost);
         return false;
@@ -250,26 +263,29 @@ bool DutSession<Mode, Strat, Io>::connectVenue(const char* oeHost, std::uint16_t
 
 template <IoMode Mode, Strategy Strat, class Io>
 void DutSession<Mode, Strat, Io>::attachSockets(int oeFd, int mdFd)
-    requires (Mode == IoMode::Socket) {
+    requires (Mode == IoMode::Socket)
+{
     m_sock.oeFd = oeFd;
     m_sock.mdFd = mdFd;
 }
 
 template <IoMode Mode, Strategy Strat, class Io>
 void DutSession<Mode, Strat, Io>::login(std::string_view session, std::string_view user)
-    requires (Mode == IoMode::Socket) {
+    requires (Mode == IoMode::Socket)
+{
     soup::LoginRequest lr{};
-    lr.username = user;
+    lr.username         = user;
     lr.requestedSession = session;
-    const auto pkt = soup::pack(m_sock.soupBuf.data(), soup::Type::LoginRequest, soup::asBytes(lr));
+    const auto pkt      = soup::pack(m_sock.soupBuf.data(), soup::Type::LoginRequest, soup::asBytes(lr));
     (void)::send(m_sock.oeFd, pkt.data(), pkt.size(), MSG_NOSIGNAL);
 }
 
 template <IoMode Mode, Strategy Strat, class Io>
 void DutSession<Mode, Strat, Io>::onOrderEntry(std::span<const std::byte> data)
-    requires (Mode == IoMode::Socket) {
+    requires (Mode == IoMode::Socket)
+{
     m_sock.rx.insert(m_sock.rx.end(), data.begin(), data.end());
-    std::size_t off = 0;
+    std::size_t  off = 0;
     soup::Packet p{};
     for (;;) {
         const std::size_t c = soup::parse({m_sock.rx.data() + off, m_sock.rx.size() - off}, p);
@@ -290,14 +306,16 @@ void DutSession<Mode, Strat, Io>::onOrderEntry(std::span<const std::byte> data)
 
 template <IoMode Mode, Strategy Strat, class Io>
 bool DutSession<Mode, Strat, Io>::sessionEstablished() const noexcept
-    requires (Mode == IoMode::Socket) {
+    requires (Mode == IoMode::Socket)
+{
     return m_sock.loggedIn;
 }
 
 template <IoMode Mode, Strategy Strat, class Io>
 template <class Periodic>
 void DutSession<Mode, Strat, Io>::run(volatile std::sig_atomic_t& stop, Periodic&& periodic)
-    requires (Mode == IoMode::Socket) {
+    requires (Mode == IoMode::Socket)
+{
     std::array<std::byte, 8192> rx{};
     while (stop == 0) {
         periodic();
@@ -307,7 +325,7 @@ void DutSession<Mode, Strat, Io>::run(volatile std::sig_atomic_t& stop, Periodic
         }
         if ((pfds[0].revents & POLLIN) != 0) {
             const std::uint64_t rxTsc = tsc::now();
-            const ssize_t n = ::recv(m_sock.mdFd, rx.data(), rx.size(), 0);
+            const ssize_t       n     = ::recv(m_sock.mdFd, rx.data(), rx.size(), 0);
             if (n > 0) {
                 onMarketData({rx.data(), static_cast<std::size_t>(n)}, monotonicNs(), rxTsc);
             }
@@ -327,7 +345,8 @@ void DutSession<Mode, Strat, Io>::run(volatile std::sig_atomic_t& stop, Periodic
 template <IoMode Mode, Strategy Strat, class Io>
 bool DutSession<Mode, Strat, Io>::prepareTransport(Io& io, const net::Endpoints& oeEp,
                                                    std::uint32_t maxTxFrame)
-    requires (Mode == IoMode::Transport && TxRing<Io>) {
+    requires (Mode == IoMode::Transport && TxRing<Io>)
+{
     constexpr std::uint32_t kMaxOrderFrame = net::kL2L3L4Overhead + Outbound::kSize;
     if (maxTxFrame != 0 && maxTxFrame < kMaxOrderFrame) {
         return false;
@@ -340,11 +359,12 @@ bool DutSession<Mode, Strat, Io>::prepareTransport(Io& io, const net::Endpoints&
 
 template <IoMode Mode, Strategy Strat, class Io>
 void DutSession<Mode, Strat, Io>::sendLogin(std::string_view session, std::string_view user)
-    requires (Mode == IoMode::Transport && TxRing<Io>) {
+    requires (Mode == IoMode::Transport && TxRing<Io>)
+{
     std::array<std::byte, 64> soupBuf{};
-    const auto pkt = soup::packLoginRequest(soupBuf.data(), user, session);
-    const auto frameLen = static_cast<std::uint32_t>(net::kL2L3L4Overhead + pkt.size());
-    std::uint8_t* buf = m_io.io->acquire(frameLen);
+    const auto                pkt      = soup::packLoginRequest(soupBuf.data(), user, session);
+    const auto                frameLen = static_cast<std::uint32_t>(net::kL2L3L4Overhead + pkt.size());
+    std::uint8_t*             buf      = m_io.io->acquire(frameLen);
     if (buf == nullptr) {
         return;
     }
@@ -356,23 +376,25 @@ void DutSession<Mode, Strat, Io>::sendLogin(std::string_view session, std::strin
 
 template <IoMode Mode, Strategy Strat, class Io>
 bool DutSession<Mode, Strat, Io>::sessionEstablished() const noexcept
-    requires (Mode == IoMode::Transport) {
+    requires (Mode == IoMode::Transport)
+{
     return m_io.loggedIn;
 }
 
 template <IoMode Mode, Strategy Strat, class Io>
 void DutSession<Mode, Strat, Io>::poll()
-    requires (Mode == IoMode::Transport && RxRing<Io> && TxRing<Io>) {
+    requires (Mode == IoMode::Transport && RxRing<Io> && TxRing<Io>)
+{
     for (;;) {
         const std::uint64_t rxTsc = tsc::now();
-        const auto f = m_io.io->tryReceive();
+        const auto          f     = m_io.io->tryReceive();
         if (f.status == 0) {
             break;
         }
         const auto raw = f.data;
         if (raw.size() > net::kL2L3L4Overhead) {
-            const auto* frame = reinterpret_cast<const std::uint8_t*>(raw.data());
-            const auto* p = reinterpret_cast<const std::byte*>(raw.data());
+            const auto*                      frame = reinterpret_cast<const std::uint8_t*>(raw.data());
+            const auto*                      p     = reinterpret_cast<const std::byte*>(raw.data());
             const std::span<const std::byte> payload{p + net::kL2L3L4Overhead,
                                                      raw.size() - net::kL2L3L4Overhead};
             if (udpDstPort(frame) == m_io.ackPort) {
@@ -385,8 +407,7 @@ void DutSession<Mode, Strat, Io>::poll()
                     m_oms.onAck(payload);
                 }
             } else {
-                const std::uint64_t rxHwts =
-                    static_cast<std::uint64_t>(f.sec) * 1'000'000'000ull + f.nsec;
+                const std::uint64_t rxHwts = static_cast<std::uint64_t>(f.sec) * 1'000'000'000ull + f.nsec;
                 applyPacket(payload, rxHwts, rxTsc);
             }
         }
@@ -398,8 +419,7 @@ template <IoMode Mode, Strategy Strat, class Io>
 template <TxStampSource Src>
 void DutSession<Mode, Strat, Io>::pollTxCompletions(Src& src) {
     for (auto c = src.pollTxTimestamp(); c.status != 0; c = src.pollTxTimestamp()) {
-        const std::uint64_t txHwts =
-            static_cast<std::uint64_t>(c.sec) * 1'000'000'000ull + c.nsec;
+        const std::uint64_t txHwts = static_cast<std::uint64_t>(c.sec) * 1'000'000'000ull + c.nsec;
         completeTx(c.userRef, txHwts);
     }
 }
@@ -458,30 +478,28 @@ std::uint64_t DutSession<Mode, Strat, Io>::packetsReceived() const noexcept {
 
 template <IoMode Mode, Strategy Strat, class Io>
 const std::vector<std::vector<std::byte>>& DutSession<Mode, Strat, Io>::capturedOrders() const
-    requires (Mode == IoMode::Loopback) {
+    requires (Mode == IoMode::Loopback)
+{
     return m_cap.oe;
 }
 
 template <IoMode Mode, Strategy Strat, class Io>
-void DutSession<Mode, Strat, Io>::applyPacket(std::span<const std::byte> moldPacket,
-                                              std::uint64_t rxHwts, std::uint64_t rxTsc) {
+void DutSession<Mode, Strat, Io>::applyPacket(std::span<const std::byte> moldPacket, std::uint64_t rxHwts,
+                                              std::uint64_t rxTsc) {
     if (moldPacket.size() < mold::kHeaderSize) [[unlikely]] {
         return;
     }
     ++m_packets;
-    const std::uint64_t begin = tsc::now();
-    const SequenceTracker::Result r =
-        m_seq.onPacket(mold::sequenceOf(moldPacket), mold::countOf(moldPacket));
+    const std::uint64_t           begin = tsc::now();
+    const SequenceTracker::Result r = m_seq.onPacket(mold::sequenceOf(moldPacket), mold::countOf(moldPacket));
     if (r == SequenceTracker::Result::Stale) [[unlikely]] {
         return;
     }
-    mold::forEachMessage(moldPacket,
-        [this](std::uint64_t, std::span<const std::byte> msg) {
-            applyMessage(msg);
-        });
-    const QuoteTargets targets = tradingAllowed() ? m_strat.onBook(m_book, m_oms.account())
-                                                  : QuoteTargets{};
-    const std::size_t n = m_oms.reconcile(targets, std::span<Outbound, OrderManager::kMaxOutbound>{m_out});
+    mold::forEachMessage(moldPacket, [this](std::uint64_t, std::span<const std::byte> msg) {
+        applyMessage(msg);
+    });
+    const QuoteTargets  targets = tradingAllowed() ? m_strat.onBook(m_book, m_oms.account()) : QuoteTargets{};
+    const std::size_t   n = m_oms.reconcile(targets, std::span<Outbound, OrderManager::kMaxOutbound>{m_out});
     const std::uint64_t end = tsc::now();
     m_proc.record(end - begin);
 
@@ -514,7 +532,7 @@ void DutSession<Mode, Strat, Io>::applyMessage(std::span<const std::byte> msg) {
     if (type == 'H') [[unlikely]] {
         if (msg.size() >= sizeof(itch::StockTradingAction)) {
             const auto* h = reinterpret_cast<const itch::StockTradingAction*>(msg.data());
-            m_trading = h->tradingState == static_cast<char>(itch::TradingState::Trading);
+            m_trading     = h->tradingState == static_cast<char>(itch::TradingState::Trading);
         }
         return;
     }
@@ -531,7 +549,7 @@ void DutSession<Mode, Strat, Io>::onSystemEvent(std::span<const std::byte> msg) 
         case itch::SystemEventCode::StartOfMessages:
             m_book.clear();
             m_marketOpen = false;
-            m_trading = true;
+            m_trading    = true;
             ++m_resets;
             break;
         case itch::SystemEventCode::StartOfMarketHours:
@@ -570,8 +588,8 @@ bool DutSession<Mode, Strat, Io>::sendOrder(std::span<const std::byte> ouch) {
             return false;
         }
     } else {
-        const auto frameLen = static_cast<std::uint32_t>(net::kL2L3L4Overhead + ouch.size());
-        std::uint8_t* buf = m_io.io->acquire(frameLen);
+        const auto    frameLen = static_cast<std::uint32_t>(net::kL2L3L4Overhead + ouch.size());
+        std::uint8_t* buf      = m_io.io->acquire(frameLen);
         if (buf == nullptr) [[unlikely]] {
             return false;
         }
@@ -595,4 +613,4 @@ std::uint16_t DutSession<Mode, Strat, Io>::udpDstPort(const std::uint8_t* frame)
     return static_cast<std::uint16_t>((static_cast<std::uint16_t>(frame[off]) << 8) | frame[off + 1]);
 }
 
-}
+}   // namespace abt::dut

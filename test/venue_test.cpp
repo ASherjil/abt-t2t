@@ -2,6 +2,8 @@
 // Verifies the venue turns OUCH orders into the correct ITCH + OUCH message flows.
 //
 
+#include "TestHarness.hpp"
+
 #include <cstring>
 #include <span>
 #include <string_view>
@@ -10,7 +12,6 @@
 #include "abt/protocol/Itch50.hpp"
 #include "abt/protocol/Ouch50.hpp"
 #include "abt/sim/Venue.hpp"
-#include "TestHarness.hpp"
 
 using namespace abt;
 
@@ -19,12 +20,24 @@ namespace {
 struct RecSink {
     std::vector<std::vector<std::byte>> md;
     std::vector<std::vector<std::byte>> oe;
-    void marketData(std::span<const std::byte> b) { md.emplace_back(b.begin(), b.end()); }
-    void orderEntry(std::span<const std::byte> b) { oe.emplace_back(b.begin(), b.end()); }
-    void clear() { md.clear(); oe.clear(); }
+
+    void marketData(std::span<const std::byte> b) {
+        md.emplace_back(b.begin(), b.end());
+    }
+
+    void orderEntry(std::span<const std::byte> b) {
+        oe.emplace_back(b.begin(), b.end());
+    }
+
+    void clear() {
+        md.clear();
+        oe.clear();
+    }
 };
 
-char type_of(const std::vector<std::byte>& v) { return static_cast<char>(v[0]); }
+char type_of(const std::vector<std::byte>& v) {
+    return static_cast<char>(v[0]);
+}
 
 template <class M>
 M decode(const std::vector<std::byte>& v) {
@@ -33,22 +46,22 @@ M decode(const std::vector<std::byte>& v) {
     return m;
 }
 
-ouch::EnterOrder makeEnter(std::uint32_t user, char side, std::uint32_t qty,
-                           std::string_view sym, std::uint64_t price) {
+ouch::EnterOrder makeEnter(std::uint32_t user, char side, std::uint32_t qty, std::string_view sym,
+                           std::uint64_t price) {
     ouch::EnterOrder o{};
-    o.type = static_cast<char>(ouch::InType::EnterOrder);
-    o.userRefNum = user;
-    o.side = side;
-    o.quantity = qty;
-    o.symbol = sym;
-    o.price = price;
-    o.timeInForce = static_cast<char>(ouch::TimeInForce::Day);
-    o.display = static_cast<char>(ouch::Display::Visible);
-    o.capacity = static_cast<char>(ouch::Capacity::Agency);
+    o.type               = static_cast<char>(ouch::InType::EnterOrder);
+    o.userRefNum         = user;
+    o.side               = side;
+    o.quantity           = qty;
+    o.symbol             = sym;
+    o.price              = price;
+    o.timeInForce        = static_cast<char>(ouch::TimeInForce::Day);
+    o.display            = static_cast<char>(ouch::Display::Visible);
+    o.capacity           = static_cast<char>(ouch::Capacity::Agency);
     o.imSweepEligibility = static_cast<char>(ouch::ImSweep::NotEligible);
-    o.crossType = static_cast<char>(ouch::CrossType::Continuous);
-    o.clOrdId = std::string_view{"CID"};
-    o.appendageLength = 0;
+    o.crossType          = static_cast<char>(ouch::CrossType::Continuous);
+    o.clOrdId            = std::string_view{"CID"};
+    o.appendageLength    = 0;
     return o;
 }
 
@@ -56,7 +69,7 @@ constexpr std::uint64_t kPx52 = 520000;
 constexpr std::uint64_t kPx51 = 510000;
 
 void test_enter_rests() {
-    RecSink sink;
+    RecSink        sink;
     Venue<RecSink> v(sink, "AAPL", 1, 1, 100000, 100);
 
     v.onEnterOrder(makeEnter(1000, 'B', 100, "AAPL", kPx52), 1'000'000);
@@ -83,7 +96,7 @@ void test_enter_rests() {
 }
 
 void test_cross_against_synthetic() {
-    RecSink sink;
+    RecSink        sink;
     Venue<RecSink> v(sink, "AAPL", 1, 1, 100000, 100);
 
     const auto synthRef = v.injectSynthetic(Side::Sell, 5200, 100, 1'000);
@@ -114,15 +127,15 @@ void test_cross_against_synthetic() {
 }
 
 void test_full_cancel() {
-    RecSink sink;
+    RecSink        sink;
     Venue<RecSink> v(sink, "AAPL", 1, 1, 100000, 100);
     v.onEnterOrder(makeEnter(1000, 'B', 100, "AAPL", kPx52), 1'000);
     sink.clear();
 
     ouch::CancelOrder x{};
-    x.type = static_cast<char>(ouch::InType::CancelOrder);
-    x.userRefNum = 1000u;
-    x.quantity = 0u;
+    x.type            = static_cast<char>(ouch::InType::CancelOrder);
+    x.userRefNum      = 1000u;
+    x.quantity        = 0u;
     x.appendageLength = 0;
     v.onCancelOrder(x, 2'000);
 
@@ -139,15 +152,15 @@ void test_full_cancel() {
 }
 
 void test_partial_cancel() {
-    RecSink sink;
+    RecSink        sink;
     Venue<RecSink> v(sink, "AAPL", 1, 1, 100000, 100);
     v.onEnterOrder(makeEnter(1000, 'B', 100, "AAPL", kPx52), 1'000);
     sink.clear();
 
     ouch::CancelOrder x{};
-    x.type = static_cast<char>(ouch::InType::CancelOrder);
-    x.userRefNum = 1000u;
-    x.quantity = 30u;
+    x.type            = static_cast<char>(ouch::InType::CancelOrder);
+    x.userRefNum      = 1000u;
+    x.quantity        = 30u;
     x.appendageLength = 0;
     v.onCancelOrder(x, 2'000);
 
@@ -160,22 +173,22 @@ void test_partial_cancel() {
 }
 
 void test_replace_noncrossing() {
-    RecSink sink;
+    RecSink        sink;
     Venue<RecSink> v(sink, "AAPL", 1, 1, 100000, 100);
     v.onEnterOrder(makeEnter(1000, 'B', 100, "AAPL", kPx52), 1'000);
     sink.clear();
 
     ouch::ReplaceOrder u{};
-    u.type = static_cast<char>(ouch::InType::ReplaceOrder);
-    u.origUserRefNum = 1000u;
-    u.userRefNum = 1001u;
-    u.quantity = 150u;
-    u.price = kPx51;
-    u.timeInForce = static_cast<char>(ouch::TimeInForce::Day);
-    u.display = static_cast<char>(ouch::Display::Visible);
+    u.type               = static_cast<char>(ouch::InType::ReplaceOrder);
+    u.origUserRefNum     = 1000u;
+    u.userRefNum         = 1001u;
+    u.quantity           = 150u;
+    u.price              = kPx51;
+    u.timeInForce        = static_cast<char>(ouch::TimeInForce::Day);
+    u.display            = static_cast<char>(ouch::Display::Visible);
     u.imSweepEligibility = static_cast<char>(ouch::ImSweep::NotEligible);
-    u.clOrdId = std::string_view{"CID2"};
-    u.appendageLength = 0;
+    u.clOrdId            = std::string_view{"CID2"};
+    u.appendageLength    = 0;
     v.onReplaceOrder(u, 2'000);
 
     CHECK_EQ(sink.oe.size(), 1u);
@@ -199,7 +212,7 @@ void test_replace_noncrossing() {
 }
 
 void test_reject_paths() {
-    RecSink sink;
+    RecSink        sink;
     Venue<RecSink> v(sink, "AAPL", 1, 1, 100000, 100);
 
     v.onEnterOrder(makeEnter(1, 'B', 0, "AAPL", kPx52), 1'000);
@@ -234,15 +247,15 @@ void test_reject_paths() {
 }
 
 void test_cancel_reject() {
-    RecSink sink;
+    RecSink        sink;
     Venue<RecSink> v(sink, "AAPL", 1, 1, 100000, 100);
     v.onEnterOrder(makeEnter(1000, 'B', 100, "AAPL", kPx52), 1'000);
     sink.clear();
 
     ouch::CancelOrder x{};
-    x.type = static_cast<char>(ouch::InType::CancelOrder);
-    x.userRefNum = 4242u;
-    x.quantity = 0u;
+    x.type            = static_cast<char>(ouch::InType::CancelOrder);
+    x.userRefNum      = 4242u;
+    x.quantity        = 0u;
     x.appendageLength = 0;
     v.onCancelOrder(x, 2'000);
     CHECK_EQ(sink.oe.size(), 1u);
@@ -252,7 +265,7 @@ void test_cancel_reject() {
     sink.clear();
 
     x.userRefNum = 1000u;
-    x.quantity = 100u;
+    x.quantity   = 100u;
     v.onCancelOrder(x, 2'000);
     CHECK_EQ(sink.oe.size(), 1u);
     CHECK(type_of(sink.oe[0]) == 'I');
@@ -260,16 +273,16 @@ void test_cancel_reject() {
 }
 
 void test_replace_unknown_rejected() {
-    RecSink sink;
+    RecSink        sink;
     Venue<RecSink> v(sink, "AAPL", 1, 1, 100000, 100);
 
     ouch::ReplaceOrder u{};
-    u.type = static_cast<char>(ouch::InType::ReplaceOrder);
+    u.type           = static_cast<char>(ouch::InType::ReplaceOrder);
     u.origUserRefNum = 77u;
-    u.userRefNum = 78u;
-    u.quantity = 10u;
-    u.price = kPx51;
-    u.clOrdId = std::string_view{"R1"};
+    u.userRefNum     = 78u;
+    u.quantity       = 10u;
+    u.price          = kPx51;
+    u.clOrdId        = std::string_view{"R1"};
     v.onReplaceOrder(u, 1'000);
     CHECK_EQ(sink.oe.size(), 1u);
     CHECK(type_of(sink.oe[0]) == 'J');
@@ -279,12 +292,12 @@ void test_replace_unknown_rejected() {
 }
 
 void test_ioc_partial_fill_cancels_rest() {
-    RecSink sink;
+    RecSink        sink;
     Venue<RecSink> v(sink, "AAPL", 1, 1, 100000, 100);
     v.injectSynthetic(Side::Sell, 5200, 40, 1'000);
     sink.clear();
 
-    auto o = makeEnter(1000, 'B', 100, "AAPL", kPx52);
+    auto o        = makeEnter(1000, 'B', 100, "AAPL", kPx52);
     o.timeInForce = static_cast<char>(ouch::TimeInForce::IOC);
     v.onEnterOrder(o, 2'000);
 
@@ -304,10 +317,10 @@ void test_ioc_partial_fill_cancels_rest() {
 }
 
 void test_ioc_no_liquidity() {
-    RecSink sink;
+    RecSink        sink;
     Venue<RecSink> v(sink, "AAPL", 1, 1, 100000, 100);
 
-    auto o = makeEnter(1000, 'S', 100, "AAPL", kPx52);
+    auto o        = makeEnter(1000, 'S', 100, "AAPL", kPx52);
     o.timeInForce = static_cast<char>(ouch::TimeInForce::IOC);
     v.onEnterOrder(o, 2'000);
 
@@ -319,7 +332,7 @@ void test_ioc_no_liquidity() {
     CHECK(v.book().empty());
 }
 
-}
+}   // namespace
 
 int main() {
     test_enter_rests();

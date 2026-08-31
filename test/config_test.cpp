@@ -2,12 +2,12 @@
 // Unit test for the TOML config loader (abt::loadConfig): field parsing + MAC/IP extraction.
 //
 
+#include "TestHarness.hpp"
+
 #include <cstdint>
 #include <cstdio>
 #include <fstream>
 #include <string>
-
-#include "TestHarness.hpp"
 
 #include "abt/sim/SimConfig.hpp"
 
@@ -59,16 +59,18 @@ md_port = 6002
 
 std::string writeTemp() {
     const std::string path = "config_test_tmp.toml";
-    std::ofstream f(path);
+    std::ofstream     f(path);
     f << kToml;
     return path;
 }
 
-int octet(std::uint32_t ip, int shift) { return static_cast<int>((ip >> shift) & 0xFFu); }
+int octet(std::uint32_t ip, int shift) {
+    return static_cast<int>((ip >> shift) & 0xFFu);
+}
 
 void test_load() {
     const std::string path = writeTemp();
-    const SimConfig c = loadConfig(path);
+    const SimConfig   c    = loadConfig(path);
     std::remove(path.c_str());
 
     CHECK(c.venue.symbol == "MSFT");
@@ -108,7 +110,7 @@ void test_load() {
     CHECK_EQ(c.socket.mdPort, 6002u);
 }
 
-}
+}   // namespace
 
 int main() {
     test_load();

@@ -16,7 +16,10 @@ using Handle   = std::uint32_t;
 inline constexpr Handle kNilHandle = std::numeric_limits<Handle>::max();
 inline constexpr Price  kNoPrice   = std::numeric_limits<Price>::min();
 
-enum class Side : std::uint8_t { Buy = 0, Sell = 1 };
+enum class Side : std::uint8_t {
+    Buy  = 0,
+    Sell = 1
+};
 
 [[nodiscard]] constexpr Side opposite(Side s) noexcept {
     return s == Side::Buy ? Side::Sell : Side::Buy;
@@ -41,7 +44,8 @@ struct Trade {
 };
 
 struct NullSink {
-    void onTrade(const Trade&) noexcept {}
+    void onTrade(const Trade&) noexcept {
+    }
 };
 
-}
+}   // namespace abt

@@ -2,28 +2,35 @@
 // Matching-engine invariants: price-time priority, sweeps, cancels, best-quote upkeep.
 //
 
+#include "TestHarness.hpp"
+
 #include <vector>
 
 #include "abt/lob/OrderBook.hpp"
-#include "TestHarness.hpp"
 
 using namespace abt;
+
 namespace {
 
 struct Rec {
     std::vector<Trade> trades;
-    void onTrade(const Trade& t) { trades.push_back(t); }
+
+    void onTrade(const Trade& t) {
+        trades.push_back(t);
+    }
 };
 
 Quantity filled(const Rec& r) {
     Quantity q = 0;
-    for (const auto& t : r.trades) q += t.qty;
+    for (const auto& t : r.trades) {
+        q += t.qty;
+    }
     return q;
 }
 
 void test_rest_only_no_cross() {
     OrderBook book(1, 1000);
-    Rec sink;
+    Rec       sink;
     book.add(1, Side::Buy, 50, 100, sink);
     book.add(2, Side::Buy, 49, 200, sink);
     book.add(3, Side::Sell, 52, 100, sink);
@@ -39,7 +46,7 @@ void test_rest_only_no_cross() {
 
 void test_full_aggressor_fill() {
     OrderBook book(1, 1000);
-    Rec sink;
+    Rec       sink;
     book.add(1, Side::Sell, 52, 100, sink);
     const Handle rem = book.add(99, Side::Buy, 52, 100, sink);
 
@@ -56,7 +63,7 @@ void test_full_aggressor_fill() {
 
 void test_price_time_priority() {
     OrderBook book(1, 1000);
-    Rec sink;
+    Rec       sink;
     book.add(1, Side::Sell, 52, 100, sink);
     book.add(2, Side::Sell, 52, 100, sink);
     book.add(99, Side::Buy, 52, 150, sink);
@@ -74,7 +81,7 @@ void test_price_time_priority() {
 
 void test_multilevel_sweep_price_improvement() {
     OrderBook book(1, 1000);
-    Rec sink;
+    Rec       sink;
     book.add(1, Side::Sell, 52, 100, sink);
     book.add(2, Side::Sell, 53, 100, sink);
     book.add(99, Side::Buy, 53, 150, sink);
@@ -91,7 +98,7 @@ void test_multilevel_sweep_price_improvement() {
 
 void test_aggressor_partial_rests() {
     OrderBook book(1, 1000);
-    Rec sink;
+    Rec       sink;
     book.add(1, Side::Sell, 52, 100, sink);
     const Handle rem = book.add(99, Side::Buy, 52, 150, sink);
 
@@ -105,7 +112,7 @@ void test_aggressor_partial_rests() {
 }
 
 void test_cancel_and_best_update() {
-    OrderBook book(1, 1000);
+    OrderBook    book(1, 1000);
     const Handle h = book.add(1, Side::Buy, 50, 100);
     CHECK_EQ(book.bestBid(), 50);
     CHECK_EQ(book.cancel(h), 100u);
@@ -132,7 +139,7 @@ void test_cancel_middle_of_fifo() {
 }
 
 void test_reduce() {
-    OrderBook book(1, 1000);
+    OrderBook    book(1, 1000);
     const Handle h = book.add(1, Side::Buy, 50, 100);
     CHECK_EQ(book.reduce(h, 60), 40u);
     CHECK_EQ(book.volumeAt(Side::Buy, 50), 60u);
@@ -142,7 +149,7 @@ void test_reduce() {
     CHECK_EQ(book.bestBid(), kNoPrice);
 }
 
-}
+}   // namespace
 
 int main() {
     test_rest_only_no_cross();

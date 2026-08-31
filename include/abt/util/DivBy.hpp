@@ -30,17 +30,17 @@ inline DivBy::DivBy(std::uint32_t d) noexcept {
         // Power of two (including d == 1): division is a right shift by log2(d).
         m_magic = 0;
         m_shift = static_cast<std::uint32_t>(__builtin_ctz(d));
-        m_add = false;
+        m_add   = false;
         return;
     }
     const std::uint32_t floorLog2 = 31u - static_cast<std::uint32_t>(__builtin_clz(d));
-    const std::uint64_t twoToN = std::uint64_t{1} << (32u + floorLog2);
-    std::uint32_t proposed = static_cast<std::uint32_t>(twoToN / d);
+    const std::uint64_t twoToN    = std::uint64_t{1} << (32u + floorLog2);
+    std::uint32_t       proposed  = static_cast<std::uint32_t>(twoToN / d);
     const std::uint32_t rem = static_cast<std::uint32_t>(twoToN - static_cast<std::uint64_t>(proposed) * d);
-    const std::uint32_t e = d - rem;
+    const std::uint32_t e   = d - rem;
     if (e < (std::uint32_t{1} << floorLog2)) {
         m_shift = floorLog2;
-        m_add = false;
+        m_add   = false;
     } else {
         proposed += proposed;
         const std::uint32_t rem2 = rem + rem;
@@ -48,7 +48,7 @@ inline DivBy::DivBy(std::uint32_t d) noexcept {
             proposed += 1;
         }
         m_shift = floorLog2;
-        m_add = true;
+        m_add   = true;
     }
     m_magic = proposed + 1;
 }
@@ -57,8 +57,7 @@ inline std::uint32_t DivBy::operator()(std::uint32_t n) const noexcept {
     if (m_magic == 0) {
         return n >> m_shift;
     }
-    const std::uint32_t q =
-        static_cast<std::uint32_t>((static_cast<std::uint64_t>(m_magic) * n) >> 32);
+    const std::uint32_t q = static_cast<std::uint32_t>((static_cast<std::uint64_t>(m_magic) * n) >> 32);
     if (m_add) {
         const std::uint32_t t = ((n - q) >> 1) + q;
         return t >> m_shift;
@@ -66,4 +65,4 @@ inline std::uint32_t DivBy::operator()(std::uint32_t n) const noexcept {
     return q >> m_shift;
 }
 
-}
+}   // namespace abt::util

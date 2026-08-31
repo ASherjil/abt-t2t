@@ -38,12 +38,12 @@ bool ItchFileReader::fill(std::size_t need) {
     }
     while (m_len < need) {
         const std::size_t room = m_buf.size() - m_len;
-        const int n = gzread(m_file, m_buf.data() + m_len, static_cast<unsigned>(room));
+        const int         n    = gzread(m_file, m_buf.data() + m_len, static_cast<unsigned>(room));
         if (n <= 0) {
             int err = Z_OK;
             (void)gzerror(m_file, &err);
             m_truncated = (err != Z_OK && err != Z_STREAM_END) || (n == 0 && m_len > 0);
-            m_eof = true;
+            m_eof       = true;
             break;
         }
         m_len += static_cast<std::size_t>(n);
@@ -58,7 +58,7 @@ bool ItchFileReader::next(std::span<const std::byte>& msg) {
     if (!fill(2)) {
         return false;
     }
-    const std::byte* p = m_buf.data() + m_pos;
+    const std::byte*  p   = m_buf.data() + m_pos;
     const std::size_t len = (std::to_integer<std::size_t>(p[0]) << 8) | std::to_integer<std::size_t>(p[1]);
     if (len == 0) {
         m_pos += 2;
@@ -117,4 +117,4 @@ std::uint64_t ItchFileWriter::messages() const noexcept {
     return m_messages;
 }
 
-}
+}   // namespace abt::replay

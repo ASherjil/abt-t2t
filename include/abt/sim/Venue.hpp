@@ -15,27 +15,26 @@
 namespace abt {
 
 struct MirrorStats {
-    std::uint64_t adds        = 0;
-    std::uint64_t executes    = 0;
-    std::uint64_t cancels     = 0;
-    std::uint64_t deletes     = 0;
-    std::uint64_t replaces    = 0;
-    std::uint64_t unknownRef  = 0;
-    std::uint64_t overReduce  = 0;
-    std::uint64_t outOfBand   = 0;
-    std::uint64_t shadowFills = 0;
+    std::uint64_t adds         = 0;
+    std::uint64_t executes     = 0;
+    std::uint64_t cancels      = 0;
+    std::uint64_t deletes      = 0;
+    std::uint64_t replaces     = 0;
+    std::uint64_t unknownRef   = 0;
+    std::uint64_t overReduce   = 0;
+    std::uint64_t outOfBand    = 0;
+    std::uint64_t shadowFills  = 0;
     std::uint64_t shadowShares = 0;
-    std::uint64_t crossFills  = 0;
-    std::uint64_t impactFills = 0;
-    std::uint64_t selfTrades  = 0;
+    std::uint64_t crossFills   = 0;
+    std::uint64_t impactFills  = 0;
+    std::uint64_t selfTrades   = 0;
 };
 
 template <class Sink>
 class Venue {
 public:
-    Venue(Sink& sink, std::string_view symbol, std::uint16_t stockLocate,
-          Price minTick, Price maxTick, std::uint32_t wirePerTick = 100,
-          OrderId firstOrderRef = 1, std::size_t liveReserve = 1u << 12);
+    Venue(Sink& sink, std::string_view symbol, std::uint16_t stockLocate, Price minTick, Price maxTick,
+          std::uint32_t wirePerTick = 100, OrderId firstOrderRef = 1, std::size_t liveReserve = 1u << 12);
 
     void sessionEvent(itch::SystemEventCode code, std::uint64_t ts);
     void onEnterOrder(const ouch::EnterOrder& o, std::uint64_t ts);
@@ -43,7 +42,7 @@ public:
     void onReplaceOrder(const ouch::ReplaceOrder& u, std::uint64_t ts);
 
     OrderId injectSynthetic(Side side, Price tick, Quantity qty, std::uint64_t ts);
-    void cancelSynthetic(OrderId ref, std::uint64_t ts);
+    void    cancelSynthetic(OrderId ref, std::uint64_t ts);
 
     void mirrorAdd(OrderId ref, Side side, std::uint32_t wirePrice, Quantity qty, std::uint64_t ts);
     void mirrorExecute(OrderId ref, Quantity shares, std::uint64_t ts);
@@ -53,13 +52,13 @@ public:
                        std::uint64_t ts);
     void resetDay(std::uint64_t ts);
     [[nodiscard]] const MirrorStats& mirrorStats() const noexcept;
-    [[nodiscard]] std::size_t clientOrders() const noexcept;
+    [[nodiscard]] std::size_t        clientOrders() const noexcept;
 
     [[nodiscard]] const OrderBook& book() const noexcept;
-    [[nodiscard]] Price bestBid() const noexcept;
-    [[nodiscard]] Price bestAsk() const noexcept;
-    [[nodiscard]] std::uint64_t trades() const noexcept;
-    [[nodiscard]] std::size_t liveOrders() const noexcept;
+    [[nodiscard]] Price            bestBid() const noexcept;
+    [[nodiscard]] Price            bestAsk() const noexcept;
+    [[nodiscard]] std::uint64_t    trades() const noexcept;
+    [[nodiscard]] std::size_t      liveOrders() const noexcept;
 
 private:
     struct LiveOrder {
@@ -75,6 +74,7 @@ private:
         std::uint64_t ts;
         bool          aggClient;
         std::uint32_t aggUser;
+
         void onTrade(const Trade& t) {
             v->handleTrade(t, ts, aggClient, aggUser);
         }
@@ -83,24 +83,25 @@ private:
 
     [[nodiscard]] bool validPrice(std::uint64_t wire, Price& tick) const noexcept;
     [[nodiscard]] bool parseSide(char c, Side& side) const noexcept;
-    void processOrder(OrderId ref, Side side, Price tick, Quantity qty, std::uint64_t ts,
-                      bool client, std::uint32_t user);
-    void processImmediate(OrderId ref, Side side, Price tick, Quantity qty, std::uint64_t ts,
+    void     processOrder(OrderId ref, Side side, Price tick, Quantity qty, std::uint64_t ts, bool client,
                           std::uint32_t user);
-    void handleTrade(const Trade& t, std::uint64_t ts, bool aggClient, std::uint32_t aggUser);
-    void trackClient(OrderId ref, Handle h, Side side, Price tick, std::uint32_t user);
-    void dropClient(OrderId ref, const LiveOrder& live);
-    void fillClient(OrderId ref, Quantity qty, std::uint64_t ts);
+    void     processImmediate(OrderId ref, Side side, Price tick, Quantity qty, std::uint64_t ts,
+                              std::uint32_t user);
+    void     handleTrade(const Trade& t, std::uint64_t ts, bool aggClient, std::uint32_t aggUser);
+    void     trackClient(OrderId ref, Handle h, Side side, Price tick, std::uint32_t user);
+    void     dropClient(OrderId ref, const LiveOrder& live);
+    void     fillClient(OrderId ref, Quantity qty, std::uint64_t ts);
     Quantity crossClients(Side side, Price tick, Quantity qty, std::uint64_t ts);
-    void shadowFill(Side side, Price tick, OrderId realRef, Quantity qty, std::uint64_t ts);
-    [[nodiscard]] bool aheadInLevel(Side side, Price tick, OrderId clientRef,
-                                    OrderId realRef) const noexcept;
-    void removeReal(OrderId ref, const LiveOrder& live);
+    void     shadowFill(Side side, Price tick, OrderId realRef, Quantity qty, std::uint64_t ts);
+    [[nodiscard]] bool aheadInLevel(Side side, Price tick, OrderId clientRef, OrderId realRef) const noexcept;
+    void               removeReal(OrderId ref, const LiveOrder& live);
     [[nodiscard]] bool isMarketable(Side side, Price tick) const noexcept;
     [[nodiscard]] std::uint32_t tickToWire(Price tick) const noexcept;
 
-    template <class Msg> void sendMd(const Msg& m);
-    template <class Msg> void sendOe(const Msg& m);
+    template <class Msg>
+    void sendMd(const Msg& m);
+    template <class Msg>
+    void sendOe(const Msg& m);
 
     static char itchSide(Side s) noexcept;
 
@@ -108,13 +109,11 @@ private:
     void emitItchExecuted(OrderId ref, Quantity shares, std::uint64_t match, std::uint64_t ts);
     void emitItchCancel(OrderId ref, Quantity shares, std::uint64_t ts);
     void emitItchDelete(OrderId ref, std::uint64_t ts);
-    void emitItchReplace(OrderId origRef, OrderId newRef, Quantity shares, Price tick,
-                         std::uint64_t ts);
+    void emitItchReplace(OrderId origRef, OrderId newRef, Quantity shares, Price tick, std::uint64_t ts);
     void emitAccepted(const ouch::EnterOrder& o, OrderId ref, char orderState, std::uint64_t ts);
-    void emitExecuted(std::uint32_t user, Quantity shares, Price tick, char liq,
-                      std::uint64_t match, std::uint64_t ts);
-    void emitCanceled(std::uint32_t user, Quantity decremented, ouch::CancelReason r,
+    void emitExecuted(std::uint32_t user, Quantity shares, Price tick, char liq, std::uint64_t match,
                       std::uint64_t ts);
+    void emitCanceled(std::uint32_t user, Quantity decremented, ouch::CancelReason r, std::uint64_t ts);
     void emitReplaced(const ouch::ReplaceOrder& u, OrderId newRef, Side side, std::uint64_t ts);
     void emitRejected(std::uint32_t user, ouch::RejectReason reason, std::string_view clOrdId,
                       std::uint64_t ts);
@@ -129,7 +128,7 @@ private:
     OrderBook     m_engine;
 
     OrderId       m_nextOrderRef;
-    std::uint64_t m_nextMatch    = 1;
+    std::uint64_t m_nextMatch = 1;
     MirrorStats   m_mirror{};
 
     util::FlatHashMap<OrderId, LiveOrder>     m_live;
@@ -138,9 +137,8 @@ private:
 };
 
 template <class Sink>
-Venue<Sink>::Venue(Sink& sink, std::string_view symbol, std::uint16_t stockLocate,
-                   Price minTick, Price maxTick, std::uint32_t wirePerTick,
-                   OrderId firstOrderRef, std::size_t liveReserve)
+Venue<Sink>::Venue(Sink& sink, std::string_view symbol, std::uint16_t stockLocate, Price minTick,
+                   Price maxTick, std::uint32_t wirePerTick, OrderId firstOrderRef, std::size_t liveReserve)
     : m_sink(sink),
       m_symbol(symbol),
       m_stockLocate(stockLocate),
@@ -157,19 +155,19 @@ Venue<Sink>::Venue(Sink& sink, std::string_view symbol, std::uint16_t stockLocat
 template <class Sink>
 void Venue<Sink>::sessionEvent(itch::SystemEventCode code, std::uint64_t ts) {
     itch::SystemEvent s{};
-    s.messageType = static_cast<char>(itch::MessageType::SystemEvent);
-    s.stockLocate = 0;
+    s.messageType    = static_cast<char>(itch::MessageType::SystemEvent);
+    s.stockLocate    = 0;
     s.trackingNumber = 0;
-    s.timestamp = ts;
-    s.eventCode = static_cast<char>(code);
+    s.timestamp      = ts;
+    s.eventCode      = static_cast<char>(code);
     sendMd(s);
 }
 
 template <class Sink>
 void Venue<Sink>::onEnterOrder(const ouch::EnterOrder& o, std::uint64_t ts) {
     const std::uint32_t user = o.userRefNum.value();
-    Side side = Side::Buy;
-    Price tick = 0;
+    Side                side = Side::Buy;
+    Price               tick = 0;
     if (!parseSide(o.side, side)) {
         emitRejected(user, ouch::RejectReason::InvalidSide, o.clOrdId.view(), ts);
         return;
@@ -187,10 +185,10 @@ void Venue<Sink>::onEnterOrder(const ouch::EnterOrder& o, std::uint64_t ts) {
         return;
     }
 
-    const OrderId ref = m_nextOrderRef++;
-    const bool immediate = o.timeInForce == static_cast<char>(ouch::TimeInForce::IOC);
-    const char state = immediate ? static_cast<char>(ouch::OrderState::Dead)
-                                 : static_cast<char>(ouch::OrderState::Live);
+    const OrderId ref       = m_nextOrderRef++;
+    const bool    immediate = o.timeInForce == static_cast<char>(ouch::TimeInForce::IOC);
+    const char    state     = immediate ? static_cast<char>(ouch::OrderState::Dead)
+                                        : static_cast<char>(ouch::OrderState::Live);
     emitAccepted(o, ref, state, ts);
     if (immediate) {
         processImmediate(ref, side, tick, o.quantity.value(), ts, user);
@@ -202,20 +200,20 @@ void Venue<Sink>::onEnterOrder(const ouch::EnterOrder& o, std::uint64_t ts) {
 template <class Sink>
 void Venue<Sink>::onCancelOrder(const ouch::CancelOrder& x, std::uint64_t ts) {
     const std::uint32_t user = x.userRefNum.value();
-    const OrderId* refp = m_byUserRef.find(user);
+    const OrderId*      refp = m_byUserRef.find(user);
     if (refp == nullptr) {
         emitCancelReject(user, ts);
         return;
     }
-    const OrderId ref = *refp;
-    LiveOrder* live = m_live.find(ref);
+    const OrderId ref  = *refp;
+    LiveOrder*    live = m_live.find(ref);
     if (live == nullptr) {
         emitCancelReject(user, ts);
         return;
     }
 
-    const Handle h = live->handle;
-    const Quantity cur = m_engine.order(h).qty;
+    const Handle   h        = live->handle;
+    const Quantity cur      = m_engine.order(h).qty;
     const Quantity intended = x.quantity.value();
     if (intended >= cur) {
         emitCancelReject(user, ts);
@@ -237,14 +235,14 @@ void Venue<Sink>::onCancelOrder(const ouch::CancelOrder& x, std::uint64_t ts) {
 template <class Sink>
 void Venue<Sink>::onReplaceOrder(const ouch::ReplaceOrder& u, std::uint64_t ts) {
     const std::uint32_t origUser = u.origUserRefNum.value();
-    const std::uint32_t newUser = u.userRefNum.value();
-    const OrderId* refp = m_byUserRef.find(origUser);
+    const std::uint32_t newUser  = u.userRefNum.value();
+    const OrderId*      refp     = m_byUserRef.find(origUser);
     if (refp == nullptr) {
         emitRejected(newUser, ouch::RejectReason::ReplaceNotAllowed, u.clOrdId.view(), ts);
         return;
     }
-    const OrderId origRef = *refp;
-    const LiveOrder* live = m_live.find(origRef);
+    const OrderId    origRef = *refp;
+    const LiveOrder* live    = m_live.find(origRef);
     if (live == nullptr) {
         emitRejected(newUser, ouch::RejectReason::ReplaceNotAllowed, u.clOrdId.view(), ts);
         return;
@@ -261,7 +259,7 @@ void Venue<Sink>::onReplaceOrder(const ouch::ReplaceOrder& u, std::uint64_t ts) 
     }
 
     const LiveOrder orig = *live;
-    const Side side = orig.side;
+    const Side      side = orig.side;
 
     m_engine.cancel(orig.handle);
     dropClient(origRef, orig);
@@ -299,8 +297,7 @@ void Venue<Sink>::cancelSynthetic(OrderId ref, std::uint64_t ts) {
 }
 
 template <class Sink>
-void Venue<Sink>::mirrorAdd(OrderId ref, Side side, std::uint32_t wirePrice, Quantity qty,
-                            std::uint64_t ts) {
+void Venue<Sink>::mirrorAdd(OrderId ref, Side side, std::uint32_t wirePrice, Quantity qty, std::uint64_t ts) {
     ++m_mirror.adds;
     Price tick = 0;
     if (!validPrice(wirePrice, tick)) {
@@ -351,8 +348,8 @@ void Venue<Sink>::mirrorCancel(OrderId ref, Quantity shares, std::uint64_t) {
         ++m_mirror.unknownRef;
         return;
     }
-    const LiveOrder l = *live;
-    const Quantity cur = m_engine.order(l.handle).qty;
+    const LiveOrder l   = *live;
+    const Quantity  cur = m_engine.order(l.handle).qty;
     if (shares > cur) {
         ++m_mirror.overReduce;
     }
@@ -375,8 +372,8 @@ void Venue<Sink>::mirrorDelete(OrderId ref, std::uint64_t) {
 }
 
 template <class Sink>
-void Venue<Sink>::mirrorReplace(OrderId origRef, OrderId newRef, Quantity shares,
-                                std::uint32_t wirePrice, std::uint64_t ts) {
+void Venue<Sink>::mirrorReplace(OrderId origRef, OrderId newRef, Quantity shares, std::uint32_t wirePrice,
+                                std::uint64_t ts) {
     ++m_mirror.replaces;
     LiveOrder* live = m_live.find(origRef);
     if (live == nullptr) {
@@ -392,8 +389,8 @@ void Venue<Sink>::mirrorReplace(OrderId origRef, OrderId newRef, Quantity shares
 template <class Sink>
 void Venue<Sink>::resetDay(std::uint64_t ts) {
     while (!m_clientRefs.empty()) {
-        const OrderId ref = m_clientRefs.back();
-        LiveOrder* live = m_live.find(ref);
+        const OrderId ref  = m_clientRefs.back();
+        LiveOrder*    live = m_live.find(ref);
         if (live == nullptr) {
             m_clientRefs.pop_back();
             continue;
@@ -473,8 +470,8 @@ bool Venue<Sink>::parseSide(char c, Side& side) const noexcept {
 }
 
 template <class Sink>
-void Venue<Sink>::processOrder(OrderId ref, Side side, Price tick, Quantity qty,
-                               std::uint64_t ts, bool client, std::uint32_t user) {
+void Venue<Sink>::processOrder(OrderId ref, Side side, Price tick, Quantity qty, std::uint64_t ts,
+                               bool client, std::uint32_t user) {
     TradeEmitter em{this, ts, client, user};
     const Handle h = m_engine.add(ref, side, tick, qty, em);
     if (h != kNilHandle) {
@@ -489,9 +486,9 @@ void Venue<Sink>::processOrder(OrderId ref, Side side, Price tick, Quantity qty,
 }
 
 template <class Sink>
-void Venue<Sink>::processImmediate(OrderId ref, Side side, Price tick, Quantity qty,
-                                   std::uint64_t ts, std::uint32_t user) {
-    TradeEmitter em{this, ts, true, user};
+void Venue<Sink>::processImmediate(OrderId ref, Side side, Price tick, Quantity qty, std::uint64_t ts,
+                                   std::uint32_t user) {
+    TradeEmitter   em{this, ts, true, user};
     const Quantity rem = m_engine.match(ref, side, tick, qty, em);
     if (rem > 0) {
         emitCanceled(user, rem, ouch::CancelReason::Ioc, ts);
@@ -499,8 +496,7 @@ void Venue<Sink>::processImmediate(OrderId ref, Side side, Price tick, Quantity 
 }
 
 template <class Sink>
-void Venue<Sink>::handleTrade(const Trade& t, std::uint64_t ts, bool aggClient,
-                              std::uint32_t aggUser) {
+void Venue<Sink>::handleTrade(const Trade& t, std::uint64_t ts, bool aggClient, std::uint32_t aggUser) {
     const std::uint64_t match = m_nextMatch++;
     emitItchExecuted(t.restingId, t.qty, match, ts);
     if (aggClient) {
@@ -559,7 +555,7 @@ void Venue<Sink>::fillClient(OrderId ref, Quantity qty, std::uint64_t ts) {
     if (live == nullptr || qty == 0) {
         return;
     }
-    const LiveOrder l = *live;
+    const LiveOrder     l     = *live;
     const std::uint64_t match = m_nextMatch++;
     emitItchExecuted(ref, qty, match, ts);
     emitExecuted(l.userRef, qty, l.tick, 'A', match, ts);
@@ -575,9 +571,9 @@ void Venue<Sink>::fillClient(OrderId ref, Quantity qty, std::uint64_t ts) {
 template <class Sink>
 Quantity Venue<Sink>::crossClients(Side side, Price tick, Quantity qty, std::uint64_t ts) {
     while (qty > 0) {
-        OrderId best = 0;
-        Handle bestHandle = kNilHandle;
-        Price bestTick = 0;
+        OrderId best       = 0;
+        Handle  bestHandle = kNilHandle;
+        Price   bestTick   = 0;
         for (const OrderId ref : m_clientRefs) {
             const LiveOrder* l = m_live.find(ref);
             if (l == nullptr || l->side == side) {
@@ -589,15 +585,15 @@ Quantity Venue<Sink>::crossClients(Side side, Price tick, Quantity qty, std::uin
             }
             const bool better = best == 0 || (side == Side::Buy ? l->tick < bestTick : l->tick > bestTick);
             if (better) {
-                best = ref;
+                best       = ref;
                 bestHandle = l->handle;
-                bestTick = l->tick;
+                bestTick   = l->tick;
             }
         }
         if (best == 0) {
             break;
         }
-        const Quantity cur = m_engine.order(bestHandle).qty;
+        const Quantity cur  = m_engine.order(bestHandle).qty;
         const Quantity fill = qty < cur ? qty : cur;
         ++m_mirror.crossFills;
         fillClient(best, fill, ts);
@@ -607,22 +603,21 @@ Quantity Venue<Sink>::crossClients(Side side, Price tick, Quantity qty, std::uin
 }
 
 template <class Sink>
-void Venue<Sink>::shadowFill(Side side, Price tick, OrderId realRef, Quantity qty,
-                             std::uint64_t ts) {
+void Venue<Sink>::shadowFill(Side side, Price tick, OrderId realRef, Quantity qty, std::uint64_t ts) {
     for (std::size_t i = 0; i < m_clientRefs.size() && qty > 0;) {
-        const OrderId ref = m_clientRefs[i];
-        const LiveOrder* l = m_live.find(ref);
+        const OrderId    ref = m_clientRefs[i];
+        const LiveOrder* l   = m_live.find(ref);
         if (l == nullptr || l->side != side) {
             ++i;
             continue;
         }
         const bool better = side == Side::Sell ? l->tick < tick : l->tick > tick;
-        const bool ahead = better || (l->tick == tick && aheadInLevel(side, tick, ref, realRef));
+        const bool ahead  = better || (l->tick == tick && aheadInLevel(side, tick, ref, realRef));
         if (!ahead) {
             ++i;
             continue;
         }
-        const Quantity cur = m_engine.order(l->handle).qty;
+        const Quantity cur  = m_engine.order(l->handle).qty;
         const Quantity fill = qty < cur ? qty : cur;
         ++m_mirror.shadowFills;
         m_mirror.shadowShares += fill;
@@ -635,8 +630,7 @@ void Venue<Sink>::shadowFill(Side side, Price tick, OrderId realRef, Quantity qt
 }
 
 template <class Sink>
-bool Venue<Sink>::aheadInLevel(Side side, Price tick, OrderId clientRef,
-                               OrderId realRef) const noexcept {
+bool Venue<Sink>::aheadInLevel(Side side, Price tick, OrderId clientRef, OrderId realRef) const noexcept {
     bool ahead = false;
     m_engine.forEachOrderAtLevel(side, tick, [&](const Order& o) {
         if (o.id == clientRef) {
@@ -678,48 +672,45 @@ void Venue<Sink>::sendOe(const Msg& m) {
 
 template <class Sink>
 char Venue<Sink>::itchSide(Side s) noexcept {
-    return s == Side::Buy ? static_cast<char>(itch::Side::Buy)
-                          : static_cast<char>(itch::Side::Sell);
+    return s == Side::Buy ? static_cast<char>(itch::Side::Buy) : static_cast<char>(itch::Side::Sell);
 }
 
 template <class Sink>
-void Venue<Sink>::emitItchAdd(OrderId ref, Side side, Price tick, Quantity shares,
-                              std::uint64_t ts) {
+void Venue<Sink>::emitItchAdd(OrderId ref, Side side, Price tick, Quantity shares, std::uint64_t ts) {
     itch::AddOrder a{};
-    a.messageType = static_cast<char>(itch::MessageType::AddOrder);
-    a.stockLocate = m_stockLocate;
+    a.messageType    = static_cast<char>(itch::MessageType::AddOrder);
+    a.stockLocate    = m_stockLocate;
     a.trackingNumber = 0;
-    a.timestamp = ts;
-    a.orderRef = ref;
-    a.side = itchSide(side);
-    a.shares = shares;
-    a.stock = std::string_view{m_symbol};
-    a.price = tickToWire(tick);
+    a.timestamp      = ts;
+    a.orderRef       = ref;
+    a.side           = itchSide(side);
+    a.shares         = shares;
+    a.stock          = std::string_view{m_symbol};
+    a.price          = tickToWire(tick);
     sendMd(a);
 }
 
 template <class Sink>
-void Venue<Sink>::emitItchExecuted(OrderId ref, Quantity shares, std::uint64_t match,
-                                   std::uint64_t ts) {
+void Venue<Sink>::emitItchExecuted(OrderId ref, Quantity shares, std::uint64_t match, std::uint64_t ts) {
     itch::OrderExecuted e{};
-    e.messageType = static_cast<char>(itch::MessageType::OrderExecuted);
-    e.stockLocate = m_stockLocate;
+    e.messageType    = static_cast<char>(itch::MessageType::OrderExecuted);
+    e.stockLocate    = m_stockLocate;
     e.trackingNumber = 0;
-    e.timestamp = ts;
-    e.orderRef = ref;
+    e.timestamp      = ts;
+    e.orderRef       = ref;
     e.executedShares = shares;
-    e.matchNumber = match;
+    e.matchNumber    = match;
     sendMd(e);
 }
 
 template <class Sink>
 void Venue<Sink>::emitItchCancel(OrderId ref, Quantity shares, std::uint64_t ts) {
     itch::OrderCancel x{};
-    x.messageType = static_cast<char>(itch::MessageType::OrderCancel);
-    x.stockLocate = m_stockLocate;
-    x.trackingNumber = 0;
-    x.timestamp = ts;
-    x.orderRef = ref;
+    x.messageType     = static_cast<char>(itch::MessageType::OrderCancel);
+    x.stockLocate     = m_stockLocate;
+    x.trackingNumber  = 0;
+    x.timestamp       = ts;
+    x.orderRef        = ref;
     x.cancelledShares = shares;
     sendMd(x);
 }
@@ -727,11 +718,11 @@ void Venue<Sink>::emitItchCancel(OrderId ref, Quantity shares, std::uint64_t ts)
 template <class Sink>
 void Venue<Sink>::emitItchDelete(OrderId ref, std::uint64_t ts) {
     itch::OrderDelete d{};
-    d.messageType = static_cast<char>(itch::MessageType::OrderDelete);
-    d.stockLocate = m_stockLocate;
+    d.messageType    = static_cast<char>(itch::MessageType::OrderDelete);
+    d.stockLocate    = m_stockLocate;
     d.trackingNumber = 0;
-    d.timestamp = ts;
-    d.orderRef = ref;
+    d.timestamp      = ts;
+    d.orderRef       = ref;
     sendMd(d);
 }
 
@@ -739,51 +730,50 @@ template <class Sink>
 void Venue<Sink>::emitItchReplace(OrderId origRef, OrderId newRef, Quantity shares, Price tick,
                                   std::uint64_t ts) {
     itch::OrderReplace u{};
-    u.messageType = static_cast<char>(itch::MessageType::OrderReplace);
-    u.stockLocate = m_stockLocate;
+    u.messageType    = static_cast<char>(itch::MessageType::OrderReplace);
+    u.stockLocate    = m_stockLocate;
     u.trackingNumber = 0;
-    u.timestamp = ts;
-    u.origOrderRef = origRef;
-    u.newOrderRef = newRef;
-    u.shares = shares;
-    u.price = tickToWire(tick);
+    u.timestamp      = ts;
+    u.origOrderRef   = origRef;
+    u.newOrderRef    = newRef;
+    u.shares         = shares;
+    u.price          = tickToWire(tick);
     sendMd(u);
 }
 
 template <class Sink>
-void Venue<Sink>::emitAccepted(const ouch::EnterOrder& o, OrderId ref, char orderState,
-                               std::uint64_t ts) {
+void Venue<Sink>::emitAccepted(const ouch::EnterOrder& o, OrderId ref, char orderState, std::uint64_t ts) {
     ouch::Accepted a{};
-    a.type = static_cast<char>(ouch::OutType::Accepted);
-    a.timestamp = ts;
-    a.userRefNum = o.userRefNum.value();
-    a.side = o.side;
-    a.quantity = o.quantity.value();
-    a.symbol = std::string_view{m_symbol};
-    a.price = o.price.value();
-    a.timeInForce = o.timeInForce;
-    a.display = o.display;
+    a.type                 = static_cast<char>(ouch::OutType::Accepted);
+    a.timestamp            = ts;
+    a.userRefNum           = o.userRefNum.value();
+    a.side                 = o.side;
+    a.quantity             = o.quantity.value();
+    a.symbol               = std::string_view{m_symbol};
+    a.price                = o.price.value();
+    a.timeInForce          = o.timeInForce;
+    a.display              = o.display;
     a.orderReferenceNumber = ref;
-    a.capacity = o.capacity;
-    a.imSweepEligibility = o.imSweepEligibility;
-    a.crossType = o.crossType;
-    a.orderState = orderState;
-    a.clOrdId = o.clOrdId.view();
-    a.appendageLength = 0;
+    a.capacity             = o.capacity;
+    a.imSweepEligibility   = o.imSweepEligibility;
+    a.crossType            = o.crossType;
+    a.orderState           = orderState;
+    a.clOrdId              = o.clOrdId.view();
+    a.appendageLength      = 0;
     sendOe(a);
 }
 
 template <class Sink>
-void Venue<Sink>::emitExecuted(std::uint32_t user, Quantity shares, Price tick, char liq,
-                               std::uint64_t match, std::uint64_t ts) {
+void Venue<Sink>::emitExecuted(std::uint32_t user, Quantity shares, Price tick, char liq, std::uint64_t match,
+                               std::uint64_t ts) {
     ouch::Executed e{};
-    e.type = static_cast<char>(ouch::OutType::Executed);
-    e.timestamp = ts;
-    e.userRefNum = user;
-    e.quantity = shares;
-    e.price = static_cast<std::uint64_t>(tickToWire(tick));
-    e.liquidityFlag = liq;
-    e.matchNumber = match;
+    e.type            = static_cast<char>(ouch::OutType::Executed);
+    e.timestamp       = ts;
+    e.userRefNum      = user;
+    e.quantity        = shares;
+    e.price           = static_cast<std::uint64_t>(tickToWire(tick));
+    e.liquidityFlag   = liq;
+    e.matchNumber     = match;
     e.appendageLength = 0;
     sendOe(e);
 }
@@ -792,48 +782,47 @@ template <class Sink>
 void Venue<Sink>::emitCanceled(std::uint32_t user, Quantity decremented, ouch::CancelReason r,
                                std::uint64_t ts) {
     ouch::Canceled c{};
-    c.type = static_cast<char>(ouch::OutType::Canceled);
-    c.timestamp = ts;
-    c.userRefNum = user;
-    c.quantity = decremented;
-    c.reason = static_cast<char>(r);
+    c.type            = static_cast<char>(ouch::OutType::Canceled);
+    c.timestamp       = ts;
+    c.userRefNum      = user;
+    c.quantity        = decremented;
+    c.reason          = static_cast<char>(r);
     c.appendageLength = 0;
     sendOe(c);
 }
 
 template <class Sink>
-void Venue<Sink>::emitReplaced(const ouch::ReplaceOrder& u, OrderId newRef, Side side,
-                               std::uint64_t ts) {
+void Venue<Sink>::emitReplaced(const ouch::ReplaceOrder& u, OrderId newRef, Side side, std::uint64_t ts) {
     ouch::Replaced r{};
-    r.type = static_cast<char>(ouch::OutType::Replaced);
-    r.timestamp = ts;
-    r.origUserRefNum = u.origUserRefNum.value();
-    r.userRefNum = u.userRefNum.value();
-    r.side = itchSide(side);
-    r.quantity = u.quantity.value();
-    r.symbol = std::string_view{m_symbol};
-    r.price = u.price.value();
-    r.timeInForce = u.timeInForce;
-    r.display = u.display;
+    r.type                 = static_cast<char>(ouch::OutType::Replaced);
+    r.timestamp            = ts;
+    r.origUserRefNum       = u.origUserRefNum.value();
+    r.userRefNum           = u.userRefNum.value();
+    r.side                 = itchSide(side);
+    r.quantity             = u.quantity.value();
+    r.symbol               = std::string_view{m_symbol};
+    r.price                = u.price.value();
+    r.timeInForce          = u.timeInForce;
+    r.display              = u.display;
     r.orderReferenceNumber = newRef;
-    r.capacity = static_cast<char>(ouch::Capacity::Agency);
-    r.imSweepEligibility = u.imSweepEligibility;
-    r.crossType = static_cast<char>(ouch::CrossType::Continuous);
-    r.orderState = static_cast<char>(ouch::OrderState::Live);
-    r.clOrdId = u.clOrdId.view();
-    r.appendageLength = 0;
+    r.capacity             = static_cast<char>(ouch::Capacity::Agency);
+    r.imSweepEligibility   = u.imSweepEligibility;
+    r.crossType            = static_cast<char>(ouch::CrossType::Continuous);
+    r.orderState           = static_cast<char>(ouch::OrderState::Live);
+    r.clOrdId              = u.clOrdId.view();
+    r.appendageLength      = 0;
     sendOe(r);
 }
 
 template <class Sink>
-void Venue<Sink>::emitRejected(std::uint32_t user, ouch::RejectReason reason,
-                               std::string_view clOrdId, std::uint64_t ts) {
+void Venue<Sink>::emitRejected(std::uint32_t user, ouch::RejectReason reason, std::string_view clOrdId,
+                               std::uint64_t ts) {
     ouch::Rejected j{};
-    j.type = static_cast<char>(ouch::OutType::Rejected);
-    j.timestamp = ts;
-    j.userRefNum = user;
-    j.reason = static_cast<std::uint16_t>(reason);
-    j.clOrdId = clOrdId;
+    j.type            = static_cast<char>(ouch::OutType::Rejected);
+    j.timestamp       = ts;
+    j.userRefNum      = user;
+    j.reason          = static_cast<std::uint16_t>(reason);
+    j.clOrdId         = clOrdId;
     j.appendageLength = 0;
     sendOe(j);
 }
@@ -841,11 +830,11 @@ void Venue<Sink>::emitRejected(std::uint32_t user, ouch::RejectReason reason,
 template <class Sink>
 void Venue<Sink>::emitCancelReject(std::uint32_t user, std::uint64_t ts) {
     ouch::CancelReject i{};
-    i.type = static_cast<char>(ouch::OutType::CancelReject);
-    i.timestamp = ts;
-    i.userRefNum = user;
+    i.type            = static_cast<char>(ouch::OutType::CancelReject);
+    i.timestamp       = ts;
+    i.userRefNum      = user;
     i.appendageLength = 0;
     sendOe(i);
 }
 
-}
+}   // namespace abt
