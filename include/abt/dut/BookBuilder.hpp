@@ -23,7 +23,8 @@ class BookBuilder {
 public:
     // maxOrders sizes the order-ref map's initial capacity (it grows if exceeded). ITCH order refs
     // are >= 1, so 0 is reserved as the map's empty sentinel.
-    BookBuilder(Price minPrice, Price maxPrice, Price tickWire, std::size_t maxOrders = 1u << 12);
+    BookBuilder(Price minPrice, Price maxPrice, Price tickWire, std::size_t maxOrders = 1u << 12,
+                OrderId ownRefMin = 0);
 
     void apply(std::span<const std::byte> itchMessage);
     void clear() noexcept;
@@ -33,12 +34,14 @@ public:
     [[nodiscard]] Quantity sizeAt(Side side, Price price) const noexcept;
     [[nodiscard]] Quantity restingShares(OrderId ref) const noexcept;
     [[nodiscard]] std::size_t liveOrders() const noexcept;
+    [[nodiscard]] std::size_t ownOrders() const noexcept;
 
 private:
     struct Resting {
         Price    price;
         Quantity shares;
         Side     side;
+        bool     own;
     };
 
     void onAddOrder(const itch::AddOrder& msg);
@@ -56,6 +59,8 @@ private:
     Price       m_minPrice;
     Price       m_maxPrice;
     Price       m_tickWire;
+    OrderId     m_ownRefMin;
+    std::size_t m_own = 0;
     util::DivBy m_tickDiv;   // price-offset / tickWire without a hardware divide
     Price       m_bestBid = kNoPrice;
     Price       m_bestAsk = kNoPrice;

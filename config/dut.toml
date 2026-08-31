@@ -7,10 +7,12 @@ symbol         = "AAPL"     # must match the exchange sim's symbol
 stock_locate   = 13         # only this locate reaches the book (0 = accept every symbol)
 market_hours_only = true    # quote only between system events Q..M while trading state is 'T'
 min_price      = 0          # book band in wire prices (4-decimal dollars)
-max_price      = 10000000
+max_price      = 20000000   # $2000, same band as the sim
 tick_wire      = 100        # wire units per tick (100 = $0.01 with 4-decimal wire prices)
 first_user_ref = 1
 max_orders     = 65536      # initial order-ref map capacity (real AAPL day peaks ~30k resting)
+own_ref_min    = 4611686018427387904   # ITCH refs >= 2^62 are this DUT's own orders (sim's first_order_ref):
+                                       # tracked but excluded from the book the strategy sees (0 = off)
 
 [quoter]
 half_spread_ticks   = 1       # ticks from fair value to each quote

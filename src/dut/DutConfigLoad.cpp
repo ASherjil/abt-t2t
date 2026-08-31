@@ -30,6 +30,7 @@ DutAppConfig loadDutConfig(const std::string& path) {
     c.session.maxOrders     = t["venue"]["max_orders"].value_or(c.session.maxOrders);
     c.session.stockLocate   = t["venue"]["stock_locate"].value_or(c.session.stockLocate);
     c.session.marketHoursOnly = t["venue"]["market_hours_only"].value_or(c.session.marketHoursOnly);
+    c.session.ownRefMin     = static_cast<OrderId>(t["venue"]["own_ref_min"].value_or(std::int64_t{0}));
 
     c.quoter.tickWire         = c.session.tickWire;
     c.quoter.minPrice         = c.session.minPrice;

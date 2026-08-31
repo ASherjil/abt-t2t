@@ -54,6 +54,7 @@ struct DutConfig {
     std::string   symbol{};
     std::uint16_t stockLocate   = 0;
     bool          marketHoursOnly = false;
+    OrderId       ownRefMin     = 0;
     std::uint32_t firstUserRef  = 1;
     std::size_t   maxOrders     = 1u << 12;
     std::size_t   queueCapacity = 1u << 16;
@@ -86,6 +87,7 @@ public:
     [[nodiscard]] bool prepareTransport(Io& io, const net::Endpoints& oeEp, std::uint32_t maxTxFrame = 0)
         requires (Mode == IoMode::Transport && TxRing<Io>);
     void poll() requires (Mode == IoMode::Transport && RxRing<Io> && TxRing<Io>);
+    void sendHello() requires (Mode == IoMode::Transport && TxRing<Io>);
 
     template <TxStampSource Src>
     void pollTxCompletions(Src& src);
@@ -168,7 +170,7 @@ template <IoMode Mode, Strategy Strat, class Io>
 DutSession<Mode, Strat, Io>::DutSession(const DutConfig& cfg, Strat strat)
     : m_cfg(cfg),
       m_strat(std::move(strat)),
-      m_book(cfg.minPrice, cfg.maxPrice, cfg.tickWire, cfg.maxOrders),
+      m_book(cfg.minPrice, cfg.maxPrice, cfg.tickWire, cfg.maxOrders, cfg.ownRefMin),
       m_oms(OmsConfig{cfg.symbol, cfg.firstUserRef}),
       m_t2t("t2t_hw", cfg.queueCapacity, 1.0, cfg.sigFigs),
       m_t2tSw("t2t_sw", cfg.queueCapacity, tsc::nsPerTick(), cfg.sigFigs),
@@ -331,6 +333,21 @@ bool DutSession<Mode, Strat, Io>::prepareTransport(Io& io, const net::Endpoints&
     m_io.oeFramer.emplace(oeEp);
     m_io.ackPort = oeEp.srcPort;
     return true;
+}
+
+template <IoMode Mode, Strategy Strat, class Io>
+void DutSession<Mode, Strat, Io>::sendHello() requires (Mode == IoMode::Transport && TxRing<Io>) {
+    static constexpr std::array<std::byte, 6> kHello{std::byte{'L'}, std::byte{'H'}, std::byte{'E'},
+                                                     std::byte{'L'}, std::byte{'L'}, std::byte{'O'}};
+    const auto frameLen = static_cast<std::uint32_t>(net::kL2L3L4Overhead + kHello.size());
+    std::uint8_t* buf = m_io.io->acquire(frameLen);
+    if (buf == nullptr) {
+        return;
+    }
+    std::memcpy(buf, m_io.oeFramer->header().data(), net::kL2L3L4Overhead);
+    std::memcpy(buf + net::kL2L3L4Overhead, kHello.data(), kHello.size());
+    m_io.oeFramer->patch(reinterpret_cast<std::byte*>(buf), kHello.size());
+    m_io.io->commit();
 }
 
 template <IoMode Mode, Strategy Strat, class Io>

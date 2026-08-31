@@ -96,12 +96,18 @@ int runDut(const DutAppConfig& cfg, typename T::Type& backend, volatile std::sig
 
         RecorderThread consumer({&sess.t2t(), &sess.t2tSw(), &sess.proc()}, cfg.measure.histogramCore);
         consumer.start();
+        sess.sendHello();
+        std::uint64_t nextHello = monotonicNs() + kDutLogPeriodNs;
         std::uint64_t polls = 0;
         while (stop == 0) {
             sess.poll();
             if (++polls == kDutPollsPerClockRead) {
                 polls = 0;
                 const std::uint64_t now = monotonicNs();
+                if (sess.packetsReceived() == 0 && now >= nextHello) {
+                    sess.sendHello();
+                    nextHello = now + kDutLogPeriodNs;
+                }
                 if (now >= nextLog) {
                     logDut(sess, now - start);
                     nextLog += kDutLogPeriodNs;

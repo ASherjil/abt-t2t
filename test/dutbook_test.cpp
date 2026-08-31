@@ -100,7 +100,43 @@ void test_book() {
 
 }
 
+void test_own_orders_excluded_from_view() {
+    constexpr OrderId kOwn = 1ull << 62;
+    dut::BookBuilder b(1, 1000, 1, 64, kOwn);
+    b.apply(bytesOf(mkAdd(1u, 'B', 100u, 100)));
+    b.apply(bytesOf(mkAdd(2u, 'S', 100u, 103)));
+    b.apply(bytesOf(mkAdd(kOwn, 'B', 50u, 101)));
+    b.apply(bytesOf(mkAdd(kOwn + 1, 'S', 50u, 102)));
+    CHECK_EQ(b.bestBid(), 100);
+    CHECK_EQ(b.bestAsk(), 103);
+    CHECK_EQ(b.sizeAt(Side::Buy, 101), 0u);
+    CHECK_EQ(b.liveOrders(), 4u);
+    CHECK_EQ(b.ownOrders(), 2u);
+    CHECK_EQ(b.restingShares(kOwn), 50u);
+
+    b.apply(bytesOf(mkExec(kOwn, 20u)));
+    CHECK_EQ(b.restingShares(kOwn), 30u);
+    CHECK_EQ(b.sizeAt(Side::Buy, 101), 0u);
+    b.apply(bytesOf(mkReplace(kOwn, kOwn + 2, 30u, 99)));
+    CHECK_EQ(b.bestBid(), 100);
+    CHECK_EQ(b.sizeAt(Side::Buy, 99), 0u);
+    CHECK_EQ(b.ownOrders(), 2u);
+    b.apply(bytesOf(mkDelete(kOwn + 2)));
+    b.apply(bytesOf(mkExec(kOwn + 1, 50u)));
+    CHECK_EQ(b.ownOrders(), 0u);
+    CHECK_EQ(b.liveOrders(), 2u);
+    CHECK_EQ(b.bestBid(), 100);
+    CHECK_EQ(b.bestAsk(), 103);
+
+    b.apply(bytesOf(mkReplace(1u, 3u, 100u, 102)));
+    CHECK_EQ(b.bestBid(), 102);
+    b.clear();
+    CHECK_EQ(b.liveOrders(), 0u);
+    CHECK(b.bestBid() == kNoPrice);
+}
+
 int main() {
     test_book();
+    test_own_orders_excluded_from_view();
     return abt::test::summary("dutbook");
 }

@@ -9,7 +9,7 @@ stock_locate  = 13            # ITCH stock-locate code (AAPL is 13 in the 013020
 order_reserve = 65536         # initial live-order map capacity (real AAPL day peaks ~30k resting)
 session       = "SIM0000001"  # SoupBinTCP session id (10 chars)
 min_tick      = 1             # lowest tradable tick (sizes the book arrays)
-max_tick      = 100000        # highest tradable tick
+max_tick      = 200000        # highest tradable tick ($2000; NASDAQ carries far-away limit orders)
 wire_per_tick = 100           # tick -> wire price scale (100 = 4-decimal dollars)
 md_max_payload = 400          # max MoldUDP64 payload per packet; verbs backend posts frames inline, so
                               # keep payload + 42 B headers under the QP's inline limit (512 requested)
@@ -26,6 +26,7 @@ skip_to        = "09:25:00"   # replayed AFAP up to here (builds the book), pace
 stop_at        = ""           # end the loop at this time-of-day ("" = end of file)
 preload_max_mb = 1024         # files up to this size are held in RAM; larger ones are streamed
 max_batch      = 64           # messages sent per pump before order entry is polled again
+wait_for_dut   = true         # hold the replay until the DUT's hello arrives on order entry
 
 [flow]
 mid_tick         = 5200                 # synthetic market centre (ticks)

@@ -22,6 +22,7 @@ struct ReplayConfig {
     std::uint64_t stopAtNs     = 0;
     std::size_t   preloadMaxMb = 1024;
     std::size_t   maxBatch     = 64;
+    bool          waitForDut   = true;
 };
 
 struct ReplayProgress {

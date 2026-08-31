@@ -8,10 +8,12 @@
 
 namespace abt::dut {
 
-BookBuilder::BookBuilder(Price minPrice, Price maxPrice, Price tickWire, std::size_t maxOrders)
+BookBuilder::BookBuilder(Price minPrice, Price maxPrice, Price tickWire, std::size_t maxOrders,
+                         OrderId ownRefMin)
     : m_minPrice(minPrice),
       m_maxPrice(maxPrice),
       m_tickWire(tickWire),
+      m_ownRefMin(ownRefMin),
       m_tickDiv(static_cast<std::uint32_t>(tickWire)),
       m_bidSize(static_cast<std::size_t>((maxPrice - minPrice) / tickWire) + 1, 0),
       m_askSize(static_cast<std::size_t>((maxPrice - minPrice) / tickWire) + 1, 0),
@@ -79,6 +81,7 @@ void BookBuilder::clear() noexcept {
     std::fill(m_bidSize.begin(), m_bidSize.end(), 0u);
     std::fill(m_askSize.begin(), m_askSize.end(), 0u);
     m_orders.clear();
+    m_own = 0;
     m_bestBid = kNoPrice;
     m_bestAsk = kNoPrice;
 }
@@ -110,6 +113,10 @@ std::size_t BookBuilder::liveOrders() const noexcept {
     return m_orders.size();
 }
 
+std::size_t BookBuilder::ownOrders() const noexcept {
+    return m_own;
+}
+
 void BookBuilder::onAddOrder(const itch::AddOrder& msg) {
     const Quantity shares = msg.shares.value();
     if (shares == 0) {
@@ -118,7 +125,12 @@ void BookBuilder::onAddOrder(const itch::AddOrder& msg) {
     const OrderId ref = msg.orderRef.value();
     const Side side = (msg.side == static_cast<char>(itch::Side::Buy)) ? Side::Buy : Side::Sell;
     const Price price = static_cast<Price>(msg.price.value());
-    m_orders.insertOrAssign(ref, Resting{price, shares, side});
+    const bool own = m_ownRefMin != 0 && ref >= m_ownRefMin;
+    m_orders.insertOrAssign(ref, Resting{price, shares, side, own});
+    if (own) [[unlikely]] {
+        ++m_own;
+        return;
+    }
     addShares(side, price, shares);
 }
 
@@ -127,14 +139,22 @@ void BookBuilder::onOrderReplace(const itch::OrderReplace& msg) {
     if (!m_orders.erase(msg.origOrderRef.value(), orig)) {
         return;
     }
-    removeShares(orig.side, orig.price, orig.shares);
+    if (!orig.own) {
+        removeShares(orig.side, orig.price, orig.shares);
+    } else {
+        --m_own;
+    }
 
     const Quantity shares = msg.shares.value();
     if (shares == 0) {
         return;
     }
     const Price price = static_cast<Price>(msg.price.value());
-    m_orders.insertOrAssign(msg.newOrderRef.value(), Resting{price, shares, orig.side});
+    m_orders.insertOrAssign(msg.newOrderRef.value(), Resting{price, shares, orig.side, orig.own});
+    if (orig.own) [[unlikely]] {
+        ++m_own;
+        return;
+    }
     addShares(orig.side, price, shares);
 }
 
@@ -144,9 +164,14 @@ void BookBuilder::reduceOrder(OrderId ref, Quantity by) {
         return;
     }
     const Quantity gone = (by < o->shares) ? by : o->shares;
-    removeShares(o->side, o->price, gone);
+    if (!o->own) {
+        removeShares(o->side, o->price, gone);
+    }
     o->shares -= gone;
     if (o->shares == 0) {
+        if (o->own) {
+            --m_own;
+        }
         m_orders.erase(ref);
     }
 }
@@ -154,6 +179,10 @@ void BookBuilder::reduceOrder(OrderId ref, Quantity by) {
 void BookBuilder::removeOrder(OrderId ref) {
     Resting o{};
     if (!m_orders.erase(ref, o)) {
+        return;
+    }
+    if (o.own) {
+        --m_own;
         return;
     }
     removeShares(o.side, o.price, o.shares);

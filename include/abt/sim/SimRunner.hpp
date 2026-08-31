@@ -34,11 +34,11 @@ void logReplay(const Session& ex, const ReplayProgress& p, std::uint64_t elapsed
     const MirrorStats& m = ex.mirrorStats();
     fmt::print(stderr,
                "[sim +{:>5}s] loop={} t={} sent={} mir={} late_max={}us late>1ms={} md_pkts={} oe_pkts={} tx_drop={} "
-               "enter={} replace={} cancel={} shadow={}/{} cross={} impact={} unk={} over={} oob={} "
+               "enter={} replace={} cancel={} shadow={}/{} cross={} impact={} self={} unk={} over={} oob={} "
                "bid={} ask={} live={} clients={}\n",
                elapsedNs / 1'000'000'000ull, p.loop, replay::formatTimeOfDay(p.virtualTs), p.sent, s.mirrored,
                p.maxLateNs / 1000, p.lateOver1ms, s.mdPackets, s.oePackets, s.txDropped, s.enters, s.replaces,
-               s.cancels, m.shadowFills, m.shadowShares, m.crossFills, m.impactFills, m.unknownRef,
+               s.cancels, m.shadowFills, m.shadowShares, m.crossFills, m.impactFills, m.selfTrades, m.unknownRef,
                m.overReduce, m.outOfBand, ex.bestBid(), ex.bestAsk(), ex.liveOrders(), ex.clientOrders());
 }
 
@@ -53,6 +53,15 @@ int runReplay(Session& ex, const SimConfig& cfg, volatile std::sig_atomic_t& sto
                cfg.replay.file, rp.progress().preloaded ? "preloaded" : "streamed", rp.fileMessages(),
                cfg.replay.speed, cfg.replay.loops, replay::formatTimeOfDay(cfg.replay.skipToNs),
                replay::formatTimeOfDay(cfg.replay.stopAtNs));
+    if (cfg.replay.waitForDut && !ex.clientSeen()) {
+        fmt::print(stderr, "exchange-sim: waiting for the DUT's hello on order entry ...\n");
+        while (stop == 0 && !ex.clientSeen()) {
+            if (!ex.pollOrderEntry(0)) {
+                return 0;
+            }
+        }
+        fmt::print(stderr, "exchange-sim: DUT connected, starting replay\n");
+    }
     const std::uint64_t start = monotonicNs();
     std::uint64_t nextLog = start + kSimLogPeriodNs;
     while (stop == 0) {

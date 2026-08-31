@@ -54,6 +54,7 @@ struct SessionStats {
     std::uint64_t txDropped = 0;
     std::uint64_t forwarded = 0;
     std::uint64_t mirrored  = 0;
+    std::uint64_t hellos    = 0;
 };
 
 template <IoMode Mode, class Tx = NoTransport>
@@ -75,6 +76,7 @@ public:
     void resetDay(std::uint64_t ts);
     [[nodiscard]] const MirrorStats& mirrorStats() const noexcept;
     [[nodiscard]] std::size_t clientOrders() const noexcept;
+    [[nodiscard]] bool clientSeen() const noexcept;
 
     [[nodiscard]] Price bestBid() const noexcept;
     [[nodiscard]] Price bestAsk() const noexcept;
@@ -291,6 +293,15 @@ std::size_t ExchangeSession<Mode, Tx>::clientOrders() const noexcept {
 }
 
 template <IoMode Mode, class Tx>
+bool ExchangeSession<Mode, Tx>::clientSeen() const noexcept {
+    if constexpr (Mode == IoMode::Transport) {
+        return m_stats.hellos > 0 || m_stats.oePackets > m_stats.hellos;
+    } else {
+        return true;
+    }
+}
+
+template <IoMode Mode, class Tx>
 Price ExchangeSession<Mode, Tx>::bestBid() const noexcept { return m_venue.bestBid(); }
 template <IoMode Mode, class Tx>
 Price ExchangeSession<Mode, Tx>::bestAsk() const noexcept { return m_venue.bestAsk(); }
@@ -492,6 +503,8 @@ void ExchangeSession<Mode, Tx>::dispatchOuch(std::span<const std::byte> payload,
         std::memcpy(&u, payload.data(), sizeof u);
         ++m_stats.replaces;
         withMarketData([&] { m_venue.onReplaceOrder(u, ts); });
+    } else if (t == 'L') {
+        ++m_stats.hellos;
     } else {
         ++m_stats.unknown;
     }

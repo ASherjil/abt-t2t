@@ -38,6 +38,7 @@ SimConfig loadConfig(const std::string& path) {
     c.replay.loops        = t["replay"]["loops"].value_or(c.replay.loops);
     c.replay.preloadMaxMb = t["replay"]["preload_max_mb"].value_or(c.replay.preloadMaxMb);
     c.replay.maxBatch     = t["replay"]["max_batch"].value_or(c.replay.maxBatch);
+    c.replay.waitForDut   = t["replay"]["wait_for_dut"].value_or(c.replay.waitForDut);
     c.replay.skipToNs     = replay::parseTimeOfDay(t["replay"]["skip_to"].value_or(std::string{}));
     c.replay.stopAtNs     = replay::parseTimeOfDay(t["replay"]["stop_at"].value_or(std::string{}));
     const std::int64_t defaultFirstRef = c.replay.enabled ? (std::int64_t{1} << 62) : 1;

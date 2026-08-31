@@ -27,6 +27,7 @@ struct MirrorStats {
     std::uint64_t shadowShares = 0;
     std::uint64_t crossFills  = 0;
     std::uint64_t impactFills = 0;
+    std::uint64_t selfTrades  = 0;
 };
 
 template <class Sink>
@@ -511,6 +512,9 @@ void Venue<Sink>::handleTrade(const Trade& t, std::uint64_t ts, bool aggClient,
     }
     if (live->client) {
         emitExecuted(live->userRef, t.qty, t.price, 'A', match, ts);
+        if (aggClient) {
+            ++m_mirror.selfTrades;
+        }
     } else if (aggClient) {
         ++m_mirror.impactFills;
     }
