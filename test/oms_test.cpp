@@ -260,7 +260,34 @@ void test_ioc_dead_on_accept() {
 
 }
 
+void test_rising_quote_moves_ask_before_bid() {
+    auto oms = makeOms();
+    std::array<dut::Outbound, 2> out{};
+    (void)oms.reconcile(both(99, 101), out);
+    oms.onAck(bytesOf(accepted(1, 100)));
+    oms.onAck(bytesOf(accepted(2, 100)));
+
+    CHECK_EQ(oms.reconcile(both(101, 103), out), 2u);
+    const auto first = decode<ouch::ReplaceOrder>(out[0]);
+    const auto second = decode<ouch::ReplaceOrder>(out[1]);
+    CHECK_EQ(first.origUserRefNum.value(), 2u);
+    CHECK_EQ(first.price.value(), 103u);
+    CHECK_EQ(second.origUserRefNum.value(), 1u);
+    CHECK_EQ(second.price.value(), 101u);
+    oms.onAck(bytesOf(replaced(2, 3, 100, 103)));
+    oms.onAck(bytesOf(replaced(1, 4, 100, 101)));
+
+    CHECK_EQ(oms.reconcile(both(97, 99), out), 2u);
+    const auto b = decode<ouch::ReplaceOrder>(out[0]);
+    const auto a = decode<ouch::ReplaceOrder>(out[1]);
+    CHECK_EQ(b.origUserRefNum.value(), 4u);
+    CHECK_EQ(b.price.value(), 97u);
+    CHECK_EQ(a.origUserRefNum.value(), 3u);
+    CHECK_EQ(a.price.value(), 99u);
+}
+
 int main() {
+    test_rising_quote_moves_ask_before_bid();
     test_enter_both_sides_then_idle_while_pending();
     test_replace_on_price_move();
     test_pull_side_cancels();

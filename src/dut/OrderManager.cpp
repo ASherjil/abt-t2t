@@ -35,8 +35,15 @@ OrderManager::OrderManager(const OmsConfig& cfg)
 std::size_t OrderManager::reconcile(const QuoteTargets& t,
                                     std::span<Outbound, kMaxOutbound> out) noexcept {
     std::size_t n = 0;
-    n += reconcileSide(Side::Buy, t.quoteBid, t.bidPrice, t.bidQty, out[n]);
-    n += reconcileSide(Side::Sell, t.quoteAsk, t.askPrice, t.askQty, out[n]);
+    const QuoteSlot& ask = m_slots[idx(Side::Sell)];
+    const bool sellFirst = t.quoteBid && ask.state != QuoteState::Idle && t.bidPrice >= ask.price;
+    if (sellFirst) {
+        n += reconcileSide(Side::Sell, t.quoteAsk, t.askPrice, t.askQty, out[n]);
+        n += reconcileSide(Side::Buy, t.quoteBid, t.bidPrice, t.bidQty, out[n]);
+    } else {
+        n += reconcileSide(Side::Buy, t.quoteBid, t.bidPrice, t.bidQty, out[n]);
+        n += reconcileSide(Side::Sell, t.quoteAsk, t.askPrice, t.askQty, out[n]);
+    }
     return n;
 }
 
