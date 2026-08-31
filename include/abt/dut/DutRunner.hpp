@@ -42,9 +42,10 @@ void printDutReport(Session& sess) {
                sess.ordersSent(), s.enters, s.replaces, s.cancels, s.accepts, s.fills, s.rejects,
                s.unknown, sess.oms().account().position);
     const SequenceTracker& f = sess.feed();
-    fmt::print("[feed] packets={} next seq={} gaps={} missed={} stale={} live orders={}\n",
+    fmt::print("[feed] packets={} next seq={} gaps={} missed={} stale={} foreign msgs={} resets={} "
+               "live orders={}\n",
                sess.packetsReceived(), f.expected(), f.gaps(), f.missed(), f.stale(),
-               sess.book().liveOrders());
+               sess.foreignMessages(), sess.sessionResets(), sess.book().liveOrders());
 }
 
 template <BackendTraits T>

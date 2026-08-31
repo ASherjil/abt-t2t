@@ -26,6 +26,7 @@ public:
     BookBuilder(Price minPrice, Price maxPrice, Price tickWire, std::size_t maxOrders = 1u << 12);
 
     void apply(std::span<const std::byte> itchMessage);
+    void clear() noexcept;
 
     [[nodiscard]] Price bestBid() const noexcept;
     [[nodiscard]] Price bestAsk() const noexcept;

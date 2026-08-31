@@ -135,7 +135,7 @@ void testOrderEntryRx() {
     std::memcpy(frame.data() + net::kL2L3L4Overhead, &o, sizeof o);
     tx.inbound.push_back(frame);
 
-    ex.pollOrderEntry(2000);
+    (void)ex.pollOrderEntry(2000);
 
     CHECK_EQ(ex.bestAsk(), kNoPrice);
     CHECK_EQ(tx.frames.size(), 3u);

@@ -28,6 +28,8 @@ DutAppConfig loadDutConfig(const std::string& path) {
     c.session.tickWire      = t["venue"]["tick_wire"].value_or(c.session.tickWire);
     c.session.firstUserRef  = t["venue"]["first_user_ref"].value_or(c.session.firstUserRef);
     c.session.maxOrders     = t["venue"]["max_orders"].value_or(c.session.maxOrders);
+    c.session.stockLocate   = t["venue"]["stock_locate"].value_or(c.session.stockLocate);
+    c.session.marketHoursOnly = t["venue"]["market_hours_only"].value_or(c.session.marketHoursOnly);
 
     c.quoter.tickWire         = c.session.tickWire;
     c.quoter.minPrice         = c.session.minPrice;

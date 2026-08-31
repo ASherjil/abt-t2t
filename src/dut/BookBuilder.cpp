@@ -4,6 +4,8 @@
 
 #include "abt/dut/BookBuilder.hpp"
 
+#include <algorithm>
+
 namespace abt::dut {
 
 BookBuilder::BookBuilder(Price minPrice, Price maxPrice, Price tickWire, std::size_t maxOrders)
@@ -71,6 +73,14 @@ void BookBuilder::apply(std::span<const std::byte> itchMessage) {
             break;
         }
     }
+}
+
+void BookBuilder::clear() noexcept {
+    std::fill(m_bidSize.begin(), m_bidSize.end(), 0u);
+    std::fill(m_askSize.begin(), m_askSize.end(), 0u);
+    m_orders.clear();
+    m_bestBid = kNoPrice;
+    m_bestAsk = kNoPrice;
 }
 
 Price BookBuilder::bestBid() const noexcept {
