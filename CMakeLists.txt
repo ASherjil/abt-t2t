@@ -111,6 +111,18 @@ target_link_libraries(abt_dut
     PUBLIC abt_protocol abt_lob SPSCQueue::SPSCQueue Threads::Threads
     PRIVATE abt_flags fmt::fmt hdr_histogram_static)
 
+# ---------------------------------------------------------------------------
+# abt_replay : NASDAQ ITCH file replay (BinaryFILE format, gz-transparent via zlib).
+# ---------------------------------------------------------------------------
+find_package(ZLIB REQUIRED)
+add_library(abt_replay STATIC
+    src/replay/BookReplay.cpp
+    src/replay/ItchFile.cpp)
+add_library(abt::replay ALIAS abt_replay)
+target_link_libraries(abt_replay
+    PUBLIC abt_dut abt_lob
+    PRIVATE abt_flags ZLIB::ZLIB)
+
 add_subdirectory(apps)
 
 enable_testing()
