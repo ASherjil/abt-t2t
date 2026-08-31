@@ -1,5 +1,5 @@
 #!/bin/bash
-# Configure, build, and test abt-t2t locally (workstation-only; uses CMakePresets).
+# Configure, build, and test abt-t2t locally (workstation or rig; uses CMakePresets).
 set -euo pipefail
 
 cd "$(dirname "$0")"
@@ -21,19 +21,32 @@ case "${type_choice}" in
     *) echo "Invalid build type"; exit 1 ;;
 esac
 
+echo ""
+echo "Exchange-sim backends (one binary per backend, all from apps/exchange_sim.cpp):"
+echo "1) socket only            -> exchange_sim                                   (no NIC deps)"
+echo "2) socket + dpdk          -> exchange_sim, exchange_sim_dpdk                (libdpdk)"
+echo "3) socket + dpdk + verbs  -> exchange_sim, exchange_sim_dpdk, exchange_sim_verbs (libdpdk + rdma-core)"
+read -rp "Backend tier [1/2/3] (default 1): " backend_choice
+backend_choice="${backend_choice:-1}"
+
+case "${backend_choice}" in
+    1) backend="socket" ;;
+    2) backend="dpdk"   ;;
+    3) backend="verbs"  ;;
+    *) echo "Invalid backend tier"; exit 1 ;;
+esac
+
 build_dir="build/${preset}"
 echo ""
-echo "── ${preset} → ${build_dir} ──"
+echo "── ${preset} / ${backend} → ${build_dir} ──"
 
 if [[ "${clean_choice}" == "1" ]]; then
     echo "Cleaning ${build_dir}..."
     rm -rf "${build_dir}"
 fi
 
-if [[ ! -f "${build_dir}/build.ninja" ]]; then
-    echo "Configuring..."
-    cmake --preset="${preset}"
-fi
+echo "Configuring (ABT_SIM_BACKEND=${backend})..."
+cmake --preset="${preset}" -DABT_SIM_BACKEND="${backend}"
 
 echo "Building..."
 cmake --build --preset="${preset}" -j"$(nproc)"
@@ -43,4 +56,4 @@ echo "── Running tests ──"
 ctest --preset="${preset}"
 
 echo ""
-echo "── Done: ${preset} — all tests passed ──"
+echo "── Done: ${preset} / ${backend} — all tests passed ──"

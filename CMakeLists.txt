@@ -45,28 +45,35 @@ FetchContent_Declare(hdrhistogram
     GIT_TAG 0.11.10)
 FetchContent_MakeAvailable(hdrhistogram)
 
-# Exchange-sim backend, fixed at configure time. "socket" builds anywhere; "verbs" / "dpdk"
-# fetch the sibling ABTRDA3 repo (owns all NIC/EAL/QP init) and need rdma-core / libdpdk
-# (+ libxdp/libbpf, which ABTRDA3 always builds). apps/backends/<name>/SimBackend.hpp is
-# the only place a concrete transport type is named.
-set(ABT_SIM_BACKEND "socket" CACHE STRING "exchange_sim backend: socket | verbs | dpdk")
-set_property(CACHE ABT_SIM_BACKEND PROPERTY STRINGS socket verbs dpdk)
-if(NOT ABT_SIM_BACKEND MATCHES "^(socket|verbs|dpdk)$")
-    message(FATAL_ERROR "ABT_SIM_BACKEND must be socket, verbs or dpdk (got '${ABT_SIM_BACKEND}')")
+# Exchange-sim backend tier, fixed at configure time. One binary per backend is built from the
+# single apps/exchange_sim.cpp (apps/backends/<name>/SimBackend.hpp is the only place a concrete
+# transport type is named):
+#   socket -> exchange_sim                                   (builds anywhere)
+#   dpdk   -> + exchange_sim_dpdk                            (fetches ABTRDA3; needs libdpdk)
+#   verbs  -> + exchange_sim_dpdk + exchange_sim_verbs       (needs libdpdk + rdma-core)
+# ABTRDA3 always also builds AF_XDP (libxdp/libbpf + clang for the BPF object).
+set(ABT_SIM_BACKEND "socket" CACHE STRING "exchange_sim backend tier: socket | dpdk | verbs")
+set_property(CACHE ABT_SIM_BACKEND PROPERTY STRINGS socket dpdk verbs)
+if(NOT ABT_SIM_BACKEND MATCHES "^(socket|dpdk|verbs)$")
+    message(FATAL_ERROR "ABT_SIM_BACKEND must be socket, dpdk or verbs (got '${ABT_SIM_BACKEND}')")
+endif()
+set(ABT_SIM_BACKENDS socket)
+if(ABT_SIM_BACKEND STREQUAL "dpdk" OR ABT_SIM_BACKEND STREQUAL "verbs")
+    list(APPEND ABT_SIM_BACKENDS dpdk)
+    set(ABTRDA3_WITH_DPDK ON CACHE BOOL "" FORCE)
+endif()
+if(ABT_SIM_BACKEND STREQUAL "verbs")
+    list(APPEND ABT_SIM_BACKENDS verbs)
+    set(ABTRDA3_WITH_VERBS ON CACHE BOOL "" FORCE)
 endif()
 if(NOT ABT_SIM_BACKEND STREQUAL "socket")
     set(ABTRDA3_BUILD_TESTS OFF CACHE BOOL "" FORCE)
-    if(ABT_SIM_BACKEND STREQUAL "verbs")
-        set(ABTRDA3_WITH_VERBS ON CACHE BOOL "" FORCE)
-    elseif(ABT_SIM_BACKEND STREQUAL "dpdk")
-        set(ABTRDA3_WITH_DPDK ON CACHE BOOL "" FORCE)
-    endif()
     FetchContent_Declare(abtrda3
         GIT_REPOSITORY https://github.com/ASherjil/ABTRDA3.git
         GIT_TAG main)
     FetchContent_MakeAvailable(abtrda3)
 endif()
-message(STATUS "abt-t2t: exchange_sim backend = ${ABT_SIM_BACKEND}")
+message(STATUS "abt-t2t: exchange_sim backends = ${ABT_SIM_BACKENDS}")
 
 # ---------------------------------------------------------------------------
 # abt_protocol : header-only wire protocol library (ITCH 5.0 / OUCH 5.0).
