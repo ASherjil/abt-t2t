@@ -28,6 +28,7 @@ SimConfig loadConfig(const std::string& path) {
     c.venue.minTick     = t["venue"]["min_tick"].value_or(c.venue.minTick);
     c.venue.maxTick     = t["venue"]["max_tick"].value_or(c.venue.maxTick);
     c.venue.wirePerTick = t["venue"]["wire_per_tick"].value_or(c.venue.wirePerTick);
+    c.venue.mdMaxPayload = t["venue"]["md_max_payload"].value_or(c.venue.mdMaxPayload);
 
     c.flow.midTick    = t["flow"]["mid_tick"].value_or(c.flow.midTick);
     c.flow.halfSpread = t["flow"]["half_spread"].value_or(c.flow.halfSpread);

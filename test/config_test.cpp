@@ -23,6 +23,7 @@ session = "TST0000042"
 min_tick = 5
 max_tick = 90000
 wire_per_tick = 50
+md_max_payload = 300
 
 [flow]
 mid_tick = 4200
@@ -77,6 +78,7 @@ void test_load() {
     CHECK_EQ(c.venue.minTick, 5);
     CHECK_EQ(c.venue.maxTick, 90000);
     CHECK_EQ(c.venue.wirePerTick, 50u);
+    CHECK_EQ(c.venue.mdMaxPayload, 300u);
 
     CHECK_EQ(c.flow.midTick, 4200);
     CHECK_EQ(c.flow.cancelPct, 40u);

@@ -10,6 +10,8 @@ session       = "SIM0000001"  # SoupBinTCP session id (10 chars)
 min_tick      = 1             # lowest tradable tick (sizes the book arrays)
 max_tick      = 100000        # highest tradable tick
 wire_per_tick = 100           # tick -> wire price scale (100 = 4-decimal dollars)
+md_max_payload = 400          # max MoldUDP64 payload per packet; verbs backend posts frames inline, so
+                              # keep payload + 42 B headers under the QP's inline limit (512 requested)
 
 [flow]
 mid_tick         = 5200                 # synthetic market centre (ticks)

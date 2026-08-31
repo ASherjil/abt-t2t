@@ -46,16 +46,32 @@ dut_log="${out}/dut.log"
 
 sim_pid=""
 dut_pid=""
+grace=5
+
+stop_one() {
+    local pid="$1" name="$2"
+    if [[ -z "${pid}" ]] || ! kill -0 "${pid}" 2>/dev/null; then
+        return
+    fi
+    for sig in INT TERM KILL; do
+        kill -"${sig}" "${pid}" 2>/dev/null || true
+        for _ in $(seq 1 $((grace * 10))); do
+            if ! kill -0 "${pid}" 2>/dev/null; then
+                wait "${pid}" 2>/dev/null || true
+                if [[ "${sig}" != "INT" ]]; then
+                    echo "${name}: did not stop on SIGINT, needed SIG${sig} (backend hung?)"
+                fi
+                return
+            fi
+            sleep 0.1
+        done
+    done
+}
+
 stop_all() {
     trap - INT TERM
-    if [[ -n "${dut_pid}" ]] && kill -0 "${dut_pid}" 2>/dev/null; then
-        kill -INT "${dut_pid}" 2>/dev/null || true
-        wait "${dut_pid}" 2>/dev/null || true
-    fi
-    if [[ -n "${sim_pid}" ]] && kill -0 "${sim_pid}" 2>/dev/null; then
-        kill -INT "${sim_pid}" 2>/dev/null || true
-        wait "${sim_pid}" 2>/dev/null || true
-    fi
+    stop_one "${dut_pid}" dut
+    stop_one "${sim_pid}" exchange_sim
 }
 trap 'echo "interrupted — stopping"; stop_all; exit 130' INT TERM
 

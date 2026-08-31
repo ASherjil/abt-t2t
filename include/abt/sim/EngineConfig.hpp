@@ -3,6 +3,7 @@
 // Standalone value configs for the matching venue and the synthetic flow generator.
 //
 
+#include <cstddef>
 #include <cstdint>
 #include <string>
 
@@ -17,6 +18,7 @@ struct ExchangeConfig {
     Price         minTick     = 1;
     Price         maxTick     = 100000;
     std::uint32_t wirePerTick = 100;
+    std::size_t   mdMaxPayload = 1400;
 };
 
 struct FlowConfig {

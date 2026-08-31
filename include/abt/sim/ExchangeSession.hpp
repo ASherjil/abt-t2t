@@ -123,6 +123,7 @@ private:
     template <class Fn> void withMarketData(Fn&& fn);
     void appendMarketData(std::span<const std::byte> itch);
     void flushMarketData();
+    [[nodiscard]] std::size_t mdCapacity() const noexcept;
     void sendOrderEntry(std::span<const std::byte> ouch);
 
     [[noreturn]] static void die(const char* what);
@@ -391,15 +392,24 @@ void ExchangeSession<Mode, Tx>::withMarketData(Fn&& fn) {
 template <IoMode Mode, class Tx>
 void ExchangeSession<Mode, Tx>::appendMarketData(std::span<const std::byte> itch) {
     if (!m_mdOpen) {
-        m_packer.reset(m_mdBuf.data(), m_mdBuf.size());
+        m_packer.reset(m_mdBuf.data(), mdCapacity());
         m_mdOpen = true;
     }
     if (!m_packer.append(itch)) {
         flushMarketData();
-        m_packer.reset(m_mdBuf.data(), m_mdBuf.size());
+        m_packer.reset(m_mdBuf.data(), mdCapacity());
         m_mdOpen = true;
         (void)m_packer.append(itch);
     }
+}
+
+template <IoMode Mode, class Tx>
+std::size_t ExchangeSession<Mode, Tx>::mdCapacity() const noexcept {
+    const std::size_t cap = m_cfg.mdMaxPayload;
+    if (cap < mold::kHeaderSize + 64 || cap > m_mdBuf.size()) {
+        return m_mdBuf.size();
+    }
+    return cap;
 }
 
 template <IoMode Mode, class Tx>
