@@ -228,7 +228,87 @@ void test_sequence_gap_and_stale() {
 
 }
 
+itch::AddOrder mkAddAt(std::uint16_t locate, OrderId ref, char side, Quantity shares, Price price) {
+    itch::AddOrder a = mkAdd(ref, side, shares, price);
+    a.stockLocate = locate;
+    return a;
+}
+
+itch::SystemEvent mkSys(char code) {
+    itch::SystemEvent s{};
+    s.messageType = 'S';
+    s.eventCode = code;
+    return s;
+}
+
+itch::StockTradingAction mkHalt(std::uint16_t locate, char state) {
+    itch::StockTradingAction h{};
+    h.messageType = 'H';
+    h.stockLocate = locate;
+    h.tradingState = state;
+    return h;
+}
+
+void test_locate_filter_session_gating_and_reset() {
+    mold::Packer packer("SESSION01", 1);
+    std::array<std::byte, 2048> buf{};
+    dut::DutConfig cfg = baseCfg();
+    cfg.stockLocate = 13;
+    cfg.marketHoursOnly = true;
+    dut::DutSession<dut::IoMode::Loopback, JoinBid> sess(cfg, JoinBid{10u});
+
+    packer.reset(buf.data(), buf.size());
+    (void)packer.append(bytesOf(mkSys('O')));
+    (void)packer.append(bytesOf(mkAddAt(7, 1u, 'B', 500u, 900)));
+    (void)packer.append(bytesOf(mkAddAt(13, 2u, 'B', 500u, 100)));
+    sess.onMarketData(packer.finalize(), 1u);
+    CHECK_EQ(sess.book().bestBid(), 100);
+    CHECK_EQ(sess.foreignMessages(), 1u);
+    CHECK_EQ(sess.sessionResets(), 1u);
+    CHECK(!sess.tradingAllowed());
+    CHECK_EQ(sess.ordersSent(), 0u);
+
+    packer.reset(buf.data(), buf.size());
+    (void)packer.append(bytesOf(mkSys('Q')));
+    (void)packer.append(bytesOf(mkAddAt(13, 3u, 'S', 100u, 102)));
+    sess.onMarketData(packer.finalize(), 2u);
+    CHECK(sess.tradingAllowed());
+    CHECK_EQ(sess.ordersSent(), 1u);
+    sess.onAck(bytesOf(accepted(7u, 10u)));
+
+    packer.reset(buf.data(), buf.size());
+    (void)packer.append(bytesOf(mkHalt(13, 'H')));
+    sess.onMarketData(packer.finalize(), 3u);
+    CHECK(!sess.tradingAllowed());
+    CHECK_EQ(sess.ordersSent(), 2u);
+    ouch::CancelOrder x{};
+    std::memcpy(&x, sess.capturedOrders()[1].data(), sizeof x);
+    CHECK_EQ(x.type, static_cast<char>(ouch::InType::CancelOrder));
+
+    packer.reset(buf.data(), buf.size());
+    (void)packer.append(bytesOf(mkHalt(7, 'T')));
+    sess.onMarketData(packer.finalize(), 4u);
+    CHECK(!sess.tradingAllowed());
+    packer.reset(buf.data(), buf.size());
+    (void)packer.append(bytesOf(mkHalt(13, 'T')));
+    sess.onMarketData(packer.finalize(), 5u);
+    CHECK(sess.tradingAllowed());
+
+    packer.reset(buf.data(), buf.size());
+    (void)packer.append(bytesOf(mkSys('M')));
+    sess.onMarketData(packer.finalize(), 6u);
+    CHECK(!sess.tradingAllowed());
+
+    packer.reset(buf.data(), buf.size());
+    (void)packer.append(bytesOf(mkSys('O')));
+    sess.onMarketData(packer.finalize(), 7u);
+    CHECK(sess.book().bestBid() == kNoPrice);
+    CHECK_EQ(sess.book().liveOrders(), 0u);
+    CHECK_EQ(sess.sessionResets(), 2u);
+}
+
 int main() {
+    test_locate_filter_session_gating_and_reset();
     test_quote_lifecycle_through_session();
     test_take_and_t2t();
     test_sequence_gap_and_stale();

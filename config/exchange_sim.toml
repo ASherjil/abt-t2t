@@ -5,13 +5,27 @@
 
 [venue]
 symbol        = "AAPL"        # ITCH stock symbol (<= 8 chars)
-stock_locate  = 1             # ITCH stock-locate code
+stock_locate  = 13            # ITCH stock-locate code (AAPL is 13 in the 01302020 NASDAQ file)
+order_reserve = 65536         # initial live-order map capacity (real AAPL day peaks ~30k resting)
 session       = "SIM0000001"  # SoupBinTCP session id (10 chars)
 min_tick      = 1             # lowest tradable tick (sizes the book arrays)
 max_tick      = 100000        # highest tradable tick
 wire_per_tick = 100           # tick -> wire price scale (100 = 4-decimal dollars)
 md_max_payload = 400          # max MoldUDP64 payload per packet; verbs backend posts frames inline, so
                               # keep payload + 42 B headers under the QP's inline limit (512 requested)
+
+# Real-data replay (replaces the synthetic [flow] generator when enabled). Every message in the
+# file is forwarded to the DUT byte-for-byte; the venue mirrors the configured symbol's book so the
+# DUT's orders trade against real liquidity (fills are shadowed on top of the recorded history).
+[replay]
+enabled        = true
+file           = "data/itch/01302020.AAPL.itch"   # itch_replay --extract output (see data/README.md)
+speed          = 1.0          # 1.0 = real time-of-day pacing, 10.0 = 10x faster, 0 = as fast as possible
+loops          = 0            # replays of the file before exiting (0 = until stopped)
+skip_to        = "09:25:00"   # replayed AFAP up to here (builds the book), paced from here on ("" = none)
+stop_at        = ""           # end the loop at this time-of-day ("" = end of file)
+preload_max_mb = 1024         # files up to this size are held in RAM; larger ones are streamed
+max_batch      = 64           # messages sent per pump before order entry is polled again
 
 [flow]
 mid_tick         = 5200                 # synthetic market centre (ticks)
