@@ -29,6 +29,10 @@ public:
     [[nodiscard]] Quantity volumeAt(Side s, Price p) const noexcept;
     [[nodiscard]] const Order& order(Handle h) const noexcept;
     [[nodiscard]] bool empty() const noexcept;
+    [[nodiscard]] Price minPrice() const noexcept;
+    [[nodiscard]] Price maxPrice() const noexcept;
+    template <class Fn>
+    void forEachOrderAtLevel(Side s, Price p, Fn&& fn) const;
 
 private:
     struct Level {
@@ -148,6 +152,21 @@ inline Quantity OrderBook::volumeAt(Side s, Price p) const noexcept {
 inline const Order& OrderBook::order(Handle h) const noexcept { return m_pool[h]; }
 inline bool OrderBook::empty() const noexcept {
     return m_bestBid == kNoPrice && m_bestAsk == kNoPrice;
+}
+inline Price OrderBook::minPrice() const noexcept { return m_minPrice; }
+inline Price OrderBook::maxPrice() const noexcept { return m_maxPrice; }
+
+template <class Fn>
+void OrderBook::forEachOrderAtLevel(Side s, Price p, Fn&& fn) const {
+    if (p < m_minPrice || p > m_maxPrice) {
+        return;
+    }
+    const Level& lvl = (s == Side::Buy ? m_bidLevels : m_askLevels)[index(p)];
+    for (Handle h = lvl.head; h != kNilHandle; h = m_pool[h].next) {
+        if (!fn(m_pool[h])) {
+            return;
+        }
+    }
 }
 
 inline std::size_t OrderBook::levelCount() const noexcept {

@@ -30,6 +30,7 @@ public:
     [[nodiscard]] Price bestBid() const noexcept;
     [[nodiscard]] Price bestAsk() const noexcept;
     [[nodiscard]] Quantity sizeAt(Side side, Price price) const noexcept;
+    [[nodiscard]] Quantity restingShares(OrderId ref) const noexcept;
     [[nodiscard]] std::size_t liveOrders() const noexcept;
 
 private:

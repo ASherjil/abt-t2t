@@ -91,6 +91,11 @@ Quantity BookBuilder::sizeAt(Side side, Price price) const noexcept {
     return m_askSize[index(price)];
 }
 
+Quantity BookBuilder::restingShares(OrderId ref) const noexcept {
+    const Resting* o = m_orders.find(ref);
+    return o == nullptr ? 0 : o->shares;
+}
+
 std::size_t BookBuilder::liveOrders() const noexcept {
     return m_orders.size();
 }
