@@ -20,6 +20,7 @@
 #include "abt/protocol/EthIpUdp.hpp"
 #include "abt/protocol/MoldUdp64.hpp"
 #include "abt/protocol/Ouch50.hpp"
+#include "abt/protocol/SoupBinTcp.hpp"
 #include "abt/sim/ExchangeSession.hpp"
 
 using namespace abt;
@@ -108,6 +109,31 @@ void testMarketDataFrame() {
     CHECK_EQ(msgType, 'A');
 }
 
+void testLoginHandshake() {
+    ExchangeSession<IoMode::Transport, MockTx> ex{};
+    MockTx tx;
+    ex.prepareTransport(tx, makeEndpoints(40000, 41000), makeEndpoints(40001, 41001));
+    CHECK(!ex.clientSeen());
+
+    std::array<std::byte, 64> soupBuf{};
+    const auto login = soup::packLoginRequest(soupBuf.data(), "DUT001", "SIM0000001");
+    std::vector<std::uint8_t> frame(net::kL2L3L4Overhead + login.size(), 0);
+    std::memcpy(frame.data() + net::kL2L3L4Overhead, login.data(), login.size());
+    tx.inbound.push_back(frame);
+
+    (void)ex.pollOrderEntry(1000);
+
+    CHECK_EQ(ex.stats().logins, 1u);
+    CHECK(ex.clientSeen());
+    CHECK_EQ(tx.frames.size(), 1u);
+    const auto& fv = tx.frames[0];
+    std::span<const std::byte> fr{reinterpret_cast<const std::byte*>(fv.data()), fv.size()};
+    CHECK_EQ(mold::getU16(fr.data() + 36), 41001u);
+    soup::Packet sp{};
+    CHECK(soup::parse(fr.subspan(net::kL2L3L4Overhead), sp) != 0);
+    CHECK(sp.type == soup::Type::LoginAccepted);
+}
+
 void testOrderEntryRx() {
     ExchangeSession<IoMode::Transport, MockTx> ex{};
     MockTx tx;
@@ -165,6 +191,7 @@ void testOrderEntryRx() {
 
 int main() {
     testMarketDataFrame();
+    testLoginHandshake();
     testOrderEntryRx();
     return abt::test::summary("transport");
 }

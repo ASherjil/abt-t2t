@@ -110,6 +110,17 @@ inline std::span<const std::byte> packLoginAccepted(std::byte* buf, std::string_
     formatSeq(a.sequenceNumber, nextSeq);
     return pack(buf, Type::LoginAccepted, asBytes(a));
 }
+inline std::span<const std::byte> packLoginRequest(std::byte* buf, std::string_view username,
+                                                   std::string_view session) noexcept {
+    LoginRequest r{};
+    r.username = username;
+    r.password = std::string_view{};
+    r.requestedSession = session;
+    r.requestedSequenceNumber = std::string_view{"1"};
+    return pack(buf, Type::LoginRequest,
+                {reinterpret_cast<const std::byte*>(&r), sizeof r});
+}
+
 inline std::span<const std::byte> packLoginRejected(std::byte* buf, RejectReason r) noexcept {
     LoginRejected j{static_cast<char>(r)};
     return pack(buf, Type::LoginRejected, asBytes(j));

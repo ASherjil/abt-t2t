@@ -87,7 +87,9 @@ public:
     [[nodiscard]] bool prepareTransport(Io& io, const net::Endpoints& oeEp, std::uint32_t maxTxFrame = 0)
         requires (Mode == IoMode::Transport && TxRing<Io>);
     void poll() requires (Mode == IoMode::Transport && RxRing<Io> && TxRing<Io>);
-    void sendHello() requires (Mode == IoMode::Transport && TxRing<Io>);
+    void sendLogin(std::string_view session, std::string_view user)
+        requires (Mode == IoMode::Transport && TxRing<Io>);
+    [[nodiscard]] bool sessionEstablished() const noexcept requires (Mode == IoMode::Transport);
 
     template <TxStampSource Src>
     void pollTxCompletions(Src& src);
@@ -125,6 +127,7 @@ private:
         Io*                           io = nullptr;
         std::optional<net::UdpFramer> oeFramer;
         std::uint16_t                 ackPort = 0;
+        bool                          loggedIn = false;
     };
     struct SocketState {
         int                        mdFd = -1;
@@ -336,18 +339,25 @@ bool DutSession<Mode, Strat, Io>::prepareTransport(Io& io, const net::Endpoints&
 }
 
 template <IoMode Mode, Strategy Strat, class Io>
-void DutSession<Mode, Strat, Io>::sendHello() requires (Mode == IoMode::Transport && TxRing<Io>) {
-    static constexpr std::array<std::byte, 6> kHello{std::byte{'L'}, std::byte{'H'}, std::byte{'E'},
-                                                     std::byte{'L'}, std::byte{'L'}, std::byte{'O'}};
-    const auto frameLen = static_cast<std::uint32_t>(net::kL2L3L4Overhead + kHello.size());
+void DutSession<Mode, Strat, Io>::sendLogin(std::string_view session, std::string_view user)
+    requires (Mode == IoMode::Transport && TxRing<Io>) {
+    std::array<std::byte, 64> soupBuf{};
+    const auto pkt = soup::packLoginRequest(soupBuf.data(), user, session);
+    const auto frameLen = static_cast<std::uint32_t>(net::kL2L3L4Overhead + pkt.size());
     std::uint8_t* buf = m_io.io->acquire(frameLen);
     if (buf == nullptr) {
         return;
     }
     std::memcpy(buf, m_io.oeFramer->header().data(), net::kL2L3L4Overhead);
-    std::memcpy(buf + net::kL2L3L4Overhead, kHello.data(), kHello.size());
-    m_io.oeFramer->patch(reinterpret_cast<std::byte*>(buf), kHello.size());
+    std::memcpy(buf + net::kL2L3L4Overhead, pkt.data(), pkt.size());
+    m_io.oeFramer->patch(reinterpret_cast<std::byte*>(buf), pkt.size());
     m_io.io->commit();
+}
+
+template <IoMode Mode, Strategy Strat, class Io>
+bool DutSession<Mode, Strat, Io>::sessionEstablished() const noexcept
+    requires (Mode == IoMode::Transport) {
+    return m_io.loggedIn;
 }
 
 template <IoMode Mode, Strategy Strat, class Io>
@@ -366,7 +376,14 @@ void DutSession<Mode, Strat, Io>::poll()
             const std::span<const std::byte> payload{p + net::kL2L3L4Overhead,
                                                      raw.size() - net::kL2L3L4Overhead};
             if (udpDstPort(frame) == m_io.ackPort) {
-                m_oms.onAck(payload);
+                if (payload[0] == std::byte{0}) [[unlikely]] {
+                    soup::Packet sp{};
+                    if (soup::parse(payload, sp) != 0 && sp.type == soup::Type::LoginAccepted) {
+                        m_io.loggedIn = true;
+                    }
+                } else {
+                    m_oms.onAck(payload);
+                }
             } else {
                 const std::uint64_t rxHwts =
                     static_cast<std::uint64_t>(f.sec) * 1'000'000'000ull + f.nsec;

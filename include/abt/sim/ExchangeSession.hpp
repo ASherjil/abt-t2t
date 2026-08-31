@@ -54,7 +54,7 @@ struct SessionStats {
     std::uint64_t txDropped = 0;
     std::uint64_t forwarded = 0;
     std::uint64_t mirrored  = 0;
-    std::uint64_t hellos    = 0;
+    std::uint64_t logins    = 0;
 };
 
 template <IoMode Mode, class Tx = NoTransport>
@@ -295,7 +295,7 @@ std::size_t ExchangeSession<Mode, Tx>::clientOrders() const noexcept {
 template <IoMode Mode, class Tx>
 bool ExchangeSession<Mode, Tx>::clientSeen() const noexcept {
     if constexpr (Mode == IoMode::Transport) {
-        return m_stats.hellos > 0 || m_stats.oePackets > m_stats.hellos;
+        return m_stats.logins > 0;
     } else {
         return true;
     }
@@ -385,7 +385,18 @@ bool ExchangeSession<Mode, Tx>::pollOrderEntry(std::uint64_t ts)
         const auto raw = f.data;
         if (raw.size() > net::kL2L3L4Overhead) {
             const auto* p = reinterpret_cast<const std::byte*>(raw.data());
-            dispatchOuch({p + net::kL2L3L4Overhead, raw.size() - net::kL2L3L4Overhead}, ts);
+            const std::span<const std::byte> payload{p + net::kL2L3L4Overhead,
+                                                     raw.size() - net::kL2L3L4Overhead};
+            if (payload[0] == std::byte{0}) [[unlikely]] {
+                soup::Packet sp{};
+                if (soup::parse(payload, sp) != 0 && sp.type == soup::Type::LoginRequest) {
+                    ++m_stats.logins;
+                    const auto ack = soup::packLoginAccepted(m_oeBuf.data(), m_cfg.session, m_outSeq);
+                    sendFrame(*m_io.oeFramer, ack);
+                }
+            } else {
+                dispatchOuch(payload, ts);
+            }
         }
         m_io.tx->release();
     }
@@ -503,8 +514,6 @@ void ExchangeSession<Mode, Tx>::dispatchOuch(std::span<const std::byte> payload,
         std::memcpy(&u, payload.data(), sizeof u);
         ++m_stats.replaces;
         withMarketData([&] { m_venue.onReplaceOrder(u, ts); });
-    } else if (t == 'L') {
-        ++m_stats.hellos;
     } else {
         ++m_stats.unknown;
     }

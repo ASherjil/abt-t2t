@@ -13,7 +13,9 @@
 #include "abt/dut/TxStamp.hpp"
 #include "abt/protocol/Itch50.hpp"
 #include "abt/protocol/MoldUdp64.hpp"
+#include "abt/protocol/EthIpUdp.hpp"
 #include "abt/protocol/Ouch50.hpp"
+#include "abt/protocol/SoupBinTcp.hpp"
 
 using namespace abt;
 
@@ -307,8 +309,71 @@ void test_locate_filter_session_gating_and_reset() {
     CHECK_EQ(sess.sessionResets(), 2u);
 }
 
+struct MockIo {
+    std::vector<std::uint8_t>              tmpl;
+    std::vector<std::uint8_t>              scratch;
+    std::vector<std::vector<std::uint8_t>> frames;
+
+    void prefillRing(std::span<const std::uint8_t> t) noexcept { tmpl.assign(t.begin(), t.end()); }
+    std::uint8_t* acquire(std::uint32_t n) noexcept {
+        scratch.assign(n, 0);
+        return scratch.data();
+    }
+    void commit() noexcept { frames.emplace_back(scratch); }
+    bool send(std::span<const std::uint8_t> frame) noexcept {
+        frames.emplace_back(frame.begin(), frame.end());
+        return true;
+    }
+
+    std::vector<std::vector<std::uint8_t>> inbound;
+    std::vector<std::uint8_t>              rxCur;
+    std::size_t                            rxIdx = 0;
+    RxFrame tryReceive() noexcept {
+        if (rxIdx >= inbound.size()) {
+            return RxFrame{{}, 0, 0, 0};
+        }
+        rxCur = inbound[rxIdx];
+        return RxFrame{{rxCur.data(), rxCur.size()}, 0, 0, 1};
+    }
+    void release() noexcept { ++rxIdx; }
+};
+
+void test_transport_login_roundtrip() {
+    dut::DutSession<dut::IoMode::Transport, JoinBid, MockIo> sess(baseCfg(), JoinBid{10u});
+    MockIo io;
+    net::Endpoints oeEp{};
+    oeEp.srcPort = 41001;
+    oeEp.dstPort = 40001;
+    CHECK(sess.prepareTransport(io, oeEp));
+    CHECK(!sess.sessionEstablished());
+
+    sess.sendLogin("SIM0000001", "DUT001");
+    CHECK_EQ(io.frames.size(), 1u);
+    std::span<const std::byte> fr{reinterpret_cast<const std::byte*>(io.frames[0].data()),
+                                  io.frames[0].size()};
+    soup::Packet sp{};
+    CHECK(soup::parse(fr.subspan(net::kL2L3L4Overhead), sp) != 0);
+    CHECK(sp.type == soup::Type::LoginRequest);
+    soup::LoginRequest lr{};
+    std::memcpy(&lr, sp.payload.data(), sizeof lr);
+    CHECK(lr.username.view() == std::string_view{"DUT001"});
+    CHECK(lr.requestedSession.view() == std::string_view{"SIM0000001"});
+
+    std::array<std::byte, 64> soupBuf{};
+    const auto ack = soup::packLoginAccepted(soupBuf.data(), "SIM0000001", 1);
+    std::vector<std::uint8_t> frame(net::kL2L3L4Overhead + ack.size(), 0);
+    frame[36] = static_cast<std::uint8_t>(41001u >> 8);
+    frame[37] = static_cast<std::uint8_t>(41001u & 0xff);
+    std::memcpy(frame.data() + net::kL2L3L4Overhead, ack.data(), ack.size());
+    io.inbound.push_back(frame);
+    sess.poll();
+    CHECK(sess.sessionEstablished());
+    CHECK_EQ(sess.packetsReceived(), 0u);
+}
+
 int main() {
     test_locate_filter_session_gating_and_reset();
+    test_transport_login_roundtrip();
     test_quote_lifecycle_through_session();
     test_take_and_t2t();
     test_sequence_gap_and_stale();
