@@ -54,13 +54,13 @@ int runReplay(Session& ex, const SimConfig& cfg, volatile std::sig_atomic_t& sto
                cfg.replay.speed, cfg.replay.loops, replay::formatTimeOfDay(cfg.replay.skipToNs),
                replay::formatTimeOfDay(cfg.replay.stopAtNs));
     if (cfg.replay.waitForDut && !ex.clientSeen()) {
-        fmt::print(stderr, "exchange-sim: waiting for the DUT's hello on order entry ...\n");
+        fmt::print(stderr, "exchange-sim: waiting for the DUT to log in on order entry ...\n");
         while (stop == 0 && !ex.clientSeen()) {
             if (!ex.pollOrderEntry(0)) {
                 return 0;
             }
         }
-        fmt::print(stderr, "exchange-sim: DUT connected, starting replay\n");
+        fmt::print(stderr, "exchange-sim: DUT session logged in, starting replay\n");
     }
     const std::uint64_t start = monotonicNs();
     std::uint64_t nextLog = start + kSimLogPeriodNs;
