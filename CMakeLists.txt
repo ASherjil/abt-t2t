@@ -78,9 +78,13 @@ endif()
 if(NOT ABT_SIM_BACKEND STREQUAL "socket")
     set(ABTRDA3_BUILD_TESTS OFF CACHE BOOL "" FORCE)
     # Override with -DFETCHCONTENT_SOURCE_DIR_ABTRDA3=<local checkout> to build against a working copy.
+    # PATCH_COMMAND: ABTRDA3's backends/CMakeLists.txt locates its cmake/ helpers via CMAKE_SOURCE_DIR,
+    # which is abt-t2t when fetched as a subproject; rewrite to PROJECT_SOURCE_DIR (no-op once upstream
+    # carries the fix).
     FetchContent_Declare(abtrda3
         GIT_REPOSITORY https://github.com/ASherjil/ABTRDA3.git
-        GIT_TAG master)
+        GIT_TAG master
+        PATCH_COMMAND sed -i "s|\\\${CMAKE_SOURCE_DIR}|\\\${PROJECT_SOURCE_DIR}|g" src/backends/CMakeLists.txt)
     FetchContent_MakeAvailable(abtrda3)
     get_target_property(_abtrda3_inc abtrda3 INTERFACE_INCLUDE_DIRECTORIES)
     set_target_properties(abtrda3 PROPERTIES INTERFACE_SYSTEM_INCLUDE_DIRECTORIES "${_abtrda3_inc}")
