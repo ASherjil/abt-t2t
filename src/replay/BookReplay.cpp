@@ -74,6 +74,9 @@ void BookReplay::onMessage(std::span<const std::byte> msg) {
         }
         return;
     }
+    if (type == 'R') {
+        return;
+    }
 
     ++m_stats.messages;
     if (m_stats.messages == 1) {

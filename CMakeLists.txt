@@ -157,7 +157,8 @@ target_link_libraries(abt_dut
 find_package(ZLIB REQUIRED)
 add_library(abt_replay STATIC
     src/replay/BookReplay.cpp
-    src/replay/ItchFile.cpp)
+    src/replay/ItchFile.cpp
+    src/replay/SymbolFilter.cpp)
 add_library(abt::replay ALIAS abt_replay)
 target_link_libraries(abt_replay
     PUBLIC abt_dut abt_lob

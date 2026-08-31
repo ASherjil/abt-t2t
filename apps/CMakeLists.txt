@@ -28,3 +28,6 @@ endfunction()
 foreach(backend IN LISTS ABT_BACKENDS)
     abt_add_backend_apps(${backend})
 endforeach()
+
+add_executable(itch_replay itch_replay.cpp)
+target_link_libraries(itch_replay PRIVATE abt::replay abt::flags fmt::fmt)
