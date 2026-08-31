@@ -81,7 +81,11 @@ int runDut(const DutAppConfig& cfg, typename T::Type& backend, volatile std::sig
         }
         DutSession<IoMode::Transport, QuoterStrategy, typename T::Type> sess(
             cfg.session, QuoterStrategy(cfg.quoter));
-        sess.prepareTransport(backend, cfg.transport.orderEntry);
+        if (!sess.prepareTransport(backend, cfg.transport.orderEntry, T::kMaxTxFrame)) {
+            fmt::print(stderr, "dut: backend max TX frame {} B is smaller than an OUCH order frame\n",
+                       T::kMaxTxFrame);
+            return 1;
+        }
         fmt::print(stderr, "dut: {} on {} (core {}), md udp/{} <- {}, oe udp/{} -> {}\n", T::kName,
                    cfg.transport.interface, cfg.transport.cpuCore,
                    cfg.transport.marketData.srcPort, cfg.transport.marketData.dstPort,

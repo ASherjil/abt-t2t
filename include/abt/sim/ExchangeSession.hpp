@@ -51,6 +51,7 @@ struct SessionStats {
     std::uint64_t cancels   = 0;
     std::uint64_t replaces  = 0;
     std::uint64_t unknown   = 0;
+    std::uint64_t txDropped = 0;
 };
 
 template <IoMode Mode, class Tx = NoTransport>
@@ -77,7 +78,8 @@ public:
     [[nodiscard]] bool prepareSocketIo(std::uint16_t oePort, const char* mdHost, std::uint16_t mdPort)
         requires (Mode == IoMode::Socket);
     void attachSockets(int oeFd, int mdFd) requires (Mode == IoMode::Socket);
-    void prepareTransport(Tx& tx, const net::Endpoints& mdEp, const net::Endpoints& oeEp)
+    void prepareTransport(Tx& tx, const net::Endpoints& mdEp, const net::Endpoints& oeEp,
+                          std::uint32_t maxTxFrame = 0)
         requires (Mode == IoMode::Transport && TxRing<Tx>);
     template <class TickFn>
     void run(volatile std::sig_atomic_t& stop, std::uint64_t tickIntervalNs, TickFn&& onTick)
@@ -113,6 +115,8 @@ private:
         Tx*                           tx = nullptr;
         std::optional<net::UdpFramer> mdFramer;
         std::optional<net::UdpFramer> oeFramer;
+        std::uint32_t                 maxTxFrame = 0;
+        std::array<std::uint8_t, 2048> frame{};
     };
 
     void marketDataOut(std::span<const std::byte> b);
@@ -228,11 +232,12 @@ void ExchangeSession<Mode, Tx>::attachSockets(int oeFd, int mdFd)
 
 template <IoMode Mode, class Tx>
 void ExchangeSession<Mode, Tx>::prepareTransport(Tx& tx, const net::Endpoints& mdEp,
-                                            const net::Endpoints& oeEp)
+                                            const net::Endpoints& oeEp, std::uint32_t maxTxFrame)
     requires (Mode == IoMode::Transport && TxRing<Tx>) {
     m_io.tx = &tx;
     m_io.mdFramer.emplace(mdEp);
     m_io.oeFramer.emplace(oeEp);
+    m_io.maxTxFrame = maxTxFrame;
 }
 
 template <IoMode Mode, class Tx>
@@ -302,13 +307,18 @@ void ExchangeSession<Mode, Tx>::clearCaptured() requires (Mode == IoMode::Loopba
 template <IoMode Mode, class Tx>
 void ExchangeSession<Mode, Tx>::sendFrame(const net::UdpFramer& fr,
                                          std::span<const std::byte> payload) {
-    const auto frameLen = static_cast<std::uint32_t>(net::kL2L3L4Overhead + payload.size());
-    std::uint8_t* buf = m_io.tx->acquire(frameLen);
-    if (buf == nullptr) [[unlikely]] return;
+    const std::size_t frameLen = net::kL2L3L4Overhead + payload.size();
+    if (frameLen > m_io.frame.size() || (m_io.maxTxFrame != 0 && frameLen > m_io.maxTxFrame)) [[unlikely]] {
+        ++m_stats.txDropped;
+        return;
+    }
+    std::uint8_t* buf = m_io.frame.data();
     std::memcpy(buf, fr.header().data(), net::kL2L3L4Overhead);
     std::memcpy(buf + net::kL2L3L4Overhead, payload.data(), payload.size());
     fr.patch(reinterpret_cast<std::byte*>(buf), payload.size());
-    m_io.tx->commit();
+    if (!m_io.tx->send(std::span<const std::uint8_t>{buf, frameLen})) [[unlikely]] {
+        ++m_stats.txDropped;
+    }
 }
 
 template <IoMode Mode, class Tx>
@@ -405,7 +415,15 @@ void ExchangeSession<Mode, Tx>::appendMarketData(std::span<const std::byte> itch
 
 template <IoMode Mode, class Tx>
 std::size_t ExchangeSession<Mode, Tx>::mdCapacity() const noexcept {
-    const std::size_t cap = m_cfg.mdMaxPayload;
+    std::size_t cap = m_cfg.mdMaxPayload;
+    if constexpr (Mode == IoMode::Transport) {
+        if (m_io.maxTxFrame > net::kL2L3L4Overhead) {
+            const std::size_t wire = m_io.maxTxFrame - net::kL2L3L4Overhead;
+            if (cap == 0 || wire < cap) {
+                cap = wire;
+            }
+        }
+    }
     if (cap < mold::kHeaderSize + 64 || cap > m_mdBuf.size()) {
         return m_mdBuf.size();
     }

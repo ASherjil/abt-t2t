@@ -21,9 +21,9 @@ template <class Session>
 void logSim(const Session& ex, std::uint64_t elapsedNs) {
     const SessionStats& s = ex.stats();
     fmt::print(stderr,
-               "[sim +{:>4}s] md_pkts={} oe_pkts={} enter={} replace={} cancel={} unknown={} trades={} "
+               "[sim +{:>4}s] md_pkts={} oe_pkts={} tx_drop={} enter={} replace={} cancel={} unknown={} trades={} "
                "bid={} ask={} live={}\n",
-               elapsedNs / 1'000'000'000ull, s.mdPackets, s.oePackets, s.enters, s.replaces,
+               elapsedNs / 1'000'000'000ull, s.mdPackets, s.oePackets, s.txDropped, s.enters, s.replaces,
                s.cancels, s.unknown, ex.trades(), ex.bestBid(), ex.bestAsk(), ex.liveOrders());
 }
 
@@ -64,7 +64,7 @@ int runSim(const SimConfig& cfg, typename T::Type& backend, volatile std::sig_at
             return 1;
         }
         ExchangeSession<IoMode::Transport, typename T::Type> ex{cfg.venue};
-        ex.prepareTransport(backend, cfg.transport.marketData, cfg.transport.orderEntry);
+        ex.prepareTransport(backend, cfg.transport.marketData, cfg.transport.orderEntry, T::kMaxTxFrame);
         fmt::print(stderr, "exchange-sim: {} on {} (core {}), md udp/{} -> {}, oe udp/{} -> {}\n",
                    T::kName, cfg.transport.interface, cfg.transport.cpuCore,
                    cfg.transport.marketData.srcPort, cfg.transport.marketData.dstPort,

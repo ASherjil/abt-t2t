@@ -16,6 +16,7 @@ struct Backend {
 
     using Type = Verbs<VerbsMode::RxTx, 1, kSqDepth, kRqDepth, kSignalEvery, kMaxInline, kMaxFrame>;
     static constexpr std::string_view kName = "verbs";
+    static constexpr std::uint32_t kMaxTxFrame = kMaxInline;
 
     static Type make(const abt::NicSpec& nic) {
         return Type(nic.interface);

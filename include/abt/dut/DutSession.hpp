@@ -80,7 +80,7 @@ public:
     template <class Periodic>
     void run(volatile std::sig_atomic_t& stop, Periodic&& periodic) requires (Mode == IoMode::Socket);
 
-    void prepareTransport(Io& io, const net::Endpoints& oeEp)
+    [[nodiscard]] bool prepareTransport(Io& io, const net::Endpoints& oeEp, std::uint32_t maxTxFrame = 0)
         requires (Mode == IoMode::Transport && TxRing<Io>);
     void poll() requires (Mode == IoMode::Transport && RxRing<Io> && TxRing<Io>);
 
@@ -303,11 +303,17 @@ void DutSession<Mode, Strat, Io>::run(volatile std::sig_atomic_t& stop, Periodic
 }
 
 template <IoMode Mode, Strategy Strat, class Io>
-void DutSession<Mode, Strat, Io>::prepareTransport(Io& io, const net::Endpoints& oeEp)
+bool DutSession<Mode, Strat, Io>::prepareTransport(Io& io, const net::Endpoints& oeEp,
+                                                   std::uint32_t maxTxFrame)
     requires (Mode == IoMode::Transport && TxRing<Io>) {
+    constexpr std::uint32_t kMaxOrderFrame = net::kL2L3L4Overhead + Outbound::kSize;
+    if (maxTxFrame != 0 && maxTxFrame < kMaxOrderFrame) {
+        return false;
+    }
     m_io.io = &io;
     m_io.oeFramer.emplace(oeEp);
     m_io.ackPort = oeEp.srcPort;
+    return true;
 }
 
 template <IoMode Mode, Strategy Strat, class Io>
