@@ -53,6 +53,7 @@ int runDut(const DutAppConfig& cfg, typename T::Type& backend, volatile std::sig
     std::uint64_t nextLog = start + kDutLogPeriodNs;
 
     if constexpr (kIsSocketBackend<T>) {
+        (void)util::pinThread(cfg.transport.cpuCore);
         DutSession<IoMode::Socket, QuoterStrategy> sess(cfg.session, QuoterStrategy(cfg.quoter));
         if (!sess.connectVenue(cfg.socket.oeHost.c_str(), cfg.socket.oePort,
                                cfg.socket.mdBindHost.c_str(), cfg.socket.mdPort)) {
