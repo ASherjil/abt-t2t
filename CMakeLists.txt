@@ -18,27 +18,45 @@ include(cmake/CompilerWarnings.cmake)
 
 find_package(Threads REQUIRED)
 
+# ccache when available: dependency and project objects survive a clean build.
+find_program(ABT_CCACHE ccache)
+if(ABT_CCACHE AND NOT CMAKE_CXX_COMPILER_LAUNCHER)
+    set(CMAKE_CXX_COMPILER_LAUNCHER "${ABT_CCACHE}")
+    set(CMAKE_C_COMPILER_LAUNCHER "${ABT_CCACHE}")
+    message(STATUS "abt-t2t: using ccache (${ABT_CCACHE})")
+endif()
+
 include(FetchContent)
+
+# Dependency sources are cloned once into build/_deps (shared by every preset, survives a clean);
+# each preset still compiles them into its own binary dir so release/debug objects never mix.
+set(ABT_DEPS_SRC_DIR "${CMAKE_SOURCE_DIR}/build/_deps")
+function(abt_fetch_declare name)
+    FetchContent_Declare(${name} ${ARGN}
+        SOURCE_DIR   "${ABT_DEPS_SRC_DIR}/${name}-src"
+        SUBBUILD_DIR "${ABT_DEPS_SRC_DIR}/${name}-subbuild"
+        BINARY_DIR   "${CMAKE_BINARY_DIR}/_deps/${name}-build")
+endfunction()
 
 # {fmt} — fetched (not find_package) at the same tag ABTRDA3 declares, so both projects share
 # one fmt::fmt target when ABTRDA3 is pulled in as a subproject (FetchContent dedups by name).
 set(FMT_INSTALL OFF CACHE BOOL "" FORCE)
 set(FMT_TEST    OFF CACHE BOOL "" FORCE)
 set(FMT_DOC     OFF CACHE BOOL "" FORCE)
-FetchContent_Declare(fmt
+abt_fetch_declare(fmt
     GIT_REPOSITORY https://github.com/fmtlib/fmt.git
     GIT_TAG 12.1.0)
 FetchContent_MakeAvailable(fmt)
 
 # TOML config (toml++) — the exchange-sim binary reads config/exchange_sim.toml at runtime.
-FetchContent_Declare(tomlplusplus
+abt_fetch_declare(tomlplusplus
     GIT_REPOSITORY https://github.com/marzer/tomlplusplus.git
     GIT_TAG v3.4.0)
 FetchContent_MakeAvailable(tomlplusplus)
 
 # Lock-free SPSC ring (Eric Rigtorp) — decouples the latency-critical thread from the histogram
 # consumer thread in the tick-to-trade measurement pipeline. Header-only.
-FetchContent_Declare(spscqueue
+abt_fetch_declare(spscqueue
     GIT_REPOSITORY https://github.com/rigtorp/SPSCQueue.git
     GIT_TAG v1.1)
 FetchContent_MakeAvailable(spscqueue)
@@ -49,7 +67,7 @@ set_target_properties(SPSCQueue PROPERTIES INTERFACE_SYSTEM_INCLUDE_DIRECTORIES 
 # hot path in the consumer thread. Same choice as ABTRDA3.
 set(HDR_HISTOGRAM_BUILD_PROGRAMS OFF CACHE BOOL "" FORCE)
 set(HDR_HISTOGRAM_BUILD_SHARED OFF CACHE BOOL "" FORCE)
-FetchContent_Declare(hdrhistogram
+abt_fetch_declare(hdrhistogram
     GIT_REPOSITORY https://github.com/HdrHistogram/HdrHistogram_c.git
     GIT_TAG 0.11.10)
 FetchContent_MakeAvailable(hdrhistogram)
@@ -81,7 +99,7 @@ if(NOT ABT_SIM_BACKEND STREQUAL "socket")
     # PATCH_COMMAND: ABTRDA3's backends/CMakeLists.txt locates its cmake/ helpers via CMAKE_SOURCE_DIR,
     # which is abt-t2t when fetched as a subproject; rewrite to PROJECT_SOURCE_DIR (no-op once upstream
     # carries the fix).
-    FetchContent_Declare(abtrda3
+    abt_fetch_declare(abtrda3
         GIT_REPOSITORY https://github.com/ASherjil/ABTRDA3.git
         GIT_TAG master
         PATCH_COMMAND sed -i "s|\\\${CMAKE_SOURCE_DIR}|\\\${PROJECT_SOURCE_DIR}|g" src/backends/CMakeLists.txt)
