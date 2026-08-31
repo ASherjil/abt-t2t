@@ -123,10 +123,10 @@ int main(int argc, char** argv) {
                s.unknownRef, s.overReduce, s.crossed, s.outOfBand);
     fmt::print("book           max live orders {}  final live {}  final bid {}  ask {}\n", s.maxLive,
                book->book().liveOrders(), book->book().bestBid(), book->book().bestAsk());
-    fmt::print("rate           peak {} msg/ms at {}   peak {} msg/s at {}\n", s.peakPerMs,
+    fmt::print("feed rate      peak {} msg/ms at {}   peak {} msg/s at {}\n", s.peakPerMs,
                replay::formatTimeOfDay(s.peakMsBucket * 1'000'000ull), s.peakPerSec,
                replay::formatTimeOfDay(s.peakSecBucket * 1'000'000'000ull));
-    fmt::print("inter-arrival  p50 {} ns  p90 {} ns  p99 {} ns  p99.9 {} ns  min {} ns\n",
+    fmt::print("feed gap       p50 {} ns  p90 {} ns  p99 {} ns  p99.9 {} ns  min {} ns\n",
                gap.percentile(50.0), gap.percentile(90.0), gap.percentile(99.0), gap.percentile(99.9),
                gap.min());
     return 0;
