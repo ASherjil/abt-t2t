@@ -14,6 +14,11 @@ target_include_directories(config_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(config_test PRIVATE abt::config abt::flags fmt::fmt)
 add_test(NAME config_test COMMAND config_test)
 
+add_executable(dutconfig_test dutconfig_test.cpp)
+target_include_directories(dutconfig_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(dutconfig_test PRIVATE abt::config abt::flags fmt::fmt)
+add_test(NAME dutconfig_test COMMAND dutconfig_test)
+
 # quoter_test exercises the market-making quoter strategy.
 add_executable(quoter_test quoter_test.cpp)
 target_include_directories(quoter_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})

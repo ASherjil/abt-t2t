@@ -1,68 +1,15 @@
-//
-// TOML (toml++) loader for the exchange simulator's runtime configuration.
-//
-
 #include "abt/sim/SimConfig.hpp"
 
-#include <array>
-#include <cstddef>
 #include <cstdint>
 #include <cstdlib>
 #include <string>
-#include <string_view>
 
 #include <fmt/core.h>
 #include <toml++/toml.hpp>
 
+#include "abt/config/NetParse.hpp"
+
 namespace abt {
-
-namespace {
-
-[[nodiscard]] int hexVal(char c) noexcept {
-    if (c >= '0' && c <= '9') return c - '0';
-    if (c >= 'a' && c <= 'f') return c - 'a' + 10;
-    if (c >= 'A' && c <= 'F') return c - 'A' + 10;
-    return -1;
-}
-
-[[nodiscard]] net::MacAddr parseMac(std::string_view s) noexcept {
-    net::MacAddr mac{};
-    std::size_t idx = 0;
-    unsigned acc = 0;
-    int digits = 0;
-    const auto flush = [&] {
-        if (digits > 0 && idx < mac.size()) mac[idx++] = static_cast<std::uint8_t>(acc);
-        acc = 0;
-        digits = 0;
-    };
-    for (char c : s) {
-        if (c == ':' || c == '-') { flush(); continue; }
-        const int h = hexVal(c);
-        if (h < 0) continue;
-        acc = acc * 16u + static_cast<unsigned>(h);
-        ++digits;
-    }
-    flush();
-    return mac;
-}
-
-[[nodiscard]] std::uint32_t parseIp(std::string_view s) noexcept {
-    std::array<std::uint8_t, 4> oct{};
-    std::size_t idx = 0;
-    unsigned acc = 0;
-    const auto flush = [&] {
-        if (idx < oct.size()) oct[idx++] = static_cast<std::uint8_t>(acc);
-        acc = 0;
-    };
-    for (char c : s) {
-        if (c == '.') { flush(); continue; }
-        if (c >= '0' && c <= '9') acc = acc * 10u + static_cast<unsigned>(c - '0');
-    }
-    flush();
-    return net::ipv4(oct[0], oct[1], oct[2], oct[3]);
-}
-
-}  // namespace
 
 SimConfig loadConfig(const std::string& path) {
     SimConfig c{};
@@ -97,10 +44,12 @@ SimConfig loadConfig(const std::string& path) {
     c.dpdk.driver    = t["transport"]["driver"].value_or(c.dpdk.driver);
     c.dpdk.cpuCore   = t["transport"]["cpu_core"].value_or(c.dpdk.cpuCore);
 
-    const net::MacAddr lmac = parseMac(t["network"]["local_mac"].value_or(std::string{}));
-    const net::MacAddr pmac = parseMac(t["network"]["peer_mac"].value_or(std::string{}));
-    const std::uint32_t lip = parseIp(t["network"]["local_ip"].value_or(std::string{"0.0.0.0"}));
-    const std::uint32_t pip = parseIp(t["network"]["peer_ip"].value_or(std::string{"0.0.0.0"}));
+    const net::MacAddr lmac = config::parseMac(t["network"]["local_mac"].value_or(std::string{}));
+    const net::MacAddr pmac = config::parseMac(t["network"]["peer_mac"].value_or(std::string{}));
+    const std::uint32_t lip =
+        config::parseIp(t["network"]["local_ip"].value_or(std::string{"0.0.0.0"}));
+    const std::uint32_t pip =
+        config::parseIp(t["network"]["peer_ip"].value_or(std::string{"0.0.0.0"}));
 
     for (net::Endpoints* ep : {&c.dpdk.marketData, &c.dpdk.orderEntry}) {
         ep->srcMac = lmac;
@@ -120,4 +69,4 @@ SimConfig loadConfig(const std::string& path) {
     return c;
 }
 
-}  // namespace abt
+}

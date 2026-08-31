@@ -87,9 +87,14 @@ target_link_libraries(abt_sim INTERFACE abt_protocol abt_lob fmt::fmt)
 # ---------------------------------------------------------------------------
 # abt_config : TOML-driven runtime configuration loader (toml++).
 # ---------------------------------------------------------------------------
-add_library(abt_config STATIC src/sim/ConfigLoad.cpp)
+add_library(abt_config STATIC
+    src/config/NetParse.cpp
+    src/dut/DutConfigLoad.cpp
+    src/sim/ConfigLoad.cpp)
 add_library(abt::config ALIAS abt_config)
-target_link_libraries(abt_config PUBLIC abt_sim PRIVATE tomlplusplus::tomlplusplus abt_flags)
+target_link_libraries(abt_config
+    PUBLIC abt_sim abt_dut
+    PRIVATE tomlplusplus::tomlplusplus abt_flags fmt::fmt)
 
 # ---------------------------------------------------------------------------
 # abt_dut : DUT-side latency-critical order book (ITCH feed builder; t2t harness to come).

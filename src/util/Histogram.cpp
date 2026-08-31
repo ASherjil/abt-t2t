@@ -33,7 +33,7 @@ std::int64_t Histogram::percentile(double p) const noexcept {
 }
 
 std::int64_t Histogram::min() const noexcept {
-    if (m_h == nullptr) {
+    if (m_h == nullptr || m_h->total_count == 0) {
         return 0;
     }
     return hdr_min(m_h);

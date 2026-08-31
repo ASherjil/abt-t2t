@@ -1,0 +1,50 @@
+# abt-t2t DUT (feed handler + quoter + order gateway) — single hardcoded config, no CLI args.
+# [socket] is the kernel path (config 1); [transport]/[network]/[market_data]/[order_entry]
+# describe the ef_vi datapath on the Solarflare X2522.
+
+[venue]
+symbol         = "AAPL"     # must match the exchange sim's symbol
+min_price      = 0          # book band in wire prices (4-decimal dollars)
+max_price      = 10000000
+tick_wire      = 100        # wire units per tick (100 = $0.01 with 4-decimal wire prices)
+first_user_ref = 1
+max_orders     = 4096       # initial order-ref map capacity
+
+[quoter]
+half_spread_ticks   = 1       # ticks from fair value to each quote
+quote_qty           = 100     # shares per side
+skew_ticks_per_unit = 0.001   # quote shift per share of inventory (1000 shares = 1 tick)
+
+[measure]
+histogram_core = 7           # core the SPSC->HdrHistogram consumer thread pins to (-1 = unpinned)
+queue_capacity = 65536       # SPSC ring depth per recorder
+sig_figs       = 3           # HdrHistogram significant figures
+
+[socket]
+oe_host      = "127.0.0.1"   # exchange sim order-entry TCP host
+oe_port      = 5001
+md_bind_host = "127.0.0.1"   # local address to bind for MoldUDP64 market data
+md_port      = 5002
+session      = "SIM0000001"
+username     = "DUT001"
+
+[transport]
+mode      = "socket"         # "socket" (config 1) or "efvi" (config 2)
+interface = "sfc0"           # Solarflare X2522 interface
+cpu_core  = 6                # isolated core the DUT hot loop pins to
+
+[network]
+local_mac = "aa:bb:cc:dd:ee:02"   # DUT NIC MAC
+local_ip  = "10.0.0.2"
+peer_mac  = "aa:bb:cc:dd:ee:01"   # exchange sim NIC MAC
+peer_ip   = "10.0.0.1"
+
+# Market data: sim -> DUT. src = DUT-side port the feed is addressed to.
+[market_data]
+src_port = 41000
+dst_port = 40000
+
+# Order entry: DUT -> sim (orders), sim -> DUT (acks land on src_port).
+[order_entry]
+src_port = 41001
+dst_port = 40001

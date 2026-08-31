@@ -16,6 +16,8 @@ namespace {
 void test_histogram() {
     util::Histogram h(1, 1'000'000'000, 3);   // 1 ns .. 1 s, 3 significant figures
     CHECK_EQ(h.count(), 0);
+    CHECK_EQ(h.min(), 0);
+    CHECK_EQ(h.max(), 0);
 
     for (std::int64_t v = 1; v <= 1000; ++v) {
         h.record(v);
