@@ -26,3 +26,7 @@ compile_commands.json
 
 # Loopback/soak run logs
 /results/
+
+# Market data lives in the tree but never in git (see data/README.md)
+/data/*
+!/data/README.md
