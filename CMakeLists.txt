@@ -28,35 +28,25 @@ endif()
 
 include(FetchContent)
 
-# Dependency sources are cloned once into build/_deps (shared by every preset, survives a clean);
-# each preset still compiles them into its own binary dir so release/debug objects never mix.
-set(ABT_DEPS_SRC_DIR "${CMAKE_SOURCE_DIR}/build/_deps")
-function(abt_fetch_declare name)
-    FetchContent_Declare(${name} ${ARGN}
-        SOURCE_DIR   "${ABT_DEPS_SRC_DIR}/${name}-src"
-        SUBBUILD_DIR "${ABT_DEPS_SRC_DIR}/${name}-subbuild"
-        BINARY_DIR   "${CMAKE_BINARY_DIR}/_deps/${name}-build")
-endfunction()
-
 # {fmt} — fetched (not find_package) at the same tag ABTRDA3 declares, so both projects share
 # one fmt::fmt target when ABTRDA3 is pulled in as a subproject (FetchContent dedups by name).
 set(FMT_INSTALL OFF CACHE BOOL "" FORCE)
 set(FMT_TEST    OFF CACHE BOOL "" FORCE)
 set(FMT_DOC     OFF CACHE BOOL "" FORCE)
-abt_fetch_declare(fmt
+FetchContent_Declare(fmt
     GIT_REPOSITORY https://github.com/fmtlib/fmt.git
     GIT_TAG 12.1.0)
 FetchContent_MakeAvailable(fmt)
 
 # TOML config (toml++) — the exchange-sim binary reads config/exchange_sim.toml at runtime.
-abt_fetch_declare(tomlplusplus
+FetchContent_Declare(tomlplusplus
     GIT_REPOSITORY https://github.com/marzer/tomlplusplus.git
     GIT_TAG v3.4.0)
 FetchContent_MakeAvailable(tomlplusplus)
 
 # Lock-free SPSC ring (Eric Rigtorp) — decouples the latency-critical thread from the histogram
 # consumer thread in the tick-to-trade measurement pipeline. Header-only.
-abt_fetch_declare(spscqueue
+FetchContent_Declare(spscqueue
     GIT_REPOSITORY https://github.com/rigtorp/SPSCQueue.git
     GIT_TAG v1.1)
 FetchContent_MakeAvailable(spscqueue)
@@ -67,39 +57,39 @@ set_target_properties(SPSCQueue PROPERTIES INTERFACE_SYSTEM_INCLUDE_DIRECTORIES 
 # hot path in the consumer thread. Same choice as ABTRDA3.
 set(HDR_HISTOGRAM_BUILD_PROGRAMS OFF CACHE BOOL "" FORCE)
 set(HDR_HISTOGRAM_BUILD_SHARED OFF CACHE BOOL "" FORCE)
-abt_fetch_declare(hdrhistogram
+FetchContent_Declare(hdrhistogram
     GIT_REPOSITORY https://github.com/HdrHistogram/HdrHistogram_c.git
     GIT_TAG 0.11.10)
 FetchContent_MakeAvailable(hdrhistogram)
 
-# Exchange-sim backend tier, fixed at configure time. One binary per backend is built from the
-# single apps/exchange_sim.cpp (apps/backends/<name>/SimBackend.hpp is the only place a concrete
+# Backend tier (sim + DUT), fixed at configure time. One binary per backend is built from the
+# single apps/exchange_sim.cpp (apps/backends/<name>/Backend.hpp is the only place a concrete
 # transport type is named):
-#   socket -> exchange_sim                                   (builds anywhere)
-#   dpdk   -> + exchange_sim_dpdk                            (fetches ABTRDA3; needs libdpdk)
-#   verbs  -> + exchange_sim_dpdk + exchange_sim_verbs       (needs libdpdk + rdma-core)
+#   socket -> exchange_sim, dut                              (builds anywhere)
+#   dpdk   -> + exchange_sim_dpdk, dut_dpdk                  (fetches ABTRDA3; needs libdpdk)
+#   verbs  -> + exchange_sim_verbs, dut_verbs                (needs libdpdk + rdma-core)
 # ABTRDA3 always also builds AF_XDP (libxdp/libbpf + clang for the BPF object).
-set(ABT_SIM_BACKEND "socket" CACHE STRING "exchange_sim backend tier: socket | dpdk | verbs")
-set_property(CACHE ABT_SIM_BACKEND PROPERTY STRINGS socket dpdk verbs)
-if(NOT ABT_SIM_BACKEND MATCHES "^(socket|dpdk|verbs)$")
-    message(FATAL_ERROR "ABT_SIM_BACKEND must be socket, dpdk or verbs (got '${ABT_SIM_BACKEND}')")
+set(ABT_BACKEND "socket" CACHE STRING "sim+dut backend tier: socket | dpdk | verbs")
+set_property(CACHE ABT_BACKEND PROPERTY STRINGS socket dpdk verbs)
+if(NOT ABT_BACKEND MATCHES "^(socket|dpdk|verbs)$")
+    message(FATAL_ERROR "ABT_BACKEND must be socket, dpdk or verbs (got '${ABT_BACKEND}')")
 endif()
-set(ABT_SIM_BACKENDS socket)
-if(ABT_SIM_BACKEND STREQUAL "dpdk" OR ABT_SIM_BACKEND STREQUAL "verbs")
-    list(APPEND ABT_SIM_BACKENDS dpdk)
+set(ABT_BACKENDS socket)
+if(ABT_BACKEND STREQUAL "dpdk" OR ABT_BACKEND STREQUAL "verbs")
+    list(APPEND ABT_BACKENDS dpdk)
     set(ABTRDA3_WITH_DPDK ON CACHE BOOL "" FORCE)
 endif()
-if(ABT_SIM_BACKEND STREQUAL "verbs")
-    list(APPEND ABT_SIM_BACKENDS verbs)
+if(ABT_BACKEND STREQUAL "verbs")
+    list(APPEND ABT_BACKENDS verbs)
     set(ABTRDA3_WITH_VERBS ON CACHE BOOL "" FORCE)
 endif()
-if(NOT ABT_SIM_BACKEND STREQUAL "socket")
+if(NOT ABT_BACKEND STREQUAL "socket")
     set(ABTRDA3_BUILD_TESTS OFF CACHE BOOL "" FORCE)
     # Override with -DFETCHCONTENT_SOURCE_DIR_ABTRDA3=<local checkout> to build against a working copy.
     # PATCH_COMMAND: ABTRDA3's backends/CMakeLists.txt locates its cmake/ helpers via CMAKE_SOURCE_DIR,
     # which is abt-t2t when fetched as a subproject; rewrite to PROJECT_SOURCE_DIR (no-op once upstream
     # carries the fix).
-    abt_fetch_declare(abtrda3
+    FetchContent_Declare(abtrda3
         GIT_REPOSITORY https://github.com/ASherjil/ABTRDA3.git
         GIT_TAG master
         PATCH_COMMAND sed -i "s|\\\${CMAKE_SOURCE_DIR}|\\\${PROJECT_SOURCE_DIR}|g" src/backends/CMakeLists.txt)
@@ -107,7 +97,7 @@ if(NOT ABT_SIM_BACKEND STREQUAL "socket")
     get_target_property(_abtrda3_inc abtrda3 INTERFACE_INCLUDE_DIRECTORIES)
     set_target_properties(abtrda3 PROPERTIES INTERFACE_SYSTEM_INCLUDE_DIRECTORIES "${_abtrda3_inc}")
 endif()
-message(STATUS "abt-t2t: exchange_sim backends = ${ABT_SIM_BACKENDS}")
+message(STATUS "abt-t2t: backends = ${ABT_BACKENDS}")
 
 # ---------------------------------------------------------------------------
 # abt_protocol : header-only wire protocol library (ITCH 5.0 / OUCH 5.0).

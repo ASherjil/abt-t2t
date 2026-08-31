@@ -41,6 +41,7 @@ username = "USR42"
 [transport]
 mode = "efvi"
 interface = "sfc1"
+driver = "sfc"
 cpu_core = 6
 
 [network]
@@ -101,6 +102,7 @@ void test_load() {
 
     CHECK(c.transport.mode == "efvi");
     CHECK(c.transport.interface == "sfc1");
+    CHECK(c.transport.driver == "sfc");
     CHECK_EQ(c.transport.cpuCore, 6);
     CHECK_EQ(c.transport.orderEntry.srcMac[5], 0x02u);
     CHECK_EQ(c.transport.orderEntry.dstMac[0], 0x11u);

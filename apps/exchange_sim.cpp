@@ -2,14 +2,14 @@
 
 #include <fmt/core.h>
 
-#include "SimBackend.hpp"
+#include "Backend.hpp"
 
 #include "abt/sim/SimConfig.hpp"
 #include "abt/sim/SimRunner.hpp"
 
 using namespace abt;
 
-static_assert(SimBackendTraits<SimBackend>);
+static_assert(BackendTraits<Backend>);
 
 namespace {
 
@@ -34,19 +34,20 @@ int main() {
     const SimConfig cfg = loadConfig(ABT_CONFIG_PATH);
     installSignals();
 
-    if (cfg.transport.mode != SimBackend::kName) {
+    if (cfg.transport.mode != Backend::kName) {
         fmt::print(stderr, "exchange-sim: built for backend '{}' but config transport.mode is '{}'\n",
-                   SimBackend::kName, cfg.transport.mode);
+                   Backend::kName, cfg.transport.mode);
         return 1;
     }
 
-    auto backend = SimBackend::make(cfg);
-    if (!SimBackend::init(backend, cfg)) {
-        fmt::print(stderr, "exchange-sim: backend '{}' init failed\n", SimBackend::kName);
+    const NicSpec nic = nicOf(cfg);
+    auto backend = Backend::make(nic);
+    if (!Backend::init(backend, nic)) {
+        fmt::print(stderr, "exchange-sim: backend '{}' init failed\n", Backend::kName);
         return 1;
     }
 
-    const int rc = runSim<SimBackend>(cfg, backend, g_stop);
+    const int rc = runSim<Backend>(cfg, backend, g_stop);
     fmt::print(stderr, "exchange-sim: shut down.\n");
     return rc;
 }

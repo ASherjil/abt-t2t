@@ -1,14 +1,11 @@
 #pragma once
 
-#include <concepts>
 #include <csignal>
 #include <cstdint>
-#include <string_view>
 
 #include <fmt/core.h>
 
-#include "third_party/abtrda3/RingConcepts.hpp"
-
+#include "abt/config/BackendTraits.hpp"
 #include "abt/protocol/Itch50.hpp"
 #include "abt/sim/ExchangeSession.hpp"
 #include "abt/sim/FlowGenerator.hpp"
@@ -17,18 +14,6 @@
 #include "abt/util/Clock.hpp"
 
 namespace abt {
-
-struct SocketBackend {};
-
-template <class B>
-concept RingBackend = TxRing<B> && RxRing<B>;
-
-template <class T>
-concept SimBackendTraits = requires(const SimConfig& cfg, typename T::Type& b) {
-    { T::kName } -> std::convertible_to<std::string_view>;
-    { T::make(cfg) } -> std::same_as<typename T::Type>;
-    { T::init(b, cfg) } -> std::same_as<bool>;
-} && (std::same_as<typename T::Type, SocketBackend> || RingBackend<typename T::Type>);
 
 template <class Session>
 int runVenue(Session& ex, const SimConfig& cfg, volatile std::sig_atomic_t& stop) {
@@ -40,9 +25,9 @@ int runVenue(Session& ex, const SimConfig& cfg, volatile std::sig_atomic_t& stop
     return 0;
 }
 
-template <SimBackendTraits T>
+template <BackendTraits T>
 int runSim(const SimConfig& cfg, typename T::Type& backend, volatile std::sig_atomic_t& stop) {
-    if constexpr (std::same_as<typename T::Type, SocketBackend>) {
+    if constexpr (kIsSocketBackend<T>) {
         ExchangeSession<IoMode::Socket> ex{cfg.venue};
         if (!ex.prepareSocketIo(cfg.socket.oePort, cfg.socket.mdHost.c_str(), cfg.socket.mdPort)) {
             fmt::print(stderr, "exchange-sim: interrupted before a client connected.\n");
@@ -64,6 +49,10 @@ int runSim(const SimConfig& cfg, typename T::Type& backend, volatile std::sig_at
                    cfg.transport.orderEntry.srcPort, cfg.transport.orderEntry.dstPort);
         return runVenue(ex, cfg, stop);
     }
+}
+
+[[nodiscard]] inline NicSpec nicOf(const SimConfig& cfg) {
+    return NicSpec{cfg.transport.interface, cfg.transport.driver, cfg.transport.cpuCore};
 }
 
 }

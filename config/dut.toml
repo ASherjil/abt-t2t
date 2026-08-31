@@ -1,6 +1,6 @@
 # abt-t2t DUT (feed handler + quoter + order gateway) — single hardcoded config, no CLI args.
-# [socket] is the kernel path (config 1); [transport]/[network]/[market_data]/[order_entry]
-# describe the ef_vi datapath on the Solarflare X2522.
+# [socket] is the kernel path (dut); [transport]/[network]/[market_data]/[order_entry] describe
+# the ring datapath (dut_verbs / dut_dpdk, later ef_vi). Rig loopback: DUT on cx1 <-DAC-> sim on cx0.
 
 [venue]
 symbol         = "AAPL"     # must match the exchange sim's symbol
@@ -29,14 +29,15 @@ session      = "SIM0000001"
 username     = "DUT001"
 
 [transport]
-mode      = "socket"         # "socket" (config 1) or "efvi" (config 2)
-interface = "sfc0"           # Solarflare X2522 interface
+mode      = "socket"         # must match the binary: socket (dut) | verbs | dpdk
+interface = "cx1"            # NIC the DUT drives (ConnectX-4 Lx port 1 in loopback; X2522 later)
+driver    = "mlx5_core"      # "mlx5_core" | "sfc" (dpdk backend devargs policy)
 cpu_core  = 6                # isolated core the DUT hot loop pins to
 
 [network]
-local_mac = "aa:bb:cc:dd:ee:02"   # DUT NIC MAC
+local_mac = "b8:83:03:9c:d4:5d"   # cx1
 local_ip  = "10.0.0.2"
-peer_mac  = "aa:bb:cc:dd:ee:01"   # exchange sim NIC MAC
+peer_mac  = "b8:83:03:9c:d4:5c"   # cx0 (sim)
 peer_ip   = "10.0.0.1"
 
 # Market data: sim -> DUT. src = DUT-side port the feed is addressed to.

@@ -1,6 +1,7 @@
 # abt-t2t exchange simulator — single hardcoded config (the binary takes NO command-line args).
-# Edit values in place. Fill [network] / [market_data] / [order_entry] with your real NIC
-# MACs, IPs and ports for the ef_vi/DPDK paths; [socket] is the kernel fallback (config 1).
+# Edit values in place. [transport]/[network]/[market_data]/[order_entry] describe the ring
+# datapath (exchange_sim_verbs / exchange_sim_dpdk); [socket] is the kernel path (exchange_sim).
+# Rig loopback: sim on cx0 <-DAC-> DUT on cx1 (both ConnectX-4 Lx ports).
 
 [venue]
 symbol        = "AAPL"        # ITCH stock symbol (<= 8 chars)
@@ -23,16 +24,16 @@ warmup_steps     = 200                  # generator steps run before going live
 tick_interval_ns = 100000               # run() pumps one generator step per this interval
 
 [transport]
-mode      = "socket"          # must match the ABT_SIM_BACKEND the binary was built with: socket | verbs | dpdk
-interface = "cx0"            # NIC the sim drives
-driver    = "mlx5_core"      # "mlx5_core" | "af_xdp" | "i40e"
-cpu_core  = 2                # lcore the DPDK datapath pins to
+mode      = "socket"          # must match the binary: socket (exchange_sim) | verbs | dpdk
+interface = "cx0"             # NIC the sim drives (ConnectX-4 Lx port 0)
+driver    = "mlx5_core"       # "mlx5_core" | "sfc" | "i40e" (dpdk backend devargs policy)
+cpu_core  = 5                 # isolated core the sim hot loop pins to
 
 # Shared L2/L3 addressing. local = this sim's NIC; peer = the DUT. No ARP — both hardcoded.
 [network]
-local_mac = "aa:bb:cc:dd:ee:01"   # <-- sim NIC MAC
+local_mac = "b8:83:03:9c:d4:5c"   # cx0
 local_ip  = "10.0.0.1"
-peer_mac  = "aa:bb:cc:dd:ee:02"   # <-- DUT NIC MAC
+peer_mac  = "b8:83:03:9c:d4:5d"   # cx1 (DUT)
 peer_ip   = "10.0.0.2"
 
 # Market-data feed: sim -> DUT (ITCH / MoldUDP64).
@@ -45,7 +46,7 @@ dst_port = 41000
 src_port = 40001
 dst_port = 41001
 
-# Kernel-socket fallback, used when transport.mode = "socket" (config 1).
+# Kernel-socket path, used by exchange_sim (mode = "socket").
 [socket]
 oe_port = 5001               # TCP listen port for order entry
 md_host = "127.0.0.1"        # UDP market-data destination host

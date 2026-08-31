@@ -22,10 +22,10 @@ case "${type_choice}" in
 esac
 
 echo ""
-echo "Exchange-sim backends (one binary per backend, all from apps/exchange_sim.cpp):"
-echo "1) socket only            -> exchange_sim                                   (no NIC deps)"
-echo "2) socket + dpdk          -> exchange_sim, exchange_sim_dpdk                (libdpdk)"
-echo "3) socket + dpdk + verbs  -> exchange_sim, exchange_sim_dpdk, exchange_sim_verbs (libdpdk + rdma-core)"
+echo "Backends (one exchange_sim + one dut binary per backend):"
+echo "1) socket only            -> exchange_sim, dut                                (no NIC deps)"
+echo "2) socket + dpdk          -> + exchange_sim_dpdk, dut_dpdk                    (libdpdk)"
+echo "3) socket + dpdk + verbs  -> + exchange_sim_verbs, dut_verbs                  (libdpdk + rdma-core)"
 read -rp "Backend tier [1/2/3] (default 1): " backend_choice
 backend_choice="${backend_choice:-1}"
 
@@ -63,8 +63,8 @@ if [[ "${clean_choice}" == "1" ]]; then
     rm -rf "${build_dir}"
 fi
 
-echo "Configuring (ABT_SIM_BACKEND=${backend})..."
-cmake --preset="${preset}" -DABT_SIM_BACKEND="${backend}" "${abtrda3_flag[@]}"
+echo "Configuring (ABT_BACKEND=${backend})..."
+cmake --preset="${preset}" -DABT_BACKEND="${backend}" "${abtrda3_flag[@]}"
 
 echo "Building..."
 cmake --build --preset="${preset}" -j"$(nproc)"

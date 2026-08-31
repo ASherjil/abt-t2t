@@ -28,6 +28,7 @@ struct DutSocketConfig {
 struct DutTransportConfig {
     std::string    mode      = "socket";
     std::string    interface = "sfc0";
+    std::string    driver    = "sfc";
     int            cpuCore   = 5;
     net::Endpoints marketData{};
     net::Endpoints orderEntry{};
