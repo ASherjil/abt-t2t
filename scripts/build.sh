@@ -2,7 +2,7 @@
 # Configure, build, and test abt-t2t locally (workstation or rig; uses CMakePresets).
 set -euo pipefail
 
-cd "$(dirname "$0")"
+cd "$(dirname "$0")/.."
 
 echo "1) Clean + Build"
 echo "2) Build only"
