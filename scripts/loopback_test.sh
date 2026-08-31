@@ -33,6 +33,13 @@ done
 
 out="results/loopback_$(date +%Y%m%d_%H%M%S)"
 mkdir -p "${out}"
+{
+    echo "abt-t2t $(git rev-parse --short HEAD 2>/dev/null)$(git diff --quiet 2>/dev/null || echo '+dirty')"
+    for d in "build/${preset}/_deps/abtrda3-src" "${FETCHCONTENT_SOURCE_DIR_ABTRDA3:-}"; do
+        [[ -n "${d}" && -d "${d}/.git" ]] && echo "abtrda3 $(git -C "${d}" rev-parse --short HEAD)" && break
+    done
+    echo "backend ${backend}  preset ${preset}  duration ${duration}s  host $(hostname)  $(date -Is)"
+} > "${out}/versions.txt"
 sim_log="${out}/sim.log"
 dut_log="${out}/dut.log"
 

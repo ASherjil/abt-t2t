@@ -92,6 +92,7 @@ public:
     [[nodiscard]] const OrderManager& oms() const noexcept;
     [[nodiscard]] const SequenceTracker& feed() const noexcept;
     [[nodiscard]] LatencyRecorder& t2t() noexcept;
+    [[nodiscard]] LatencyRecorder& t2tSw() noexcept;
     [[nodiscard]] LatencyRecorder& proc() noexcept;
     [[nodiscard]] std::uint32_t ordersSent() const noexcept;
     [[nodiscard]] std::uint64_t packetsReceived() const noexcept;
@@ -136,6 +137,7 @@ private:
     OrderManager    m_oms;
     SequenceTracker m_seq;
     LatencyRecorder m_t2t;
+    LatencyRecorder m_t2tSw;
     LatencyRecorder m_proc;
     std::uint32_t   m_ordersSent = 0;
     std::uint64_t   m_packets    = 0;
@@ -155,7 +157,8 @@ DutSession<Mode, Strat, Io>::DutSession(const DutConfig& cfg, Strat strat)
       m_strat(std::move(strat)),
       m_book(cfg.minPrice, cfg.maxPrice, cfg.tickWire, cfg.maxOrders),
       m_oms(OmsConfig{cfg.symbol, cfg.firstUserRef}),
-      m_t2t("t2t", cfg.queueCapacity, 1.0, cfg.sigFigs),
+      m_t2t("t2t_hw", cfg.queueCapacity, 1.0, cfg.sigFigs),
+      m_t2tSw("t2t_sw", cfg.queueCapacity, tsc::nsPerTick(), cfg.sigFigs),
       m_proc("proc", cfg.queueCapacity, tsc::nsPerTick(), cfg.sigFigs) {
 }
 
@@ -381,6 +384,11 @@ LatencyRecorder& DutSession<Mode, Strat, Io>::t2t() noexcept {
 }
 
 template <IoMode Mode, Strategy Strat, class Io>
+LatencyRecorder& DutSession<Mode, Strat, Io>::t2tSw() noexcept {
+    return m_t2tSw;
+}
+
+template <IoMode Mode, Strategy Strat, class Io>
 LatencyRecorder& DutSession<Mode, Strat, Io>::proc() noexcept {
     return m_proc;
 }
@@ -425,6 +433,7 @@ void DutSession<Mode, Strat, Io>::applyPacket(std::span<const std::byte> moldPac
 
     for (std::size_t i = 0; i < n; ++i) {
         if (sendOrder({m_out[i].buf.data(), m_out[i].len}) && i == 0) {
+            m_t2tSw.record(tsc::now() - begin);
             recordSend(m_out[i].userRef, rxHwts);
         }
     }

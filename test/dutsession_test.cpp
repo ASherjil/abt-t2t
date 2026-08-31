@@ -180,6 +180,9 @@ void test_take_and_t2t() {
 
     (void)sess.t2t().drain();
     CHECK_EQ(sess.t2t().count(), 0);
+    (void)sess.t2tSw().drain();
+    CHECK_EQ(sess.t2tSw().count(), 1);
+    CHECK(sess.t2tSw().min() > 0 && sess.t2tSw().min() < 1'000'000);
 
     FakeStampSource src{};
     src.queue.push_back(dut::TxCompletion{1u, 0u, 1850u, 1u});

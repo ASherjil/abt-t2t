@@ -34,6 +34,7 @@ void logDut(const Session& sess, std::uint64_t elapsedNs) {
 template <class Session>
 void printDutReport(Session& sess) {
     sess.t2t().summary();
+    sess.t2tSw().summary();
     sess.proc().summary();
     const OmsStats& s = sess.oms().stats();
     fmt::print("[oms] orders sent={} enters={} replaces={} cancels={} accepts={} fills={} rejects={} "
@@ -61,7 +62,7 @@ int runDut(const DutAppConfig& cfg, typename T::Type& backend, volatile std::sig
                    cfg.socket.oePort, cfg.socket.mdBindHost, cfg.socket.mdPort);
         sess.login(cfg.socket.session, cfg.socket.username);
 
-        RecorderThread consumer({&sess.t2t(), &sess.proc()}, cfg.measure.histogramCore);
+        RecorderThread consumer({&sess.t2t(), &sess.t2tSw(), &sess.proc()}, cfg.measure.histogramCore);
         consumer.start();
         sess.run(stop, [&] {
             const std::uint64_t now = monotonicNs();
@@ -91,7 +92,7 @@ int runDut(const DutAppConfig& cfg, typename T::Type& backend, volatile std::sig
                    cfg.transport.marketData.srcPort, cfg.transport.marketData.dstPort,
                    cfg.transport.orderEntry.srcPort, cfg.transport.orderEntry.dstPort);
 
-        RecorderThread consumer({&sess.t2t(), &sess.proc()}, cfg.measure.histogramCore);
+        RecorderThread consumer({&sess.t2t(), &sess.t2tSw(), &sess.proc()}, cfg.measure.histogramCore);
         consumer.start();
         std::uint64_t polls = 0;
         while (stop == 0) {
