@@ -65,3 +65,8 @@ add_executable(itchfile_test itchfile_test.cpp)
 target_include_directories(itchfile_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(itchfile_test PRIVATE abt::replay abt::sim abt::flags fmt::fmt ZLIB::ZLIB)
 add_test(NAME itchfile_test COMMAND itchfile_test)
+
+add_executable(replay_test replay_test.cpp)
+target_include_directories(replay_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(replay_test PRIVATE abt::replay abt::sim abt::flags fmt::fmt)
+add_test(NAME replay_test COMMAND replay_test)

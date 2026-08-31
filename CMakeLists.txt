@@ -122,7 +122,7 @@ target_compile_features(abt_lob INTERFACE cxx_std_20)
 # ---------------------------------------------------------------------------
 add_library(abt_sim INTERFACE)
 add_library(abt::sim ALIAS abt_sim)
-target_link_libraries(abt_sim INTERFACE abt_protocol abt_lob fmt::fmt)
+target_link_libraries(abt_sim INTERFACE abt_protocol abt_lob abt_replay fmt::fmt)
 
 # ---------------------------------------------------------------------------
 # abt_config : TOML-driven runtime configuration loader (toml++).

@@ -1,6 +1,7 @@
 #include "abt/replay/SymbolFilter.hpp"
 
 #include <cstdio>
+#include <string>
 
 #include "abt/protocol/Itch50.hpp"
 
@@ -66,6 +67,22 @@ std::string formatTimeOfDay(std::uint64_t ns) {
                   static_cast<unsigned long long>(s / 3600), static_cast<unsigned long long>((s / 60) % 60),
                   static_cast<unsigned long long>(s % 60), static_cast<unsigned long long>(ms));
     return buf;
+}
+
+std::uint64_t parseTimeOfDay(std::string_view v) {
+    unsigned h = 0;
+    unsigned m = 0;
+    unsigned s = 0;
+    unsigned ms = 0;
+    if (v.empty()) {
+        return 0;
+    }
+    const int n = std::sscanf(std::string(v).c_str(), "%u:%u:%u.%u", &h, &m, &s, &ms);
+    if (n < 2) {
+        return 0;
+    }
+    return (static_cast<std::uint64_t>(h) * 3600ull + m * 60ull + s) * 1'000'000'000ull +
+           static_cast<std::uint64_t>(ms) * 1'000'000ull;
 }
 
 }

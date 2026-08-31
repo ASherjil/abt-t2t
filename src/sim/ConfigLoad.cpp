@@ -8,6 +8,7 @@
 #include <toml++/toml.hpp>
 
 #include "abt/config/NetParse.hpp"
+#include "abt/replay/SymbolFilter.hpp"
 
 namespace abt {
 
@@ -29,6 +30,19 @@ SimConfig loadConfig(const std::string& path) {
     c.venue.maxTick     = t["venue"]["max_tick"].value_or(c.venue.maxTick);
     c.venue.wirePerTick = t["venue"]["wire_per_tick"].value_or(c.venue.wirePerTick);
     c.venue.mdMaxPayload = t["venue"]["md_max_payload"].value_or(c.venue.mdMaxPayload);
+    c.venue.liveReserve  = t["venue"]["order_reserve"].value_or(c.venue.liveReserve);
+
+    c.replay.enabled      = t["replay"]["enabled"].value_or(c.replay.enabled);
+    c.replay.file         = t["replay"]["file"].value_or(c.replay.file);
+    c.replay.speed        = t["replay"]["speed"].value_or(c.replay.speed);
+    c.replay.loops        = t["replay"]["loops"].value_or(c.replay.loops);
+    c.replay.preloadMaxMb = t["replay"]["preload_max_mb"].value_or(c.replay.preloadMaxMb);
+    c.replay.maxBatch     = t["replay"]["max_batch"].value_or(c.replay.maxBatch);
+    c.replay.skipToNs     = replay::parseTimeOfDay(t["replay"]["skip_to"].value_or(std::string{}));
+    c.replay.stopAtNs     = replay::parseTimeOfDay(t["replay"]["stop_at"].value_or(std::string{}));
+    const std::int64_t defaultFirstRef = c.replay.enabled ? (std::int64_t{1} << 62) : 1;
+    c.venue.firstOrderRef =
+        static_cast<OrderId>(t["venue"]["first_order_ref"].value_or(defaultFirstRef));
 
     c.flow.midTick    = t["flow"]["mid_tick"].value_or(c.flow.midTick);
     c.flow.halfSpread = t["flow"]["half_spread"].value_or(c.flow.halfSpread);

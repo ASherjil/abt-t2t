@@ -52,6 +52,8 @@ struct SessionStats {
     std::uint64_t replaces  = 0;
     std::uint64_t unknown   = 0;
     std::uint64_t txDropped = 0;
+    std::uint64_t forwarded = 0;
+    std::uint64_t mirrored  = 0;
 };
 
 template <IoMode Mode, class Tx = NoTransport>
@@ -67,6 +69,12 @@ public:
     OrderId injectSynthetic(Side side, Price tick, Quantity qty, std::uint64_t ts);
     void cancelSynthetic(OrderId ref, std::uint64_t ts);
     void sessionEvent(itch::SystemEventCode code, std::uint64_t ts);
+
+    void replayMessage(std::span<const std::byte> msg, std::uint64_t ts);
+    void flushMarketData();
+    void resetDay(std::uint64_t ts);
+    [[nodiscard]] const MirrorStats& mirrorStats() const noexcept;
+    [[nodiscard]] std::size_t clientOrders() const noexcept;
 
     [[nodiscard]] Price bestBid() const noexcept;
     [[nodiscard]] Price bestAsk() const noexcept;
@@ -84,7 +92,9 @@ public:
     template <class TickFn>
     void run(volatile std::sig_atomic_t& stop, std::uint64_t tickIntervalNs, TickFn&& onTick)
         requires (Mode == IoMode::Socket);
-    void pollOrderEntry(std::uint64_t ts) requires (Mode == IoMode::Transport && RxRing<Tx>);
+    [[nodiscard]] bool pollOrderEntry(std::uint64_t ts) requires (Mode == IoMode::Socket);
+    [[nodiscard]] bool pollOrderEntry(std::uint64_t ts)
+        requires (Mode == IoMode::Transport && RxRing<Tx>);
     template <class TickFn>
     void run(volatile std::sig_atomic_t& stop, std::uint64_t tickIntervalNs, TickFn&& onTick)
         requires (Mode == IoMode::Transport && RxRing<Tx>);
@@ -126,7 +136,7 @@ private:
     void dispatchOuch(std::span<const std::byte> payload, std::uint64_t ts);
     template <class Fn> void withMarketData(Fn&& fn);
     void appendMarketData(std::span<const std::byte> itch);
-    void flushMarketData();
+    void mirror(std::span<const std::byte> msg, std::uint64_t ts);
     [[nodiscard]] std::size_t mdCapacity() const noexcept;
     void sendOrderEntry(std::span<const std::byte> ouch);
 
@@ -157,7 +167,8 @@ ExchangeSession<Mode, Tx>::ExchangeSession(const ExchangeConfig& cfg)
     : m_cfg(cfg),
       m_sink{this},
       m_packer(cfg.session, 1),
-      m_venue(m_sink, cfg.symbol, cfg.stockLocate, cfg.minTick, cfg.maxTick, cfg.wirePerTick) {}
+      m_venue(m_sink, cfg.symbol, cfg.stockLocate, cfg.minTick, cfg.maxTick, cfg.wirePerTick,
+              cfg.firstOrderRef, cfg.liveReserve) {}
 
 template <IoMode Mode, class Tx>
 ExchangeSession<Mode, Tx>::~ExchangeSession() {
@@ -199,6 +210,84 @@ void ExchangeSession<Mode, Tx>::cancelSynthetic(OrderId ref, std::uint64_t ts) {
 template <IoMode Mode, class Tx>
 void ExchangeSession<Mode, Tx>::sessionEvent(itch::SystemEventCode code, std::uint64_t ts) {
     withMarketData([&] { m_venue.sessionEvent(code, ts); });
+}
+
+template <IoMode Mode, class Tx>
+void ExchangeSession<Mode, Tx>::replayMessage(std::span<const std::byte> msg, std::uint64_t ts) {
+    if (msg.size() < 11) {
+        return;
+    }
+    ++m_stats.forwarded;
+    appendMarketData(msg);
+    const auto locate = static_cast<std::uint16_t>((std::to_integer<unsigned>(msg[1]) << 8) |
+                                                   std::to_integer<unsigned>(msg[2]));
+    if (locate == m_cfg.stockLocate) {
+        mirror(msg, ts);
+    }
+}
+
+template <IoMode Mode, class Tx>
+void ExchangeSession<Mode, Tx>::mirror(std::span<const std::byte> msg, std::uint64_t ts) {
+    const std::byte* d = msg.data();
+    switch (static_cast<char>(msg[0])) {
+    case 'A':
+    case 'F': {
+        if (msg.size() < sizeof(itch::AddOrder)) return;
+        const auto* a = reinterpret_cast<const itch::AddOrder*>(d);
+        const Side side = a->side == static_cast<char>(itch::Side::Buy) ? Side::Buy : Side::Sell;
+        m_venue.mirrorAdd(a->orderRef.value(), side, a->price.value(), a->shares.value(), ts);
+        break;
+    }
+    case 'E': {
+        if (msg.size() < sizeof(itch::OrderExecuted)) return;
+        const auto* e = reinterpret_cast<const itch::OrderExecuted*>(d);
+        m_venue.mirrorExecute(e->orderRef.value(), e->executedShares.value(), ts);
+        break;
+    }
+    case 'C': {
+        if (msg.size() < sizeof(itch::OrderExecutedWithPrice)) return;
+        const auto* c = reinterpret_cast<const itch::OrderExecutedWithPrice*>(d);
+        m_venue.mirrorExecute(c->orderRef.value(), c->executedShares.value(), ts);
+        break;
+    }
+    case 'X': {
+        if (msg.size() < sizeof(itch::OrderCancel)) return;
+        const auto* x = reinterpret_cast<const itch::OrderCancel*>(d);
+        m_venue.mirrorCancel(x->orderRef.value(), x->cancelledShares.value(), ts);
+        break;
+    }
+    case 'D': {
+        if (msg.size() < sizeof(itch::OrderDelete)) return;
+        const auto* x = reinterpret_cast<const itch::OrderDelete*>(d);
+        m_venue.mirrorDelete(x->orderRef.value(), ts);
+        break;
+    }
+    case 'U': {
+        if (msg.size() < sizeof(itch::OrderReplace)) return;
+        const auto* u = reinterpret_cast<const itch::OrderReplace*>(d);
+        m_venue.mirrorReplace(u->origOrderRef.value(), u->newOrderRef.value(), u->shares.value(),
+                              u->price.value(), ts);
+        break;
+    }
+    default:
+        return;
+    }
+    ++m_stats.mirrored;
+}
+
+template <IoMode Mode, class Tx>
+void ExchangeSession<Mode, Tx>::resetDay(std::uint64_t ts) {
+    withMarketData([&] { m_venue.resetDay(ts); });
+}
+
+template <IoMode Mode, class Tx>
+const MirrorStats& ExchangeSession<Mode, Tx>::mirrorStats() const noexcept {
+    return m_venue.mirrorStats();
+}
+
+template <IoMode Mode, class Tx>
+std::size_t ExchangeSession<Mode, Tx>::clientOrders() const noexcept {
+    return m_venue.clientOrders();
 }
 
 template <IoMode Mode, class Tx>
@@ -263,7 +352,22 @@ void ExchangeSession<Mode, Tx>::run(volatile std::sig_atomic_t& stop, std::uint6
 }
 
 template <IoMode Mode, class Tx>
-void ExchangeSession<Mode, Tx>::pollOrderEntry(std::uint64_t ts)
+bool ExchangeSession<Mode, Tx>::pollOrderEntry(std::uint64_t ts) requires (Mode == IoMode::Socket) {
+    std::array<std::byte, 8192> rx{};
+    const ssize_t n = ::recv(m_sock.oeFd, rx.data(), rx.size(), MSG_DONTWAIT);
+    if (n > 0) {
+        onOrderEntryBytes({rx.data(), static_cast<std::size_t>(n)}, ts);
+        return true;
+    }
+    if (n == 0) {
+        fmt::print(stderr, "exchange-sim: client disconnected\n");
+        return false;
+    }
+    return errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR;
+}
+
+template <IoMode Mode, class Tx>
+bool ExchangeSession<Mode, Tx>::pollOrderEntry(std::uint64_t ts)
     requires (Mode == IoMode::Transport && RxRing<Tx>) {
     for (auto f = m_io.tx->tryReceive(); f.status != 0; f = m_io.tx->tryReceive()) {
         ++m_stats.oePackets;
@@ -274,6 +378,7 @@ void ExchangeSession<Mode, Tx>::pollOrderEntry(std::uint64_t ts)
         }
         m_io.tx->release();
     }
+    return true;
 }
 
 template <IoMode Mode, class Tx>
@@ -283,7 +388,7 @@ void ExchangeSession<Mode, Tx>::run(volatile std::sig_atomic_t& stop, std::uint6
     requires (Mode == IoMode::Transport && RxRing<Tx>) {
     std::uint64_t lastTick = monotonicNs();
     while (stop == 0) {
-        pollOrderEntry(nsSinceMidnightUtc());
+        (void)pollOrderEntry(nsSinceMidnightUtc());
         const std::uint64_t now = monotonicNs();
         if (now - lastTick > tickIntervalNs) {
             onTick(nsSinceMidnightUtc());

@@ -19,6 +19,8 @@ struct ExchangeConfig {
     Price         maxTick     = 100000;
     std::uint32_t wirePerTick = 100;
     std::size_t   mdMaxPayload = 1400;
+    OrderId       firstOrderRef = 1;
+    std::size_t   liveReserve   = 1u << 12;
 };
 
 struct FlowConfig {

@@ -9,6 +9,7 @@
 
 #include "abt/protocol/UdpFramer.hpp"
 #include "abt/sim/EngineConfig.hpp"
+#include "abt/sim/MarketReplay.hpp"
 
 namespace abt {
 
@@ -31,6 +32,7 @@ struct SimConfig {
     FlowConfig     flow;
     SocketConfig   socket;
     TransportConfig     transport;
+    ReplayConfig   replay;
     std::size_t    warmupSteps    = 200;
     std::uint64_t  tickIntervalNs = 100000;
 };

@@ -28,5 +28,6 @@ private:
 };
 
 [[nodiscard]] std::string formatTimeOfDay(std::uint64_t nsSinceMidnight);
+[[nodiscard]] std::uint64_t parseTimeOfDay(std::string_view hhmmss);
 
 }

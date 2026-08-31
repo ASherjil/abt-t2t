@@ -9,6 +9,7 @@
 #include "abt/protocol/Itch50.hpp"
 #include "abt/sim/ExchangeSession.hpp"
 #include "abt/sim/FlowGenerator.hpp"
+#include "abt/replay/SymbolFilter.hpp"
 #include "abt/sim/SimConfig.hpp"
 #include "abt/util/Affinity.hpp"
 #include "abt/util/Clock.hpp"
@@ -28,7 +29,55 @@ void logSim(const Session& ex, std::uint64_t elapsedNs) {
 }
 
 template <class Session>
+void logReplay(const Session& ex, const ReplayProgress& p, std::uint64_t elapsedNs) {
+    const SessionStats& s = ex.stats();
+    const MirrorStats& m = ex.mirrorStats();
+    fmt::print(stderr,
+               "[sim +{:>5}s] loop={} t={} sent={} mir={} late_max={}us late>1ms={} md_pkts={} oe_pkts={} tx_drop={} "
+               "enter={} replace={} cancel={} shadow={}/{} cross={} impact={} unk={} over={} oob={} "
+               "bid={} ask={} live={} clients={}\n",
+               elapsedNs / 1'000'000'000ull, p.loop, replay::formatTimeOfDay(p.virtualTs), p.sent, s.mirrored,
+               p.maxLateNs / 1000, p.lateOver1ms, s.mdPackets, s.oePackets, s.txDropped, s.enters, s.replaces,
+               s.cancels, m.shadowFills, m.shadowShares, m.crossFills, m.impactFills, m.unknownRef,
+               m.overReduce, m.outOfBand, ex.bestBid(), ex.bestAsk(), ex.liveOrders(), ex.clientOrders());
+}
+
+template <class Session>
+int runReplay(Session& ex, const SimConfig& cfg, volatile std::sig_atomic_t& stop) {
+    MarketReplay<Session> rp(ex, cfg.replay);
+    if (!rp.open()) {
+        fmt::print(stderr, "exchange-sim: cannot open replay file '{}'\n", cfg.replay.file);
+        return 1;
+    }
+    fmt::print(stderr, "exchange-sim: replay {} ({}, {} msgs) speed={} loops={} skip_to={} stop_at={}\n",
+               cfg.replay.file, rp.progress().preloaded ? "preloaded" : "streamed", rp.fileMessages(),
+               cfg.replay.speed, cfg.replay.loops, replay::formatTimeOfDay(cfg.replay.skipToNs),
+               replay::formatTimeOfDay(cfg.replay.stopAtNs));
+    const std::uint64_t start = monotonicNs();
+    std::uint64_t nextLog = start + kSimLogPeriodNs;
+    while (stop == 0) {
+        if (!ex.pollOrderEntry(rp.progress().virtualTs)) {
+            break;
+        }
+        const std::uint64_t now = monotonicNs();
+        if (!rp.pump(now)) {
+            break;
+        }
+        if (now >= nextLog) {
+            logReplay(ex, rp.progress(), now - start);
+            nextLog += kSimLogPeriodNs;
+        }
+    }
+    ex.flushMarketData();
+    logReplay(ex, rp.progress(), monotonicNs() - start);
+    return 0;
+}
+
+template <class Session>
 int runVenue(Session& ex, const SimConfig& cfg, volatile std::sig_atomic_t& stop) {
+    if (cfg.replay.enabled) {
+        return runReplay(ex, cfg, stop);
+    }
     FlowGenerator<Session> gen(ex, cfg.flow);
     ex.sessionEvent(itch::SystemEventCode::StartOfMarketHours, nsSinceMidnightUtc());
     gen.run(cfg.warmupSteps, nsSinceMidnightUtc(), 0);
