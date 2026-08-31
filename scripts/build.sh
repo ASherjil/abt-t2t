@@ -64,7 +64,7 @@ if [[ "${clean_choice}" == "1" ]]; then
 fi
 
 echo "Configuring (ABT_BACKEND=${backend})..."
-cmake --preset="${preset}" -DABT_BACKEND="${backend}" "${abtrda3_flag[@]}"
+cmake --preset="${preset}" -DABT_BACKEND="${backend}" -DFETCHCONTENT_UPDATES_DISCONNECTED=ON "${abtrda3_flag[@]}"
 
 echo "Building..."
 cmake --build --preset="${preset}" -j"$(nproc)"

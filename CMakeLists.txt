@@ -26,8 +26,8 @@ if(ABT_CCACHE AND NOT CMAKE_CXX_COMPILER_LAUNCHER)
     message(STATUS "abt-t2t: using ccache (${ABT_CCACHE})")
 endif()
 
-include(FetchContent)
 set(FETCHCONTENT_UPDATES_DISCONNECTED ON CACHE BOOL "Never re-fetch already-populated dependencies")
+include(FetchContent)
 
 # {fmt} — fetched (not find_package) at the same tag ABTRDA3 declares, so both projects share
 # one fmt::fmt target when ABTRDA3 is pulled in as a subproject (FetchContent dedups by name).
