@@ -13,6 +13,19 @@ if [[ ! -f "${db}" ]]; then
     exit 1
 fi
 
-exec run-clang-tidy -quiet -p "build/${preset}" -config-file=format/.clang-tidy \
+tidy="clang-tidy"
+runner="run-clang-tidy"
+for v in 23 22 21 20 19; do
+    if command -v "clang-tidy-${v}" >/dev/null 2>&1; then
+        tidy="clang-tidy-${v}"
+        runner="run-clang-tidy-${v}"
+        break
+    fi
+done
+command -v "${runner}" >/dev/null 2>&1 || runner="run-clang-tidy"
+echo "using $("${tidy}" --version | grep -o 'LLVM version [0-9.]*')" >&2
+
+exec "${runner}" -clang-tidy-binary "$(command -v "${tidy}")" -quiet -p "build/${preset}" \
+    -config-file=format/.clang-tidy \
     -header-filter='.*/(include/abt|apps)/.*' -j "$(nproc)" "$@" \
     "$(pwd)/(src|apps|test)/.*"
