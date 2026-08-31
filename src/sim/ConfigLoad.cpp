@@ -40,9 +40,9 @@ SimConfig loadConfig(const std::string& path) {
     c.warmupSteps     = t["flow"]["warmup_steps"].value_or(c.warmupSteps);
     c.tickIntervalNs  = t["flow"]["tick_interval_ns"].value_or(c.tickIntervalNs);
 
-    c.dpdk.interface = t["transport"]["interface"].value_or(c.dpdk.interface);
-    c.dpdk.driver    = t["transport"]["driver"].value_or(c.dpdk.driver);
-    c.dpdk.cpuCore   = t["transport"]["cpu_core"].value_or(c.dpdk.cpuCore);
+    c.transport.interface = t["transport"]["interface"].value_or(c.transport.interface);
+    c.transport.driver    = t["transport"]["driver"].value_or(c.transport.driver);
+    c.transport.cpuCore   = t["transport"]["cpu_core"].value_or(c.transport.cpuCore);
 
     const net::MacAddr lmac = config::parseMac(t["network"]["local_mac"].value_or(std::string{}));
     const net::MacAddr pmac = config::parseMac(t["network"]["peer_mac"].value_or(std::string{}));
@@ -51,16 +51,16 @@ SimConfig loadConfig(const std::string& path) {
     const std::uint32_t pip =
         config::parseIp(t["network"]["peer_ip"].value_or(std::string{"0.0.0.0"}));
 
-    for (net::Endpoints* ep : {&c.dpdk.marketData, &c.dpdk.orderEntry}) {
+    for (net::Endpoints* ep : {&c.transport.marketData, &c.transport.orderEntry}) {
         ep->srcMac = lmac;
         ep->dstMac = pmac;
         ep->srcIp  = lip;
         ep->dstIp  = pip;
     }
-    c.dpdk.marketData.srcPort = t["market_data"]["src_port"].value_or(c.dpdk.marketData.srcPort);
-    c.dpdk.marketData.dstPort = t["market_data"]["dst_port"].value_or(c.dpdk.marketData.dstPort);
-    c.dpdk.orderEntry.srcPort = t["order_entry"]["src_port"].value_or(c.dpdk.orderEntry.srcPort);
-    c.dpdk.orderEntry.dstPort = t["order_entry"]["dst_port"].value_or(c.dpdk.orderEntry.dstPort);
+    c.transport.marketData.srcPort = t["market_data"]["src_port"].value_or(c.transport.marketData.srcPort);
+    c.transport.marketData.dstPort = t["market_data"]["dst_port"].value_or(c.transport.marketData.dstPort);
+    c.transport.orderEntry.srcPort = t["order_entry"]["src_port"].value_or(c.transport.orderEntry.srcPort);
+    c.transport.orderEntry.dstPort = t["order_entry"]["dst_port"].value_or(c.transport.orderEntry.dstPort);
 
     c.socket.oePort = t["socket"]["oe_port"].value_or(c.socket.oePort);
     c.socket.mdHost = t["socket"]["md_host"].value_or(c.socket.mdHost);

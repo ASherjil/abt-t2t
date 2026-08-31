@@ -4,9 +4,7 @@
 
 #include <csignal>
 #include <cstdint>
-
 #include <fmt/core.h>
-
 #include "abt/protocol/Itch50.hpp"
 #include "abt/sim/ExchangeSession.hpp"
 #include "abt/sim/FlowGenerator.hpp"

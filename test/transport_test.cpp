@@ -1,5 +1,5 @@
 //
-// Unit test for the DPDK market-data TX path: ExchangeSession<IoMode::Dpdk, MockTx> end-to-end
+// Unit test for the DPDK market-data TX path: ExchangeSession<IoMode::Transport, MockTx> end-to-end
 // (venue -> MoldUDP64 packer -> Eth/IPv4/UDP framer -> transport) with a mock transport that
 // mirrors ABTRDA3's prefillRing/acquire/commit contract. No DPDK/NIC needed.
 //
@@ -66,9 +66,9 @@ net::Endpoints makeEndpoints(std::uint16_t srcPort, std::uint16_t dstPort) {
 }
 
 void testMarketDataFrame() {
-    ExchangeSession<IoMode::Dpdk, MockTx> ex{};
+    ExchangeSession<IoMode::Transport, MockTx> ex{};
     MockTx tx;
-    ex.prepareDpdk(tx, makeEndpoints(40000, 41000), makeEndpoints(40001, 41001));
+    ex.prepareTransport(tx, makeEndpoints(40000, 41000), makeEndpoints(40001, 41001));
 
     ex.injectSynthetic(Side::Buy, 5000, 100, 1000);
 
@@ -109,9 +109,9 @@ void testMarketDataFrame() {
 }
 
 void testOrderEntryRx() {
-    ExchangeSession<IoMode::Dpdk, MockTx> ex{};
+    ExchangeSession<IoMode::Transport, MockTx> ex{};
     MockTx tx;
-    ex.prepareDpdk(tx, makeEndpoints(40000, 41000), makeEndpoints(40001, 41001));
+    ex.prepareTransport(tx, makeEndpoints(40000, 41000), makeEndpoints(40001, 41001));
 
     ex.injectSynthetic(Side::Sell, 5200, 100, 1000);
     tx.frames.clear();
@@ -166,5 +166,5 @@ void testOrderEntryRx() {
 int main() {
     testMarketDataFrame();
     testOrderEntryRx();
-    return abt::test::summary("dpdk");
+    return abt::test::summary("transport");
 }

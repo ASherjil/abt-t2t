@@ -2,7 +2,7 @@
 //
 // Session server: SoupBinTCP <-> OUCH <-> matching <-> ITCH <-> MoldUDP64. A compile-time
 // IoMode selects in-memory capture (Loopback, for tests), kernel sockets (Socket, live), or a
-// hand-framed DPDK transport (Dpdk) supplied through the Tx type parameter.
+// ring transport (Transport = Verbs / DPDK / ef_vi via ABTRDA3) supplied through the Tx type parameter.
 //
 
 #include <array>
@@ -40,7 +40,7 @@
 
 namespace abt {
 
-enum class IoMode { Loopback, Socket, Dpdk };
+enum class IoMode { Loopback, Socket, Transport };
 
 struct NoTransport {};
 
@@ -65,15 +65,15 @@ public:
     [[nodiscard]] bool prepareSocketIo(std::uint16_t oePort, const char* mdHost, std::uint16_t mdPort)
         requires (Mode == IoMode::Socket);
     void attachSockets(int oeFd, int mdFd) requires (Mode == IoMode::Socket);
-    void prepareDpdk(Tx& tx, const net::Endpoints& mdEp, const net::Endpoints& oeEp)
-        requires (Mode == IoMode::Dpdk && TxRing<Tx>);
+    void prepareTransport(Tx& tx, const net::Endpoints& mdEp, const net::Endpoints& oeEp)
+        requires (Mode == IoMode::Transport && TxRing<Tx>);
     template <class TickFn>
     void run(volatile std::sig_atomic_t& stop, std::uint64_t tickIntervalNs, TickFn&& onTick)
         requires (Mode == IoMode::Socket);
-    void pollOrderEntry(std::uint64_t ts) requires (Mode == IoMode::Dpdk && RxRing<Tx>);
+    void pollOrderEntry(std::uint64_t ts) requires (Mode == IoMode::Transport && RxRing<Tx>);
     template <class TickFn>
     void run(volatile std::sig_atomic_t& stop, std::uint64_t tickIntervalNs, TickFn&& onTick)
-        requires (Mode == IoMode::Dpdk && RxRing<Tx>);
+        requires (Mode == IoMode::Transport && RxRing<Tx>);
 
     [[nodiscard]] const std::vector<std::vector<std::byte>>& capturedMarketData() const
         requires (Mode == IoMode::Loopback);
@@ -94,7 +94,7 @@ private:
         std::vector<std::vector<std::byte>> oe;
     };
     struct Empty {};
-    struct DpdkState {
+    struct TransportState {
         Tx*                           tx = nullptr;
         std::optional<net::UdpFramer> mdFramer;
         std::optional<net::UdpFramer> oeFramer;
@@ -102,7 +102,7 @@ private:
 
     void marketDataOut(std::span<const std::byte> b);
     void orderEntryOut(std::span<const std::byte> b);
-    void sendDpdk(const net::UdpFramer& fr, std::span<const std::byte> payload);
+    void sendFrame(const net::UdpFramer& fr, std::span<const std::byte> payload);
     void handleSoup(const soup::Packet& p, std::uint64_t ts);
     void dispatchOuch(std::span<const std::byte> payload, std::uint64_t ts);
     template <class Fn> void withMarketData(Fn&& fn);
@@ -128,7 +128,7 @@ private:
 
     [[no_unique_address]] std::conditional_t<Mode == IoMode::Socket, SocketState, Empty> m_sock{};
     [[no_unique_address]] std::conditional_t<Mode == IoMode::Loopback, Capture, Empty> m_cap{};
-    [[no_unique_address]] std::conditional_t<Mode == IoMode::Dpdk, DpdkState, Empty> m_dpdk{};
+    [[no_unique_address]] std::conditional_t<Mode == IoMode::Transport, TransportState, Empty> m_io{};
 };
 
 template <IoMode Mode, class Tx>
@@ -203,12 +203,12 @@ void ExchangeSession<Mode, Tx>::attachSockets(int oeFd, int mdFd)
 }
 
 template <IoMode Mode, class Tx>
-void ExchangeSession<Mode, Tx>::prepareDpdk(Tx& tx, const net::Endpoints& mdEp,
+void ExchangeSession<Mode, Tx>::prepareTransport(Tx& tx, const net::Endpoints& mdEp,
                                             const net::Endpoints& oeEp)
-    requires (Mode == IoMode::Dpdk && TxRing<Tx>) {
-    m_dpdk.tx = &tx;
-    m_dpdk.mdFramer.emplace(mdEp);
-    m_dpdk.oeFramer.emplace(oeEp);
+    requires (Mode == IoMode::Transport && TxRing<Tx>) {
+    m_io.tx = &tx;
+    m_io.mdFramer.emplace(mdEp);
+    m_io.oeFramer.emplace(oeEp);
 }
 
 template <IoMode Mode, class Tx>
@@ -235,14 +235,14 @@ void ExchangeSession<Mode, Tx>::run(volatile std::sig_atomic_t& stop, std::uint6
 
 template <IoMode Mode, class Tx>
 void ExchangeSession<Mode, Tx>::pollOrderEntry(std::uint64_t ts)
-    requires (Mode == IoMode::Dpdk && RxRing<Tx>) {
-    for (auto f = m_dpdk.tx->tryReceive(); f.status != 0; f = m_dpdk.tx->tryReceive()) {
+    requires (Mode == IoMode::Transport && RxRing<Tx>) {
+    for (auto f = m_io.tx->tryReceive(); f.status != 0; f = m_io.tx->tryReceive()) {
         const auto raw = f.data;
         if (raw.size() > net::kL2L3L4Overhead) {
             const auto* p = reinterpret_cast<const std::byte*>(raw.data());
             dispatchOuch({p + net::kL2L3L4Overhead, raw.size() - net::kL2L3L4Overhead}, ts);
         }
-        m_dpdk.tx->release();
+        m_io.tx->release();
     }
 }
 
@@ -250,7 +250,7 @@ template <IoMode Mode, class Tx>
 template <class TickFn>
 void ExchangeSession<Mode, Tx>::run(volatile std::sig_atomic_t& stop, std::uint64_t tickIntervalNs,
                                     TickFn&& onTick)
-    requires (Mode == IoMode::Dpdk && RxRing<Tx>) {
+    requires (Mode == IoMode::Transport && RxRing<Tx>) {
     std::uint64_t lastTick = monotonicNs();
     while (stop == 0) {
         pollOrderEntry(nsSinceMidnightUtc());
@@ -275,15 +275,15 @@ void ExchangeSession<Mode, Tx>::clearCaptured() requires (Mode == IoMode::Loopba
 }
 
 template <IoMode Mode, class Tx>
-void ExchangeSession<Mode, Tx>::sendDpdk(const net::UdpFramer& fr,
+void ExchangeSession<Mode, Tx>::sendFrame(const net::UdpFramer& fr,
                                          std::span<const std::byte> payload) {
     const auto frameLen = static_cast<std::uint32_t>(net::kL2L3L4Overhead + payload.size());
-    std::uint8_t* buf = m_dpdk.tx->acquire(frameLen);
+    std::uint8_t* buf = m_io.tx->acquire(frameLen);
     if (buf == nullptr) [[unlikely]] return;
     std::memcpy(buf, fr.header().data(), net::kL2L3L4Overhead);
     std::memcpy(buf + net::kL2L3L4Overhead, payload.data(), payload.size());
     fr.patch(reinterpret_cast<std::byte*>(buf), payload.size());
-    m_dpdk.tx->commit();
+    m_io.tx->commit();
 }
 
 template <IoMode Mode, class Tx>
@@ -293,7 +293,7 @@ void ExchangeSession<Mode, Tx>::marketDataOut(std::span<const std::byte> b) {
     } else if constexpr (Mode == IoMode::Socket) {
         (void)::send(m_sock.mdFd, b.data(), b.size(), MSG_NOSIGNAL);
     } else {
-        sendDpdk(*m_dpdk.mdFramer, b);
+        sendFrame(*m_io.mdFramer, b);
     }
 }
 
@@ -382,8 +382,8 @@ void ExchangeSession<Mode, Tx>::flushMarketData() {
 
 template <IoMode Mode, class Tx>
 void ExchangeSession<Mode, Tx>::sendOrderEntry(std::span<const std::byte> ouch) {
-    if constexpr (Mode == IoMode::Dpdk) {
-        sendDpdk(*m_dpdk.oeFramer, ouch);
+    if constexpr (Mode == IoMode::Transport) {
+        sendFrame(*m_io.oeFramer, ouch);
     } else {
         const auto pkt = soup::packSequencedData(m_oeBuf.data(), ouch);
         orderEntryOut(pkt);

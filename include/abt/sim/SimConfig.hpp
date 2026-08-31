@@ -18,7 +18,7 @@ struct SocketConfig {
     std::uint16_t mdPort = 5002;
 };
 
-struct DpdkConfig {
+struct TransportConfig {
     std::string    interface = "cx0";
     std::string    driver    = "mlx5_core";
     int            cpuCore   = 2;
@@ -30,7 +30,7 @@ struct SimConfig {
     ExchangeConfig venue;
     FlowConfig     flow;
     SocketConfig   socket;
-    DpdkConfig     dpdk;
+    TransportConfig     transport;
     std::size_t    warmupSteps    = 200;
     std::uint64_t  tickIntervalNs = 100000;
 };

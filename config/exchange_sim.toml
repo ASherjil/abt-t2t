@@ -23,7 +23,7 @@ warmup_steps     = 200                  # generator steps run before going live
 tick_interval_ns = 100000               # run() pumps one generator step per this interval
 
 [transport]
-mode      = "dpdk"            # "dpdk" (configs 2/3) or "socket" (config 1)
+mode      = "verbs"           # "verbs" | "dpdk" (configs 2/3) or "socket" (config 1)
 interface = "cx0"            # NIC the sim drives
 driver    = "mlx5_core"      # "mlx5_core" | "af_xdp" | "i40e"
 cpu_core  = 2                # lcore the DPDK datapath pins to

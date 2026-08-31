@@ -83,23 +83,23 @@ void test_load() {
     CHECK_EQ(c.warmupSteps, 111u);
     CHECK_EQ(c.tickIntervalNs, 250000u);
 
-    CHECK(c.dpdk.interface == "cx1");
-    CHECK(c.dpdk.driver == "af_xdp");
-    CHECK_EQ(c.dpdk.cpuCore, 5);
+    CHECK(c.transport.interface == "cx1");
+    CHECK(c.transport.driver == "af_xdp");
+    CHECK_EQ(c.transport.cpuCore, 5);
 
-    CHECK_EQ(c.dpdk.marketData.srcMac[0], 0xaau);
-    CHECK_EQ(c.dpdk.marketData.srcMac[5], 0x01u);
-    CHECK_EQ(c.dpdk.orderEntry.dstMac[0], 0x11u);
-    CHECK_EQ(c.dpdk.orderEntry.dstMac[5], 0x66u);
-    CHECK_EQ(octet(c.dpdk.marketData.srcIp, 24), 10);
-    CHECK_EQ(octet(c.dpdk.marketData.srcIp, 0), 1);
-    CHECK_EQ(octet(c.dpdk.orderEntry.dstIp, 24), 192);
-    CHECK_EQ(octet(c.dpdk.orderEntry.dstIp, 0), 2);
+    CHECK_EQ(c.transport.marketData.srcMac[0], 0xaau);
+    CHECK_EQ(c.transport.marketData.srcMac[5], 0x01u);
+    CHECK_EQ(c.transport.orderEntry.dstMac[0], 0x11u);
+    CHECK_EQ(c.transport.orderEntry.dstMac[5], 0x66u);
+    CHECK_EQ(octet(c.transport.marketData.srcIp, 24), 10);
+    CHECK_EQ(octet(c.transport.marketData.srcIp, 0), 1);
+    CHECK_EQ(octet(c.transport.orderEntry.dstIp, 24), 192);
+    CHECK_EQ(octet(c.transport.orderEntry.dstIp, 0), 2);
 
-    CHECK_EQ(c.dpdk.marketData.srcPort, 40000u);
-    CHECK_EQ(c.dpdk.marketData.dstPort, 41000u);
-    CHECK_EQ(c.dpdk.orderEntry.srcPort, 40001u);
-    CHECK_EQ(c.dpdk.orderEntry.dstPort, 41001u);
+    CHECK_EQ(c.transport.marketData.srcPort, 40000u);
+    CHECK_EQ(c.transport.marketData.dstPort, 41000u);
+    CHECK_EQ(c.transport.orderEntry.srcPort, 40001u);
+    CHECK_EQ(c.transport.orderEntry.dstPort, 41001u);
 
     CHECK_EQ(c.socket.oePort, 6001u);
     CHECK(c.socket.mdHost == "127.0.0.9");
