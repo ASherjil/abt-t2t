@@ -7,7 +7,7 @@ cd "$(dirname "$(readlink -f "$0")")/.."
 
 mapfile -t files < <(git ls-files 'include/*.hpp' 'src/*.cpp' 'src/*.hpp' 'apps/*.cpp' 'apps/*.hpp' 'test/*.cpp' 'test/*.hpp')
 if [[ "${1:-}" == "--check" ]]; then
-    clang-format --style=file --dry-run --Werror "${files[@]}"
+    clang-format --style=file:format/.clang-format --dry-run --Werror "${files[@]}"
 else
-    clang-format --style=file -i "${files[@]}"
+    clang-format --style=file:format/.clang-format -i "${files[@]}"
 fi
