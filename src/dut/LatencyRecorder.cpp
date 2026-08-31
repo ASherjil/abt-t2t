@@ -1,11 +1,10 @@
 #include "abt/dut/LatencyRecorder.hpp"
 
-#include <pthread.h>
-#include <sched.h>
-
 #include <utility>
 
 #include <fmt/core.h>
+
+#include "abt/util/Affinity.hpp"
 
 #if defined(__x86_64__)
 #include <immintrin.h>
@@ -22,16 +21,6 @@ void relax() noexcept {
 #if defined(__x86_64__)
     _mm_pause();
 #endif
-}
-
-void pinTo(int core) noexcept {
-    if (core < 0) {
-        return;
-    }
-    cpu_set_t set;
-    CPU_ZERO(&set);
-    CPU_SET(static_cast<unsigned>(core), &set);
-    (void)pthread_setaffinity_np(pthread_self(), sizeof set, &set);
 }
 
 }
@@ -135,7 +124,7 @@ bool RecorderThread::running() const noexcept {
 }
 
 void RecorderThread::loop() noexcept {
-    pinTo(m_core);
+    (void)util::pinThread(m_core);
     while (m_run.load(std::memory_order_relaxed)) {
         bool any = false;
         for (LatencyRecorder* r : m_recorders) {

@@ -45,17 +45,28 @@ FetchContent_Declare(hdrhistogram
     GIT_TAG 0.11.10)
 FetchContent_MakeAvailable(hdrhistogram)
 
-# Kernel-bypass transports (DPDK / Verbs / AF_XDP / ef_vi) live in the sibling ABTRDA3
-# repo, which owns all NIC/EAL/hugepage init. OFF by default: enabling it runs ABTRDA3's
-# CMake, which pkg-config-requires DPDK/rdma-core/libxdp. Turn on for the DPDK datapath.
-option(ABT_WITH_TRANSPORT "Fetch ABTRDA3 kernel-bypass transports" OFF)
-if(ABT_WITH_TRANSPORT)
-    include(FetchContent)
+# Exchange-sim backend, fixed at configure time. "socket" builds anywhere; "verbs" / "dpdk"
+# fetch the sibling ABTRDA3 repo (owns all NIC/EAL/QP init) and need rdma-core / libdpdk
+# (+ libxdp/libbpf, which ABTRDA3 always builds). apps/backends/<name>/SimBackend.hpp is
+# the only place a concrete transport type is named.
+set(ABT_SIM_BACKEND "socket" CACHE STRING "exchange_sim backend: socket | verbs | dpdk")
+set_property(CACHE ABT_SIM_BACKEND PROPERTY STRINGS socket verbs dpdk)
+if(NOT ABT_SIM_BACKEND MATCHES "^(socket|verbs|dpdk)$")
+    message(FATAL_ERROR "ABT_SIM_BACKEND must be socket, verbs or dpdk (got '${ABT_SIM_BACKEND}')")
+endif()
+if(NOT ABT_SIM_BACKEND STREQUAL "socket")
+    set(ABTRDA3_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+    if(ABT_SIM_BACKEND STREQUAL "verbs")
+        set(ABTRDA3_WITH_VERBS ON CACHE BOOL "" FORCE)
+    elseif(ABT_SIM_BACKEND STREQUAL "dpdk")
+        set(ABTRDA3_WITH_DPDK ON CACHE BOOL "" FORCE)
+    endif()
     FetchContent_Declare(abtrda3
         GIT_REPOSITORY https://github.com/ASherjil/ABTRDA3.git
         GIT_TAG main)
     FetchContent_MakeAvailable(abtrda3)
 endif()
+message(STATUS "abt-t2t: exchange_sim backend = ${ABT_SIM_BACKEND}")
 
 # ---------------------------------------------------------------------------
 # abt_protocol : header-only wire protocol library (ITCH 5.0 / OUCH 5.0).

@@ -32,6 +32,7 @@ warmup_steps = 111
 tick_interval_ns = 250000
 
 [transport]
+mode = "verbs"
 interface = "cx1"
 driver = "af_xdp"
 cpu_core = 5
@@ -83,6 +84,7 @@ void test_load() {
     CHECK_EQ(c.warmupSteps, 111u);
     CHECK_EQ(c.tickIntervalNs, 250000u);
 
+    CHECK(c.transport.mode == "verbs");
     CHECK(c.transport.interface == "cx1");
     CHECK(c.transport.driver == "af_xdp");
     CHECK_EQ(c.transport.cpuCore, 5);

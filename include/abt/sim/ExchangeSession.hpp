@@ -88,7 +88,10 @@ public:
     };
 
 private:
-    struct SocketState { int mdFd = -1; int oeFd = -1; };
+    struct SocketState {
+        int mdFd = -1;
+        int oeFd = -1;
+    };
     struct Capture {
         std::vector<std::vector<std::byte>> md;
         std::vector<std::vector<std::byte>> oe;

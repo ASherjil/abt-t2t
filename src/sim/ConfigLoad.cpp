@@ -40,6 +40,7 @@ SimConfig loadConfig(const std::string& path) {
     c.warmupSteps     = t["flow"]["warmup_steps"].value_or(c.warmupSteps);
     c.tickIntervalNs  = t["flow"]["tick_interval_ns"].value_or(c.tickIntervalNs);
 
+    c.transport.mode      = t["transport"]["mode"].value_or(c.transport.mode);
     c.transport.interface = t["transport"]["interface"].value_or(c.transport.interface);
     c.transport.driver    = t["transport"]["driver"].value_or(c.transport.driver);
     c.transport.cpuCore   = t["transport"]["cpu_core"].value_or(c.transport.cpuCore);
