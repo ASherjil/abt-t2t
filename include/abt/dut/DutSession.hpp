@@ -66,7 +66,8 @@ public:
     DutSession(const DutSession&) = delete;
     DutSession& operator=(const DutSession&) = delete;
 
-    void onMarketData(std::span<const std::byte> moldPacket, std::uint64_t rxHwts)
+    void onMarketData(std::span<const std::byte> moldPacket, std::uint64_t rxHwts,
+                      std::uint64_t rxTsc = 0)
         requires (Mode == IoMode::Loopback || Mode == IoMode::Socket);
     void onAck(std::span<const std::byte> ouch) noexcept;
 
@@ -126,7 +127,8 @@ private:
         bool                       loggedIn = false;
     };
 
-    void applyPacket(std::span<const std::byte> moldPacket, std::uint64_t rxHwts);
+    void applyPacket(std::span<const std::byte> moldPacket, std::uint64_t rxHwts,
+                     std::uint64_t rxTsc);
     [[nodiscard]] bool sendOrder(std::span<const std::byte> ouch);
     void recordSend(std::uint32_t userRef, std::uint64_t rxHwts) noexcept;
     [[nodiscard]] static std::uint16_t udpDstPort(const std::uint8_t* frame) noexcept;
@@ -176,9 +178,9 @@ DutSession<Mode, Strat, Io>::~DutSession() {
 
 template <IoMode Mode, Strategy Strat, class Io>
 void DutSession<Mode, Strat, Io>::onMarketData(std::span<const std::byte> moldPacket,
-                                               std::uint64_t rxHwts)
+                                               std::uint64_t rxHwts, std::uint64_t rxTsc)
     requires (Mode == IoMode::Loopback || Mode == IoMode::Socket) {
-    applyPacket(moldPacket, rxHwts);
+    applyPacket(moldPacket, rxHwts, rxTsc == 0 ? tsc::now() : rxTsc);
 }
 
 template <IoMode Mode, Strategy Strat, class Io>
@@ -288,9 +290,10 @@ void DutSession<Mode, Strat, Io>::run(volatile std::sig_atomic_t& stop, Periodic
             continue;
         }
         if ((pfds[0].revents & POLLIN) != 0) {
+            const std::uint64_t rxTsc = tsc::now();
             const ssize_t n = ::recv(m_sock.mdFd, rx.data(), rx.size(), 0);
             if (n > 0) {
-                onMarketData({rx.data(), static_cast<std::size_t>(n)}, monotonicNs());
+                onMarketData({rx.data(), static_cast<std::size_t>(n)}, monotonicNs(), rxTsc);
             }
         }
         if ((pfds[1].revents & POLLIN) != 0) {
@@ -322,7 +325,12 @@ bool DutSession<Mode, Strat, Io>::prepareTransport(Io& io, const net::Endpoints&
 template <IoMode Mode, Strategy Strat, class Io>
 void DutSession<Mode, Strat, Io>::poll()
     requires (Mode == IoMode::Transport && RxRing<Io> && TxRing<Io>) {
-    for (auto f = m_io.io->tryReceive(); f.status != 0; f = m_io.io->tryReceive()) {
+    for (;;) {
+        const std::uint64_t rxTsc = tsc::now();
+        const auto f = m_io.io->tryReceive();
+        if (f.status == 0) {
+            break;
+        }
         const auto raw = f.data;
         if (raw.size() > net::kL2L3L4Overhead) {
             const auto* frame = reinterpret_cast<const std::uint8_t*>(raw.data());
@@ -334,7 +342,7 @@ void DutSession<Mode, Strat, Io>::poll()
             } else {
                 const std::uint64_t rxHwts =
                     static_cast<std::uint64_t>(f.sec) * 1'000'000'000ull + f.nsec;
-                applyPacket(payload, rxHwts);
+                applyPacket(payload, rxHwts, rxTsc);
             }
         }
         m_io.io->release();
@@ -411,7 +419,7 @@ const std::vector<std::vector<std::byte>>& DutSession<Mode, Strat, Io>::captured
 
 template <IoMode Mode, Strategy Strat, class Io>
 void DutSession<Mode, Strat, Io>::applyPacket(std::span<const std::byte> moldPacket,
-                                              std::uint64_t rxHwts) {
+                                              std::uint64_t rxHwts, std::uint64_t rxTsc) {
     if (moldPacket.size() < mold::kHeaderSize) [[unlikely]] {
         return;
     }
@@ -433,7 +441,7 @@ void DutSession<Mode, Strat, Io>::applyPacket(std::span<const std::byte> moldPac
 
     for (std::size_t i = 0; i < n; ++i) {
         if (sendOrder({m_out[i].buf.data(), m_out[i].len}) && i == 0) {
-            m_t2tSw.record(tsc::now() - begin);
+            m_t2tSw.record(tsc::now() - rxTsc);
             recordSend(m_out[i].userRef, rxHwts);
         }
     }
