@@ -27,5 +27,5 @@ echo "using $("${tidy}" --version | grep -o 'LLVM version [0-9.]*')" >&2
 
 exec "${runner}" -clang-tidy-binary "$(command -v "${tidy}")" -quiet -p "build/${preset}" \
     -config-file=format/.clang-tidy \
-    -header-filter='.*/(include/abt|apps)/.*' -j "$(nproc)" "$@" \
-    "$(pwd)/(src|apps|test)/.*"
+    -header-filter='.*/src/(t2t|apps)/.*' -j "$(nproc)" "$@" \
+    "$(pwd)/(src/t2t|src/apps|test)/.*"

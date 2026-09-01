@@ -27,7 +27,7 @@ Checks: >
   readability-static-accessed-through-instance,
   readability-container-size-empty
 WarningsAsErrors: ''
-HeaderFilterRegex: '.*/(include/abt|apps)/.*'
+HeaderFilterRegex: '.*/src/(t2t|apps)/.*'
 FormatStyle: file
 CheckOptions:
   cppcoreguidelines-special-member-functions.AllowSoleDefaultDtor: true

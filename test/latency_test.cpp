@@ -2,7 +2,7 @@
 
 #include <cstdint>
 
-#include "abt/dut/LatencyRecorder.hpp"
+#include "t2t/dut/LatencyRecorder.hpp"
 
 using namespace abt;
 

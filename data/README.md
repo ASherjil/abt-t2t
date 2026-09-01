@@ -9,7 +9,7 @@ directory is ignored except for this README.
     scripts/fetch_itch.sh 12302019       # a quieter day for contrast
 
 Format: "BinaryFILE" — each message is a 2-byte big-endian length followed by the raw ITCH
-message; no MoldUDP64 framing. The readers in `include/abt/replay/` handle both the .gz and
+message; no MoldUDP64 framing. The readers in `src/t2t/replay/` handle both the .gz and
 the uncompressed form transparently.
 
 Expected layout:

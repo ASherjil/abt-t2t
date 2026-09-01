@@ -50,10 +50,22 @@ Built incrementally. Current state:
 ## Layout
 
 ```
-include/abt/protocol/   ITCH/OUCH wire structs + big-endian overlay primitives
+src/t2t/                library code, headers and sources side by side (include root is src/)
+  protocol/             ITCH 5.0 / OUCH 5.0 / MoldUDP64 / SoupBinTCP wire structs and framers
+  lob/                  limit order book / matching engine
+  util/                 TSC clock, affinity, flat hash map, HdrHistogram binding
+  replay/               NASDAQ ITCH file readers and symbol filter
+  sim/                  exchange simulator: venue, session, synthetic flow, real-data replay
+  dut/                  DUT: feed builder, sequence tracker, OMS, quoter, latency recorder
+  config/               NIC/backend traits and TOML config loaders
+src/third_party/        vendored code (ABTRDA3 ring concepts)
+src/apps/               exchange_sim, dut, itch_replay binaries (+ per-backend transport glue)
 test/                   unit tests (in-tree harness; ctest)
+config/                 runtime TOML configs
+scripts/                build / loopback / format / tidy helpers
 docs/                   measurement methodology & design notes
 cmake/                  shared warning/arch/opt flags
+format/                 .clang-format / .clang-tidy (root symlinks point here)
 ```
 
 ## Build & test

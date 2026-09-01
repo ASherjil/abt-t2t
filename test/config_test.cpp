@@ -9,7 +9,7 @@
 #include <fstream>
 #include <string>
 
-#include "abt/sim/SimConfig.hpp"
+#include "t2t/sim/SimConfig.hpp"
 
 using namespace abt;
 

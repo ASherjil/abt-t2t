@@ -16,12 +16,12 @@
 
 #include "third_party/abtrda3/RxFrame.hpp"
 
-#include "abt/protocol/Checksum.hpp"
-#include "abt/protocol/EthIpUdp.hpp"
-#include "abt/protocol/MoldUdp64.hpp"
-#include "abt/protocol/Ouch50.hpp"
-#include "abt/protocol/SoupBinTcp.hpp"
-#include "abt/sim/ExchangeSession.hpp"
+#include "t2t/protocol/Checksum.hpp"
+#include "t2t/protocol/EthIpUdp.hpp"
+#include "t2t/protocol/MoldUdp64.hpp"
+#include "t2t/protocol/Ouch50.hpp"
+#include "t2t/protocol/SoupBinTcp.hpp"
+#include "t2t/sim/ExchangeSession.hpp"
 
 using namespace abt;
 

@@ -5,7 +5,7 @@
 #include <fstream>
 #include <string>
 
-#include "abt/dut/DutAppConfig.hpp"
+#include "t2t/dut/DutAppConfig.hpp"
 
 using namespace abt;
 

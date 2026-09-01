@@ -9,7 +9,7 @@
 #include <cstdint>
 #include <vector>
 
-#include "abt/util/Scan.hpp"
+#include "t2t/util/Scan.hpp"
 
 using namespace abt;
 

@@ -138,7 +138,7 @@ IncludeCategories:
     Priority: 4
   - Regex: '^"third_party/'
     Priority: 5
-  - Regex: '^"abt/'
+  - Regex: '^"t2t/'
     Priority: 6
   - Regex: '.*'
     Priority: 7

@@ -7,7 +7,7 @@
 
 #include <cstdint>
 
-#include "abt/util/Histogram.hpp"
+#include "t2t/util/Histogram.hpp"
 
 using namespace abt;
 
