@@ -6,7 +6,8 @@ set(T2T_INCLUDE_ROOT ${PROJECT_SOURCE_DIR}/src)
 # abt_util : clock/TSC, affinity, flat hash map, HdrHistogram binding.
 # ---------------------------------------------------------------------------
 add_library(abt_util STATIC
-    util/Histogram.cpp)
+    util/Histogram.cpp
+    util/UniqueFd.cpp)
 add_library(abt::util ALIAS abt_util)
 target_include_directories(abt_util PUBLIC ${T2T_INCLUDE_ROOT})
 target_compile_features(abt_util PUBLIC cxx_std_20)

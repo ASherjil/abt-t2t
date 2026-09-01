@@ -20,6 +20,7 @@
 #include "t2t/protocol/Ouch50.hpp"
 #include "t2t/protocol/SoupBinTcp.hpp"
 #include "t2t/sim/ExchangeSession.hpp"
+#include "t2t/util/UniqueFd.hpp"
 
 using namespace abt;
 
@@ -81,7 +82,7 @@ void test_socket_roundtrip() {
     setRecvTimeout(md[1], 2000);
 
     ExchangeSession<IoMode::Socket> ex{};
-    ex.attachSockets(oe[0], md[0]);
+    ex.attachSockets(util::UniqueFd{oe[0]}, util::UniqueFd{md[0]});
 
     soup::LoginRequest lr{};
     lr.username = std::string_view{"USER01"};

@@ -40,6 +40,7 @@
 #include "t2t/protocol/UdpFramer.hpp"
 #include "t2t/util/Clock.hpp"
 #include "t2t/util/Tsc.hpp"
+#include "t2t/util/UniqueFd.hpp"
 
 namespace abt::dut {
 
@@ -68,10 +69,8 @@ struct DutConfig {
 template <IoMode Mode, Strategy Strat, class Io = NoTransport>
 class DutSession {
 public:
+// Rule of zero applies here
     DutSession(const DutConfig& cfg, Strat strat);
-    ~DutSession();
-    DutSession(const DutSession&)            = delete;
-    DutSession& operator=(const DutSession&) = delete;
 
     void onMarketData(std::span<const std::byte> moldPacket, std::uint64_t rxHwts, std::uint64_t rxTsc = 0)
         requires (Mode == IoMode::Loopback || Mode == IoMode::Socket);
@@ -80,7 +79,7 @@ public:
     [[nodiscard]] bool connectVenue(const char* oeHost, std::uint16_t oePort, const char* mdBindHost,
                                     std::uint16_t mdPort)
         requires (Mode == IoMode::Socket);
-    void attachSockets(int oeFd, int mdFd)
+    void attachSockets(util::UniqueFd oeFd, util::UniqueFd mdFd)
         requires (Mode == IoMode::Socket);
     void login(std::string_view session, std::string_view user)
         requires (Mode == IoMode::Socket);
@@ -143,8 +142,8 @@ private:
     };
 
     struct SocketState {
-        int                        mdFd = -1;
-        int                        oeFd = -1;
+        util::UniqueFd             mdFd;
+        util::UniqueFd             oeFd;
         std::vector<std::byte>     rx;
         std::array<std::byte, 256> soupBuf{};
         bool                       loggedIn = false;
@@ -192,18 +191,6 @@ DutSession<Mode, Strat, Io>::DutSession(const DutConfig& cfg, Strat strat)
 }
 
 template <IoMode Mode, Strategy Strat, class Io>
-DutSession<Mode, Strat, Io>::~DutSession() {
-    if constexpr (Mode == IoMode::Socket) {
-        if (m_sock.oeFd >= 0) {
-            ::close(m_sock.oeFd);
-        }
-        if (m_sock.mdFd >= 0) {
-            ::close(m_sock.mdFd);
-        }
-    }
-}
-
-template <IoMode Mode, Strategy Strat, class Io>
 void DutSession<Mode, Strat, Io>::onMarketData(std::span<const std::byte> moldPacket, std::uint64_t rxHwts,
                                                std::uint64_t rxTsc)
     requires (Mode == IoMode::Loopback || Mode == IoMode::Socket)
@@ -221,8 +208,8 @@ bool DutSession<Mode, Strat, Io>::connectVenue(const char* oeHost, std::uint16_t
                                                const char* mdBindHost, std::uint16_t mdPort)
     requires (Mode == IoMode::Socket)
 {
-    m_sock.oeFd = ::socket(AF_INET, SOCK_STREAM, 0);
-    if (m_sock.oeFd < 0) {
+    m_sock.oeFd.reset(::socket(AF_INET, SOCK_STREAM, 0));
+    if (!m_sock.oeFd) {
         fmt::print(stderr, "dut: socket(tcp): {}\n", std::strerror(errno));
         return false;
     }
@@ -233,20 +220,20 @@ bool DutSession<Mode, Strat, Io>::connectVenue(const char* oeHost, std::uint16_t
         fmt::print(stderr, "dut: bad order-entry host {}\n", oeHost);
         return false;
     }
-    if (::connect(m_sock.oeFd, reinterpret_cast<sockaddr*>(&oe), sizeof oe) < 0) {
+    if (::connect(m_sock.oeFd.get(), reinterpret_cast<sockaddr*>(&oe), sizeof oe) < 0) {
         fmt::print(stderr, "dut: connect({}:{}): {}\n", oeHost, oePort, std::strerror(errno));
         return false;
     }
     int nodelay = 1;
-    ::setsockopt(m_sock.oeFd, IPPROTO_TCP, TCP_NODELAY, &nodelay, sizeof nodelay);
+    ::setsockopt(m_sock.oeFd.get(), IPPROTO_TCP, TCP_NODELAY, &nodelay, sizeof nodelay);
 
-    m_sock.mdFd = ::socket(AF_INET, SOCK_DGRAM, 0);
-    if (m_sock.mdFd < 0) {
+    m_sock.mdFd.reset(::socket(AF_INET, SOCK_DGRAM, 0));
+    if (!m_sock.mdFd) {
         fmt::print(stderr, "dut: socket(udp): {}\n", std::strerror(errno));
         return false;
     }
     int reuse = 1;
-    ::setsockopt(m_sock.mdFd, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof reuse);
+    ::setsockopt(m_sock.mdFd.get(), SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof reuse);
     sockaddr_in md{};
     md.sin_family = AF_INET;
     md.sin_port   = htons(mdPort);
@@ -254,7 +241,7 @@ bool DutSession<Mode, Strat, Io>::connectVenue(const char* oeHost, std::uint16_t
         fmt::print(stderr, "dut: bad market-data bind host {}\n", mdBindHost);
         return false;
     }
-    if (::bind(m_sock.mdFd, reinterpret_cast<sockaddr*>(&md), sizeof md) < 0) {
+    if (::bind(m_sock.mdFd.get(), reinterpret_cast<sockaddr*>(&md), sizeof md) < 0) {
         fmt::print(stderr, "dut: bind({}:{}): {}\n", mdBindHost, mdPort, std::strerror(errno));
         return false;
     }
@@ -262,11 +249,11 @@ bool DutSession<Mode, Strat, Io>::connectVenue(const char* oeHost, std::uint16_t
 }
 
 template <IoMode Mode, Strategy Strat, class Io>
-void DutSession<Mode, Strat, Io>::attachSockets(int oeFd, int mdFd)
+void DutSession<Mode, Strat, Io>::attachSockets(util::UniqueFd oeFd, util::UniqueFd mdFd)
     requires (Mode == IoMode::Socket)
 {
-    m_sock.oeFd = oeFd;
-    m_sock.mdFd = mdFd;
+    m_sock.oeFd = std::move(oeFd);
+    m_sock.mdFd = std::move(mdFd);
 }
 
 template <IoMode Mode, Strategy Strat, class Io>
@@ -277,7 +264,7 @@ void DutSession<Mode, Strat, Io>::login(std::string_view session, std::string_vi
     lr.username         = user;
     lr.requestedSession = session;
     const auto pkt      = soup::pack(m_sock.soupBuf.data(), soup::Type::LoginRequest, soup::asBytes(lr));
-    (void)::send(m_sock.oeFd, pkt.data(), pkt.size(), MSG_NOSIGNAL);
+    (void)::send(m_sock.oeFd.get(), pkt.data(), pkt.size(), MSG_NOSIGNAL);
 }
 
 template <IoMode Mode, Strategy Strat, class Io>
@@ -319,19 +306,19 @@ void DutSession<Mode, Strat, Io>::run(volatile std::sig_atomic_t& stop, Periodic
     std::array<std::byte, 8192> rx{};
     while (stop == 0) {
         periodic();
-        pollfd pfds[2] = {{m_sock.mdFd, POLLIN, 0}, {m_sock.oeFd, POLLIN, 0}};
+        pollfd pfds[2] = {{m_sock.mdFd.get(), POLLIN, 0}, {m_sock.oeFd.get(), POLLIN, 0}};
         if (::poll(pfds, 2, 1) <= 0) {
             continue;
         }
         if ((pfds[0].revents & POLLIN) != 0) {
             const std::uint64_t rxTsc = tsc::now();
-            const ssize_t       n     = ::recv(m_sock.mdFd, rx.data(), rx.size(), 0);
+            const ssize_t       n     = ::recv(m_sock.mdFd.get(), rx.data(), rx.size(), 0);
             if (n > 0) {
                 onMarketData({rx.data(), static_cast<std::size_t>(n)}, monotonicNs(), rxTsc);
             }
         }
         if ((pfds[1].revents & POLLIN) != 0) {
-            const ssize_t n = ::recv(m_sock.oeFd, rx.data(), rx.size(), 0);
+            const ssize_t n = ::recv(m_sock.oeFd.get(), rx.data(), rx.size(), 0);
             if (n > 0) {
                 onOrderEntry({rx.data(), static_cast<std::size_t>(n)});
             } else if (n == 0) {
@@ -584,7 +571,7 @@ bool DutSession<Mode, Strat, Io>::sendOrder(std::span<const std::byte> ouch) {
         m_cap.oe.emplace_back(ouch.begin(), ouch.end());
     } else if constexpr (Mode == IoMode::Socket) {
         const auto pkt = soup::packUnsequencedData(m_sock.soupBuf.data(), ouch);
-        if (::send(m_sock.oeFd, pkt.data(), pkt.size(), MSG_NOSIGNAL) <= 0) {
+        if (::send(m_sock.oeFd.get(), pkt.data(), pkt.size(), MSG_NOSIGNAL) <= 0) {
             return false;
         }
     } else {

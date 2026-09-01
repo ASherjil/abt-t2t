@@ -29,7 +29,7 @@
 #include <fmt/core.h>
 
 #include "third_party/abtrda3/RingConcepts.hpp"
-
+#include "t2t/util/UniqueFd.hpp"
 #include "t2t/protocol/MoldUdp64.hpp"
 #include "t2t/protocol/Ouch50.hpp"
 #include "t2t/protocol/SoupBinTcp.hpp"
@@ -64,10 +64,13 @@ struct SessionStats {
 template <IoMode Mode, class Tx = NoTransport>
 class ExchangeSession {
 public:
+// Rule of 5 needed here
     explicit ExchangeSession(const ExchangeConfig& cfg = {});
-    ~ExchangeSession();
     ExchangeSession(const ExchangeSession&)            = delete;
     ExchangeSession& operator=(const ExchangeSession&) = delete;
+    ExchangeSession(ExchangeSession&&)                 = delete;
+    ExchangeSession& operator=(ExchangeSession&&)      = delete;
+    ~ExchangeSession() = default;
 
     void onOrderEntryBytes(std::span<const std::byte> data, std::uint64_t ts);
 
@@ -91,7 +94,7 @@ public:
 
     [[nodiscard]] bool prepareSocketIo(std::uint16_t oePort, const char* mdHost, std::uint16_t mdPort)
         requires (Mode == IoMode::Socket);
-    void attachSockets(int oeFd, int mdFd)
+    void attachSockets(util::UniqueFd oeFd, util::UniqueFd mdFd)
         requires (Mode == IoMode::Socket);
     void prepareTransport(Tx& tx, const net::Endpoints& mdEp, const net::Endpoints& oeEp,
                           std::uint32_t maxTxFrame = 0)
@@ -128,8 +131,8 @@ public:
 
 private:
     struct SocketState {
-        int mdFd = -1;
-        int oeFd = -1;
+        util::UniqueFd mdFd;
+        util::UniqueFd oeFd;
     };
 
     struct Capture {
@@ -160,9 +163,9 @@ private:
     void                      sendOrderEntry(std::span<const std::byte> ouch);
 
     [[noreturn]] static void die(const char* what);
-    static int               makeUdpSender(const char* host, std::uint16_t port)
+    static util::UniqueFd     makeUdpSender(const char* host, std::uint16_t port)
         requires (Mode == IoMode::Socket);
-    static int acceptOrderEntry(std::uint16_t port)
+    static util::UniqueFd acceptOrderEntry(std::uint16_t port)
         requires (Mode == IoMode::Socket);
 
     ExchangeConfig   m_cfg;
@@ -189,18 +192,6 @@ ExchangeSession<Mode, Tx>::ExchangeSession(const ExchangeConfig& cfg)
       m_packer(cfg.session, 1),
       m_venue(m_sink, cfg.symbol, cfg.stockLocate, cfg.minTick, cfg.maxTick, cfg.wirePerTick,
               cfg.firstOrderRef, cfg.liveReserve) {
-}
-
-template <IoMode Mode, class Tx>
-ExchangeSession<Mode, Tx>::~ExchangeSession() {
-    if constexpr (Mode == IoMode::Socket) {
-        if (m_sock.oeFd >= 0) {
-            ::close(m_sock.oeFd);
-        }
-        if (m_sock.mdFd >= 0) {
-            ::close(m_sock.mdFd);
-        }
-    }
 }
 
 template <IoMode Mode, class Tx>
@@ -383,15 +374,15 @@ bool ExchangeSession<Mode, Tx>::prepareSocketIo(std::uint16_t oePort, const char
 {
     m_sock.mdFd = makeUdpSender(mdHost, mdPort);
     m_sock.oeFd = acceptOrderEntry(oePort);
-    return m_sock.oeFd >= 0;
+    return static_cast<bool>(m_sock.oeFd); // this calls the overloaded bool operator()
 }
 
 template <IoMode Mode, class Tx>
-void ExchangeSession<Mode, Tx>::attachSockets(int oeFd, int mdFd)
+void ExchangeSession<Mode, Tx>::attachSockets(util::UniqueFd oeFd, util::UniqueFd mdFd)
     requires (Mode == IoMode::Socket)
 {
-    m_sock.oeFd = oeFd;
-    m_sock.mdFd = mdFd;
+    m_sock.oeFd = std::move(oeFd);
+    m_sock.mdFd = std::move(mdFd);
 }
 
 template <IoMode Mode, class Tx>
@@ -414,9 +405,9 @@ void ExchangeSession<Mode, Tx>::run(volatile std::sig_atomic_t& stop, std::uint6
     std::array<std::byte, 8192> rx{};
     std::uint64_t               lastTick = monotonicNs();
     while (stop == 0) {
-        pollfd pfd{m_sock.oeFd, POLLIN, 0};
+        pollfd pfd{m_sock.oeFd.get(), POLLIN, 0};
         if (::poll(&pfd, 1, 1) > 0 && (pfd.revents & POLLIN) != 0) {
-            const ssize_t n = ::recv(m_sock.oeFd, rx.data(), rx.size(), 0);
+            const ssize_t n = ::recv(m_sock.oeFd.get(), rx.data(), rx.size(), 0);
             if (n <= 0) {
                 fmt::print(stderr, "exchange-sim: client disconnected\n");
                 break;
@@ -436,7 +427,7 @@ bool ExchangeSession<Mode, Tx>::pollOrderEntry(std::uint64_t ts)
     requires (Mode == IoMode::Socket)
 {
     std::array<std::byte, 8192> rx{};
-    const ssize_t               n = ::recv(m_sock.oeFd, rx.data(), rx.size(), MSG_DONTWAIT);
+    const ssize_t               n = ::recv(m_sock.oeFd.get(), rx.data(), rx.size(), MSG_DONTWAIT);
     if (n > 0) {
         onOrderEntryBytes({rx.data(), static_cast<std::size_t>(n)}, ts);
         return true;
@@ -536,7 +527,7 @@ void ExchangeSession<Mode, Tx>::marketDataOut(std::span<const std::byte> b) {
     if constexpr (Mode == IoMode::Loopback) {
         m_cap.md.emplace_back(b.begin(), b.end());
     } else if constexpr (Mode == IoMode::Socket) {
-        (void)::send(m_sock.mdFd, b.data(), b.size(), MSG_NOSIGNAL);
+        (void)::send(m_sock.mdFd.get(), b.data(), b.size(), MSG_NOSIGNAL);
     } else {
         sendFrame(*m_io.mdFramer, b);
     }
@@ -547,7 +538,7 @@ void ExchangeSession<Mode, Tx>::orderEntryOut(std::span<const std::byte> b) {
     if constexpr (Mode == IoMode::Loopback) {
         m_cap.oe.emplace_back(b.begin(), b.end());
     } else if constexpr (Mode == IoMode::Socket) {
-        (void)::send(m_sock.oeFd, b.data(), b.size(), MSG_NOSIGNAL);
+        (void)::send(m_sock.oeFd.get(), b.data(), b.size(), MSG_NOSIGNAL);
     } else {
         (void)b;
     }
@@ -672,11 +663,11 @@ void ExchangeSession<Mode, Tx>::die(const char* what) {
 }
 
 template <IoMode Mode, class Tx>
-int ExchangeSession<Mode, Tx>::makeUdpSender(const char* host, std::uint16_t port)
+util::UniqueFd ExchangeSession<Mode, Tx>::makeUdpSender(const char* host, std::uint16_t port)
     requires (Mode == IoMode::Socket)
 {
-    const int fd = ::socket(AF_INET, SOCK_DGRAM, 0);
-    if (fd < 0) {
+    util::UniqueFd fd{::socket(AF_INET, SOCK_DGRAM, 0)};
+    if (!fd) {
         die("socket(udp)");
     }
     sockaddr_in addr{};
@@ -685,44 +676,42 @@ int ExchangeSession<Mode, Tx>::makeUdpSender(const char* host, std::uint16_t por
     if (::inet_pton(AF_INET, host, &addr.sin_addr) != 1) {
         die("inet_pton");
     }
-    if (::connect(fd, reinterpret_cast<sockaddr*>(&addr), sizeof addr) < 0) {
+    if (::connect(fd.get(), reinterpret_cast<sockaddr*>(&addr), sizeof addr) < 0) {
         die("connect(udp)");
     }
     return fd;
 }
 
 template <IoMode Mode, class Tx>
-int ExchangeSession<Mode, Tx>::acceptOrderEntry(std::uint16_t port)
+util::UniqueFd ExchangeSession<Mode, Tx>::acceptOrderEntry(std::uint16_t port)
     requires (Mode == IoMode::Socket)
 {
-    const int lfd = ::socket(AF_INET, SOCK_STREAM, 0);
-    if (lfd < 0) {
+    util::UniqueFd lfd {::socket(AF_INET, SOCK_STREAM, 0)};
+    if (!lfd) {
         die("socket(tcp)");
     }
     int one = 1;
-    ::setsockopt(lfd, SOL_SOCKET, SO_REUSEADDR, &one, sizeof one);
+    ::setsockopt(lfd.get(), SOL_SOCKET, SO_REUSEADDR, &one, sizeof one);
     sockaddr_in addr{};
     addr.sin_family      = AF_INET;
     addr.sin_addr.s_addr = htonl(INADDR_ANY);
     addr.sin_port        = htons(port);
-    if (::bind(lfd, reinterpret_cast<sockaddr*>(&addr), sizeof addr) < 0) {
+    if (::bind(lfd.get(), reinterpret_cast<sockaddr*>(&addr), sizeof addr) < 0) {
         die("bind");
     }
-    if (::listen(lfd, 1) < 0) {
+    if (::listen(lfd.get(), 1) < 0) {
         die("listen");
     }
     fmt::print(stderr, "exchange-sim: waiting for order-entry client on tcp/:{} ...\n", port);
-    const int cfd = ::accept(lfd, nullptr, nullptr);
-    if (cfd < 0) {
+    util::UniqueFd cfd{::accept(lfd.get(), nullptr, nullptr)};
+    if (!cfd) {
         if (errno == EINTR) {
-            ::close(lfd);
-            return -1;
+            return {};
         }
         die("accept");
     }
     int nodelay = 1;
-    ::setsockopt(cfd, IPPROTO_TCP, TCP_NODELAY, &nodelay, sizeof nodelay);
-    ::close(lfd);
+    ::setsockopt(cfd.get(), IPPROTO_TCP, TCP_NODELAY, &nodelay, sizeof nodelay);
     fmt::print(stderr, "exchange-sim: order-entry client connected\n");
     return cfd;
 }

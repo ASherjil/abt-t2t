@@ -17,6 +17,7 @@
 #include "t2t/protocol/SoupBinTcp.hpp"
 #include "t2t/sim/EngineConfig.hpp"
 #include "t2t/sim/ExchangeSession.hpp"
+#include "t2t/util/UniqueFd.hpp"
 
 using namespace abt;
 
@@ -93,7 +94,7 @@ void test_socket_integration() {
 
     const ExchangeConfig            simCfg{};
     ExchangeSession<IoMode::Socket> sim{simCfg};
-    sim.attachSockets(oe[0], md[0]);
+    sim.attachSockets(util::UniqueFd{oe[0]}, util::UniqueFd{md[0]});
 
     dut::DutConfig dutCfg{};
     dutCfg.minPrice     = 0;
@@ -102,7 +103,7 @@ void test_socket_integration() {
     dutCfg.symbol       = "AAPL";
     dutCfg.firstUserRef = 1;
     dut::DutSession<dut::IoMode::Socket, TakeOnce> dutSess(dutCfg, TakeOnce{.trigger = 5200, .qty = 5u});
-    dutSess.attachSockets(oe[1], md[1]);
+    dutSess.attachSockets(util::UniqueFd{oe[1]}, util::UniqueFd{md[1]});
 
     dutSess.login(simCfg.session, "DUT001");
     sim.onOrderEntryBytes(recvSome(oe[0]), 1'000);

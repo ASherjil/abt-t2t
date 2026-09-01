@@ -25,6 +25,11 @@ target_include_directories(quoter_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(quoter_test PRIVATE abt::dut abt::flags fmt::fmt)
 add_test(NAME quoter_test COMMAND quoter_test)
 
+add_executable(uniquefd_test uniquefd_test.cpp)
+target_include_directories(uniquefd_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(uniquefd_test PRIVATE abt::util abt::flags fmt::fmt)
+add_test(NAME uniquefd_test COMMAND uniquefd_test)
+
 # histogram_test smoke-tests the vendored HdrHistogram binding.
 add_executable(histogram_test histogram_test.cpp)
 target_include_directories(histogram_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
