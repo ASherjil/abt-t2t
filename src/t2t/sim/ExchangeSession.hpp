@@ -630,7 +630,7 @@ void ExchangeSession<Mode, Tx>::appendMarketData(std::span<const std::byte> itch
 
 template <IoMode Mode, class Tx>
 std::size_t ExchangeSession<Mode, Tx>::mdCapacity() const noexcept {
-    std::size_t cap = m_cfg.mdMaxPayload;
+    std::size_t cap = m_cfg.mdMaxPayload;   // NOLINT(misc-const-correctness) assigned in the if constexpr branch
     if constexpr (Mode == IoMode::Transport) {
         if (m_io.maxTxFrame > net::kL2L3L4Overhead) {
             const std::size_t wire = m_io.maxTxFrame - net::kL2L3L4Overhead;

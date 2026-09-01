@@ -65,7 +65,7 @@ config/                 runtime TOML configs
 scripts/                build / loopback / format / tidy helpers
 docs/                   measurement methodology & design notes
 cmake/                  shared warning/arch/opt flags
-format/                 .clang-format / .clang-tidy (root symlinks point here)
+format/                 .clang-format / .clang-tidy (scripts pass these explicitly)
 ```
 
 ## Build & test
