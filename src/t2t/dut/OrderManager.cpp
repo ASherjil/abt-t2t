@@ -206,7 +206,7 @@ void OrderManager::encodeEnter(Outbound& out, std::uint32_t userRef, Side side, 
     o.side               = ouchSide(side);
     o.quantity           = qty;
     o.symbol             = std::string_view{m_cfg.symbol};
-    o.price              = static_cast<std::uint64_t>(static_cast<std::uint32_t>(price));
+    o.price              = wirePrice(price);
     o.timeInForce        = static_cast<char>(ouch::TimeInForce::Day);
     o.display            = static_cast<char>(ouch::Display::Visible);
     o.capacity           = static_cast<char>(ouch::Capacity::Principal);
@@ -226,7 +226,7 @@ void OrderManager::encodeReplace(Outbound& out, std::uint32_t origRef, std::uint
     u.origUserRefNum     = origRef;
     u.userRefNum         = userRef;
     u.quantity           = qty;
-    u.price              = static_cast<std::uint64_t>(static_cast<std::uint32_t>(price));
+    u.price              = wirePrice(price);
     u.timeInForce        = static_cast<char>(ouch::TimeInForce::Day);
     u.display            = static_cast<char>(ouch::Display::Visible);
     u.imSweepEligibility = static_cast<char>(ouch::ImSweep::NotEligible);

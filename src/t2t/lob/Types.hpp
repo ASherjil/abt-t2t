@@ -3,6 +3,7 @@
 // Core value types for the limit order book: Price/Quantity/OrderId/Handle, Order, Trade.
 //
 
+#include <cassert>
 #include <cstdint>
 #include <limits>
 
@@ -23,6 +24,11 @@ enum class Side : std::uint8_t {
 
 [[nodiscard]] constexpr Side opposite(Side s) noexcept {
     return s == Side::Buy ? Side::Sell : Side::Buy;
+}
+
+[[nodiscard]] constexpr std::uint64_t wirePrice(const Price p) noexcept {
+    assert(p >= 0);
+    return static_cast<std::uint64_t>(p);
 }
 
 struct Order {

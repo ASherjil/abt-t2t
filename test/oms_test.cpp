@@ -59,7 +59,7 @@ ouch::Replaced replaced(std::uint32_t orig, std::uint32_t ref, Quantity qty, Pri
     r.origUserRefNum = orig;
     r.userRefNum     = ref;
     r.quantity       = qty;
-    r.price          = static_cast<std::uint64_t>(static_cast<std::uint32_t>(price));
+    r.price          = wirePrice(price);
     r.orderState     = 'L';
     return r;
 }
