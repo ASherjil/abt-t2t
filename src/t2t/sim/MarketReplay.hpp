@@ -50,7 +50,7 @@ private:
     [[nodiscard]] bool restart();
     void               endOfLoop();
 
-    Session&                              m_session;
+    Session*                              m_session;
     ReplayConfig                          m_cfg;
     ReplayProgress                        m_progress{};
     std::vector<std::byte>                m_store;
@@ -67,7 +67,7 @@ private:
 
 template <class Session>
 MarketReplay<Session>::MarketReplay(Session& session, const ReplayConfig& cfg)
-    : m_session(session),
+    : m_session(&session),
       m_cfg(cfg),
       m_nsPerNs(cfg.speed > 0.0 ? 1.0 / cfg.speed : 0.0) {
 }
@@ -133,8 +133,8 @@ bool MarketReplay<Session>::fetch() {
 
 template <class Session>
 void MarketReplay<Session>::endOfLoop() {
-    m_session.resetDay(m_progress.virtualTs);
-    m_session.flushMarketData();
+    m_session->resetDay(m_progress.virtualTs);
+    m_session->flushMarketData();
     ++m_progress.loop;
     if (m_cfg.loops != 0 && m_progress.loop >= m_cfg.loops) {
         m_progress.finished = true;
@@ -189,7 +189,7 @@ bool MarketReplay<Session>::pump(std::uint64_t nowMono) {
             if (due > nowMono) {
                 nowMono = monotonicNs();
                 if (due > nowMono) {
-                    m_session.flushMarketData();
+                    m_session->flushMarketData();
                     return true;
                 }
             }
@@ -201,12 +201,12 @@ bool MarketReplay<Session>::pump(std::uint64_t nowMono) {
                 ++m_progress.lateOver1ms;
             }
         }
-        m_session.replayMessage(m_cur, ts);
+        m_session->replayMessage(m_cur, ts);
         m_progress.virtualTs = ts;
         ++m_progress.sent;
         m_have = false;
         if (++batch >= m_cfg.maxBatch) {
-            m_session.flushMarketData();
+            m_session->flushMarketData();
             return true;
         }
     }

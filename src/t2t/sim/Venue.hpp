@@ -119,7 +119,7 @@ private:
                       std::uint64_t ts);
     void emitCancelReject(std::uint32_t user, std::uint64_t ts);
 
-    Sink&         m_sink;
+    Sink*         m_sink;
     std::string   m_symbol;
     std::uint16_t m_stockLocate;
     std::uint32_t m_wirePerTick;
@@ -139,7 +139,7 @@ private:
 template <class Sink>
 Venue<Sink>::Venue(Sink& sink, std::string_view symbol, std::uint16_t stockLocate, Price minTick,
                    Price maxTick, std::uint32_t wirePerTick, OrderId firstOrderRef, std::size_t liveReserve)
-    : m_sink(sink),
+    : m_sink(&sink),
       m_symbol(symbol),
       m_stockLocate(stockLocate),
       m_wirePerTick(wirePerTick),
@@ -661,13 +661,13 @@ std::uint32_t Venue<Sink>::tickToWire(Price tick) const noexcept {
 template <class Sink>
 template <class Msg>
 void Venue<Sink>::sendMd(const Msg& m) {
-    m_sink.marketData({reinterpret_cast<const std::byte*>(&m), sizeof m});
+    m_sink->marketData({reinterpret_cast<const std::byte*>(&m), sizeof m});
 }
 
 template <class Sink>
 template <class Msg>
 void Venue<Sink>::sendOe(const Msg& m) {
-    m_sink.orderEntry({reinterpret_cast<const std::byte*>(&m), sizeof m});
+    m_sink->orderEntry({reinterpret_cast<const std::byte*>(&m), sizeof m});
 }
 
 template <class Sink>

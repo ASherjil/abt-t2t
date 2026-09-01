@@ -21,7 +21,7 @@ public:
 private:
     std::uint64_t rng() noexcept;
 
-    Market&             m_market;
+    Market*             m_market;
     FlowConfig          m_cfg;
     std::uint64_t       m_state;
     std::deque<OrderId> m_live;
@@ -29,7 +29,7 @@ private:
 
 template <class Market>
 FlowGenerator<Market>::FlowGenerator(Market& market, const FlowConfig& cfg)
-    : m_market(market),
+    : m_market(&market),
       m_cfg(cfg),
       m_state(cfg.seed ? cfg.seed : 1) {
 }
@@ -40,7 +40,7 @@ void FlowGenerator<Market>::step(std::uint64_t ts) {
 
     if (!m_live.empty() && roll < m_cfg.cancelPct) {
         const std::size_t i = static_cast<std::size_t>(rng() % m_live.size());
-        m_market.cancelSynthetic(m_live[i], ts);
+        m_market->cancelSynthetic(m_live[i], ts);
         m_live[i] = m_live.back();
         m_live.pop_back();
         return;
@@ -54,21 +54,21 @@ void FlowGenerator<Market>::step(std::uint64_t ts) {
     Price tick;
     if (crossing) {
         if (buy) {
-            tick = m_market.bestAsk() != kNoPrice ? m_market.bestAsk() : m_cfg.midTick;
+            tick = m_market->bestAsk() != kNoPrice ? m_market->bestAsk() : m_cfg.midTick;
         } else {
-            tick = m_market.bestBid() != kNoPrice ? m_market.bestBid() : m_cfg.midTick;
+            tick = m_market->bestBid() != kNoPrice ? m_market->bestBid() : m_cfg.midTick;
         }
     } else {
         const Price off = static_cast<Price>(rng() % static_cast<std::uint64_t>(m_cfg.depthTicks));
         tick = buy ? m_cfg.midTick - m_cfg.halfSpread - off : m_cfg.midTick + m_cfg.halfSpread + off;
     }
 
-    const OrderId ref = m_market.injectSynthetic(side, tick, qty, ts);
+    const OrderId ref = m_market->injectSynthetic(side, tick, qty, ts);
     if (!crossing) {
         m_live.push_back(ref);
         const std::size_t cap = m_cfg.maxLive == 0 ? 1 : m_cfg.maxLive;
         while (m_live.size() > cap) {
-            m_market.cancelSynthetic(m_live.front(), ts);
+            m_market->cancelSynthetic(m_live.front(), ts);
             m_live.pop_front();
         }
     }
