@@ -103,7 +103,7 @@ private:
 }
 
 template <class Fn>
-std::size_t forEachMessage(std::span<const std::byte> pkt, Fn&& fn) {
+std::size_t forEachMessage(std::span<const std::byte> pkt, Fn fn) {
     if (pkt.size() < kHeaderSize) {
         return 0;
     }

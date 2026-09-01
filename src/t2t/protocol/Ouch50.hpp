@@ -323,7 +323,7 @@ inline std::size_t writeOption(std::span<std::byte> out, OptionTag tag,
 }
 
 template <class Fn>
-void forEachOption(std::span<const std::byte> appendage, Fn&& fn) {
+void forEachOption(std::span<const std::byte> appendage, Fn fn) {
     std::size_t i = 0;
     while (i + 1 < appendage.size()) {
         const std::size_t len = std::to_integer<std::size_t>(appendage[i]);

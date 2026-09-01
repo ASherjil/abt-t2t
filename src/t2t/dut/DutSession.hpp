@@ -88,7 +88,7 @@ public:
     [[nodiscard]] bool sessionEstablished() const noexcept
         requires (Mode == IoMode::Socket);
     template <class Periodic>
-    void run(volatile std::sig_atomic_t& stop, Periodic&& periodic)
+    void run(volatile std::sig_atomic_t& stop, Periodic periodic)
         requires (Mode == IoMode::Socket);
 
     [[nodiscard]] bool prepareTransport(Io& io, const net::Endpoints& oeEp, std::uint32_t maxTxFrame = 0)
@@ -300,7 +300,7 @@ bool DutSession<Mode, Strat, Io>::sessionEstablished() const noexcept
 
 template <IoMode Mode, Strategy Strat, class Io>
 template <class Periodic>
-void DutSession<Mode, Strat, Io>::run(volatile std::sig_atomic_t& stop, Periodic&& periodic)
+void DutSession<Mode, Strat, Io>::run(volatile std::sig_atomic_t& stop, Periodic periodic)
     requires (Mode == IoMode::Socket)
 {
     std::array<std::byte, 8192> rx{};

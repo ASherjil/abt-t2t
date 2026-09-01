@@ -100,14 +100,14 @@ public:
                           std::uint32_t maxTxFrame = 0)
         requires (Mode == IoMode::Transport && TxRing<Tx>);
     template <class TickFn>
-    void run(volatile std::sig_atomic_t& stop, std::uint64_t tickIntervalNs, TickFn&& onTick)
+    void run(volatile std::sig_atomic_t& stop, std::uint64_t tickIntervalNs, TickFn onTick)
         requires (Mode == IoMode::Socket);
     [[nodiscard]] bool pollOrderEntry(std::uint64_t ts)
         requires (Mode == IoMode::Socket);
     [[nodiscard]] bool pollOrderEntry(std::uint64_t ts)
         requires (Mode == IoMode::Transport && RxRing<Tx>);
     template <class TickFn>
-    void run(volatile std::sig_atomic_t& stop, std::uint64_t tickIntervalNs, TickFn&& onTick)
+    void run(volatile std::sig_atomic_t& stop, std::uint64_t tickIntervalNs, TickFn onTick)
         requires (Mode == IoMode::Transport && RxRing<Tx>);
 
     [[nodiscard]] const std::vector<std::vector<std::byte>>& capturedMarketData() const
@@ -399,7 +399,7 @@ void ExchangeSession<Mode, Tx>::prepareTransport(Tx& tx, const net::Endpoints& m
 template <IoMode Mode, class Tx>
 template <class TickFn>
 void ExchangeSession<Mode, Tx>::run(volatile std::sig_atomic_t& stop, std::uint64_t tickIntervalNs,
-                                    TickFn&& onTick)
+                                    TickFn onTick)
     requires (Mode == IoMode::Socket)
 {
     std::array<std::byte, 8192> rx{};
@@ -469,7 +469,7 @@ bool ExchangeSession<Mode, Tx>::pollOrderEntry(std::uint64_t ts)
 template <IoMode Mode, class Tx>
 template <class TickFn>
 void ExchangeSession<Mode, Tx>::run(volatile std::sig_atomic_t& stop, std::uint64_t tickIntervalNs,
-                                    TickFn&& onTick)
+                                    TickFn onTick)
     requires (Mode == IoMode::Transport && RxRing<Tx>)
 {
     std::uint64_t lastTick = monotonicNs();

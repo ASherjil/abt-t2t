@@ -34,7 +34,7 @@ public:
     [[nodiscard]] Price        minPrice() const noexcept;
     [[nodiscard]] Price        maxPrice() const noexcept;
     template <class Fn>
-    void forEachOrderAtLevel(Side s, Price p, Fn&& fn) const;
+    void forEachOrderAtLevel(Side s, Price p, Fn fn) const;
 
 private:
     struct Level {
@@ -213,7 +213,7 @@ inline Price OrderBook::maxPrice() const noexcept {
 }
 
 template <class Fn>
-void OrderBook::forEachOrderAtLevel(Side s, Price p, Fn&& fn) const {
+void OrderBook::forEachOrderAtLevel(Side s, Price p, Fn fn) const {
     if (p < m_minPrice || p > m_maxPrice) {
         return;
     }
