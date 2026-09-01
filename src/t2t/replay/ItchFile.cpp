@@ -1,22 +1,16 @@
 #include "t2t/replay/ItchFile.hpp"
-
 #include <cstring>
-
 #include <zlib.h>
 
 namespace abt::replay {
 
 ItchFileReader::ItchFileReader(const std::string& path, std::size_t bufferBytes)
     : m_buf(bufferBytes < 65536 ? 65536 : bufferBytes) {
-    m_file = gzopen(path.c_str(), "rb");
-    if (m_file != nullptr) {
-        (void)gzbuffer(m_file, 1u << 20);
-    }
-}
 
-ItchFileReader::~ItchFileReader() {
-    if (m_file != nullptr) {
-        (void)gzclose(m_file);
+    gzFile_s* file = gzopen(path.c_str(), "rb");
+    m_file.reset(file);
+    if (m_file) {
+        (void)gzbuffer(m_file.get(), 1u << 20);
     }
 }
 
@@ -38,10 +32,10 @@ bool ItchFileReader::fill(std::size_t need) {
     }
     while (m_len < need) {
         const std::size_t room = m_buf.size() - m_len;
-        const int         n    = gzread(m_file, m_buf.data() + m_len, static_cast<unsigned>(room));
+        const int         n    = gzread(m_file.get(), m_buf.data() + m_len, static_cast<unsigned>(room));
         if (n <= 0) {
             int err = Z_OK;
-            (void)gzerror(m_file, &err);
+            (void)gzerror(m_file.get(), &err);
             m_truncated = (err != Z_OK && err != Z_STREAM_END) || (n == 0 && m_len > 0);
             m_eof       = true;
             break;
@@ -88,14 +82,14 @@ bool ItchFileReader::truncated() const noexcept {
     return m_truncated;
 }
 
-ItchFileWriter::ItchFileWriter(const std::string& path) {
-    m_file = std::fopen(path.c_str(), "wb");
+void ItchFileReader::GzClose::operator()(gzFile_s *file) const noexcept {
+    (void)gzclose(file);
 }
 
-ItchFileWriter::~ItchFileWriter() {
-    if (m_file != nullptr) {
-        (void)std::fclose(m_file);
-    }
+
+ItchFileWriter::ItchFileWriter(const std::string& path) {
+    std::FILE* file = std::fopen(path.c_str(), "wb");
+    m_file.reset(file);
 }
 
 bool ItchFileWriter::ok() const noexcept {
@@ -108,13 +102,17 @@ void ItchFileWriter::write(std::span<const std::byte> msg) {
     }
     const unsigned char len[2] = {static_cast<unsigned char>(msg.size() >> 8),
                                   static_cast<unsigned char>(msg.size() & 0xFFu)};
-    (void)std::fwrite(len, 1, 2, m_file);
-    (void)std::fwrite(msg.data(), 1, msg.size(), m_file);
+    (void)std::fwrite(len, 1, 2, m_file.get());
+    (void)std::fwrite(msg.data(), 1, msg.size(), m_file.get());
     ++m_messages;
 }
 
 std::uint64_t ItchFileWriter::messages() const noexcept {
     return m_messages;
+}
+
+void ItchFileWriter::FClose::operator()(std::FILE *file) const noexcept {
+    (void)std::fclose(file);
 }
 
 }   // namespace abt::replay
