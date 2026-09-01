@@ -47,7 +47,6 @@ void test_consumer_thread() {
     dut::LatencyRecorder a("a", 1u << 12, 1.0, 3);
     dut::LatencyRecorder b("b", 1u << 12, 1.0, 3);
     dut::RecorderThread  consumer({&a, &b}, -1);
-    consumer.start();
     CHECK(consumer.running());
     for (std::uint64_t v = 1; v <= 100000; ++v) {
         a.record(v % 1000 + 1);

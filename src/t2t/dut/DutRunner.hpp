@@ -65,7 +65,6 @@ int runDut(const DutAppConfig& cfg, typename T::Type& backend, volatile std::sig
         sess.login(cfg.socket.session, cfg.socket.username);
 
         RecorderThread consumer({&sess.t2t(), &sess.t2tSw(), &sess.proc()}, cfg.measure.histogramCore);
-        consumer.start();
         sess.run(stop, [&] {
             const std::uint64_t now = monotonicNs();
             if (now >= nextLog) {
@@ -95,7 +94,6 @@ int runDut(const DutAppConfig& cfg, typename T::Type& backend, volatile std::sig
                    cfg.transport.orderEntry.dstPort);
 
         RecorderThread consumer({&sess.t2t(), &sess.t2tSw(), &sess.proc()}, cfg.measure.histogramCore);
-        consumer.start();
         sess.sendLogin(cfg.socket.session, cfg.socket.username);
         std::uint64_t nextLogin = monotonicNs() + kDutLogPeriodNs;
         std::uint64_t polls     = 0;

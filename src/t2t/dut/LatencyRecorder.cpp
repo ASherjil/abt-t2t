@@ -91,49 +91,36 @@ void LatencyRecorder::summary() const {
 }
 
 RecorderThread::RecorderThread(std::vector<LatencyRecorder*> recorders, int cpuCore)
-    : m_recorders(std::move(recorders)),
-      m_core(cpuCore) {
-}
-
-RecorderThread::~RecorderThread() {
-    stop();
-}
-
-void RecorderThread::start() {
-    if (m_run.exchange(true)) {
-        return;
-    }
-    m_thread = std::thread([this] {
-        loop();
-    });
+    : m_thread([recs = std::move(recorders), cpuCore](const std::stop_token& stop) {
+          loop(stop, recs, cpuCore);
+      }) {
 }
 
 void RecorderThread::stop() {
-    if (!m_run.exchange(false)) {
-        return;
-    }
     if (m_thread.joinable()) {
+        m_thread.request_stop();
         m_thread.join();
-    }
-    for (LatencyRecorder* r : m_recorders) {
-        (void)r->drain();
     }
 }
 
 bool RecorderThread::running() const noexcept {
-    return m_run.load(std::memory_order_relaxed);
+    return m_thread.joinable();
 }
 
-void RecorderThread::loop() noexcept {
-    (void)util::pinThread(m_core);
-    while (m_run.load(std::memory_order_relaxed)) {
+void RecorderThread::loop(const std::stop_token& stop, const std::vector<LatencyRecorder*>& recorders,
+                          int core) noexcept {
+    (void)util::pinThread(core);
+    while (!stop.stop_requested()) {
         bool any = false;
-        for (LatencyRecorder* r : m_recorders) {
+        for (LatencyRecorder* r : recorders) {
             any |= r->drainOne();
         }
         if (!any) {
             relax();
         }
+    }
+    for (LatencyRecorder* r : recorders) {
+        (void)r->drain();
     }
 }
 

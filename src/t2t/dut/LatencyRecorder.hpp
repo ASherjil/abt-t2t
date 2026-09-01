@@ -2,6 +2,7 @@
 
 #include <atomic>
 #include <cstddef>
+#include <stop_token>
 #include <string>
 #include <string_view>
 #include <thread>
@@ -16,9 +17,6 @@ namespace abt::dut {
 class LatencyRecorder {
 public:
     LatencyRecorder(std::string name, std::size_t queueCapacity, double nsPerUnit, int sigFigs = 3);
-
-    LatencyRecorder(const LatencyRecorder&)            = delete;
-    LatencyRecorder& operator=(const LatencyRecorder&) = delete;
 
     void record(std::uint64_t raw) noexcept;
 
@@ -47,22 +45,15 @@ private:
 class RecorderThread {
 public:
     explicit RecorderThread(std::vector<LatencyRecorder*> recorders, int cpuCore = -1);
-    ~RecorderThread();
 
-    RecorderThread(const RecorderThread&)            = delete;
-    RecorderThread& operator=(const RecorderThread&) = delete;
-
-    void               start();
     void               stop();
     [[nodiscard]] bool running() const noexcept;
 
 private:
-    void loop() noexcept;
+    static void loop(const std::stop_token& stop, const std::vector<LatencyRecorder*>& recorders,
+                     int core) noexcept;
 
-    std::vector<LatencyRecorder*> m_recorders;
-    int                           m_core;
-    std::atomic<bool>             m_run{false};
-    std::thread                   m_thread;
+    std::jthread m_thread;
 };
 
 inline void LatencyRecorder::record(std::uint64_t raw) noexcept {
