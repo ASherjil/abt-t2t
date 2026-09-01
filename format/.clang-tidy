@@ -25,7 +25,20 @@ Checks: >
   readability-const-return-type,
   readability-redundant-smartptr-get,
   readability-static-accessed-through-instance,
-  readability-container-size-empty
+  readability-container-size-empty,
+  readability-redundant-member-init,
+  readability-redundant-string-init,
+  readability-use-std-min-max,
+  readability-convert-member-functions-to-static,
+  readability-isolate-declaration,
+  readability-inconsistent-declaration-parameter-name,
+  readability-use-concise-preprocessor-directives,
+  google-explicit-constructor,
+  cppcoreguidelines-missing-std-forward,
+  cppcoreguidelines-avoid-const-or-ref-data-members,
+  cppcoreguidelines-init-variables,
+  cppcoreguidelines-prefer-member-initializer,
+  cert-err34-c
 WarningsAsErrors: ''
 HeaderFilterRegex: '.*/src/(t2t|apps)/.*'
 FormatStyle: file
