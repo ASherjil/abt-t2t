@@ -17,6 +17,7 @@ struct SymbolStats {
     std::uint64_t overReduce = 0;
     std::uint64_t crossed    = 0;
     std::uint64_t locked     = 0;
+    std::uint64_t resumeXing = 0;
     std::uint64_t maxLive    = 0;
 };
 
@@ -26,6 +27,7 @@ struct FeedTotals {
     std::uint64_t overReduce = 0;
     std::uint64_t crossed    = 0;
     std::uint64_t locked     = 0;
+    std::uint64_t resumeXing = 0;
     std::uint64_t outOfBand  = 0;
     std::uint64_t reanchors  = 0;
     std::uint64_t maxLive    = 0;
@@ -35,6 +37,8 @@ struct FeedTotals {
 
 class FeedValidator {
 public:
+    static constexpr std::uint64_t kResumeGraceNs = 10'000'000;
+
     explicit FeedValidator(const dut::BookTableConfig& cfg);
 
     void onMessage(std::span<const std::byte> msg);
@@ -46,13 +50,14 @@ public:
 private:
     void checkReference(std::uint16_t locate, OrderId ref, Quantity reduceBy) noexcept;
 
-    dut::BookTable           m_books;
-    std::vector<SymbolStats> m_sym;
-    std::vector<bool>        m_trading;
-    bool                     m_marketHours = false;
-    std::uint64_t            m_messages    = 0;
-    std::uint64_t            m_liveNow     = 0;
-    std::uint64_t            m_maxLive     = 0;
+    dut::BookTable             m_books;
+    std::vector<SymbolStats>   m_sym;
+    std::vector<bool>          m_trading;
+    std::vector<std::uint64_t> m_resumedAt;
+    bool                       m_marketHours = false;
+    std::uint64_t              m_messages    = 0;
+    std::uint64_t              m_liveNow     = 0;
+    std::uint64_t              m_maxLive     = 0;
 };
 
 }   // namespace abt::replay

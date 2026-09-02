@@ -16,7 +16,8 @@ const T* as(std::span<const std::byte> msg) noexcept {
 FeedValidator::FeedValidator(const dut::BookTableConfig& cfg)
     : m_books(cfg),
       m_sym(dut::BookTable::kLocates),
-      m_trading(dut::BookTable::kLocates, true) {
+      m_trading(dut::BookTable::kLocates, true),
+      m_resumedAt(dut::BookTable::kLocates, 0) {
 }
 
 void FeedValidator::onMessage(std::span<const std::byte> msg) {
@@ -58,7 +59,15 @@ void FeedValidator::onMessage(std::span<const std::byte> msg) {
         }
         case 'H': {
             if (const auto* h = as<itch::StockTradingAction>(msg); h != nullptr) {
-                m_trading[locate] = h->tradingState == itch::TradingState::Trading;
+                const bool trading = h->tradingState == itch::TradingState::Trading;
+                if (trading && !m_trading[locate]) {
+                    std::uint64_t ts = 0;
+                    for (std::size_t i = 5; i < 11; ++i) {
+                        ts = (ts << 8) | std::to_integer<std::uint64_t>(msg[i]);
+                    }
+                    m_resumedAt[locate] = ts;
+                }
+                m_trading[locate] = trading;
             }
             break;
         }
@@ -107,7 +116,13 @@ void FeedValidator::onMessage(std::span<const std::byte> msg) {
             const Price ba = b->bestAsk();
             if ((type == 'A' || type == 'F' || type == 'U') && m_marketHours && m_trading[locate] &&
                 bb != kNoPrice && ba != kNoPrice && bb >= ba) {
-                if (bb > ba) {
+                std::uint64_t ts = 0;
+                for (std::size_t i = 5; i < 11; ++i) {
+                    ts = (ts << 8) | std::to_integer<std::uint64_t>(msg[i]);
+                }
+                if (m_resumedAt[locate] != 0 && ts < m_resumedAt[locate] + kResumeGraceNs) {
+                    ++st.resumeXing;
+                } else if (bb > ba) {
                     ++st.crossed;
                 } else {
                     ++st.locked;
@@ -151,6 +166,7 @@ FeedTotals FeedValidator::totals() const noexcept {
         t.overReduce += s.overReduce;
         t.crossed += s.crossed;
         t.locked += s.locked;
+        t.resumeXing += s.resumeXing;
     }
     m_books.forEachBook([&](std::uint16_t, const dut::BookBuilder& b) {
         t.outOfBand += b.outOfBandAdds();

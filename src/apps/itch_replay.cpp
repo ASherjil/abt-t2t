@@ -140,6 +140,8 @@ int runValidator(const Args& a, replay::ItchFileReader& reader,
                a.arenaMb != 0 ? (arena.huge() ? "hugetlb" : "4K-page fallback") : "heap");
     fmt::print("invariants     unknown ref {}  over-reduce {}  crossed {}  locked {}  out-of-band adds {}\n",
                t.unknownRef, t.overReduce, t.crossed, t.locked, t.outOfBand);
+    fmt::print("halts          crossed adds within {} ms of a halt/IPO resumption (excluded above): {}\n",
+               replay::FeedValidator::kResumeGraceNs / 1'000'000, t.resumeXing);
     fmt::print("anchoring      re-anchors on out-of-band trades {}  sub-dollar tick books {}\n", t.reanchors,
                t.subDollar);
     fmt::print("book           band {} ticks/side (min), max live orders {} (sampled every 64k msgs)\n",
