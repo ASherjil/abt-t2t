@@ -2,9 +2,11 @@
 
 #include <csignal>
 #include <cstdint>
+#include <vector>
 
 #include <fmt/core.h>
 
+#include "t2t/BuildConfig.hpp"
 #include "t2t/config/BackendTraits.hpp"
 #include "t2t/dut/DutAppConfig.hpp"
 #include "t2t/dut/DutSession.hpp"
@@ -12,6 +14,7 @@
 #include "t2t/dut/QuoterStrategy.hpp"
 #include "t2t/util/Affinity.hpp"
 #include "t2t/util/Clock.hpp"
+#include "t2t/util/MemLock.hpp"
 
 namespace abt::dut {
 
@@ -23,19 +26,24 @@ void logDut(const Session& sess, std::uint64_t elapsedNs) {
     const OmsStats&        s = sess.oms().stats();
     const SequenceTracker& f = sess.feed();
     fmt::print(stderr,
-               "[dut +{:>4}s] pkts={} seq={} gaps={} sent={} enter={} replace={} cancel={} accept={} "
+               "[dut +{:>4}s] pkts={} seq={} gaps={} feed={} sent={} enter={} replace={} cancel={} accept={} "
                "fill={} reject={} pos={} bid={} ask={} live={}\n",
                elapsedNs / 1'000'000'000ull, sess.packetsReceived(), f.expected(), f.gaps(),
-               sess.ordersSent(), s.enters, s.replaces, s.cancels, s.accepts, s.fills, s.rejects,
-               sess.oms().account().position, sess.book().bestBid(), sess.book().bestAsk(),
-               sess.book().liveOrders());
+               sess.feedValid() ? "ok" : "INVALID", sess.ordersSent(), s.enters, s.replaces, s.cancels,
+               s.accepts, s.fills, s.rejects, sess.oms().account().position, sess.book().bestBid(),
+               sess.book().bestAsk(), sess.book().liveOrders());
 }
 
 template <class Session>
-void printDutReport(Session& sess) {
+void printDutReport(Session& sess, util::PageFaults faultsAtStart) {
+    const util::PageFaults faults = util::threadPageFaults();
+    fmt::print("[mem] hot-thread page faults during run: minor={} major={}\n",
+               faults.minor - faultsAtStart.minor, faults.major - faultsAtStart.major);
     sess.t2t().summary();
-    sess.t2tSw().summary();
-    sess.proc().summary();
+    if constexpr (build::kSwTiming) {
+        sess.t2tSw().summary();
+        sess.proc().summary();
+    }
     const OmsStats& s = sess.oms().stats();
     fmt::print("[oms] orders sent={} enters={} replaces={} cancels={} accepts={} fills={} rejects={} "
                "unknown={} position={}\n",
@@ -46,6 +54,26 @@ void printDutReport(Session& sess) {
                "live orders={}\n",
                sess.packetsReceived(), f.expected(), f.gaps(), f.missed(), f.stale(), sess.foreignMessages(),
                sess.sessionResets(), sess.book().liveOrders());
+    if (sess.feedFaults() > 0) {
+        fmt::print("[feed] FAULTS={} last at seq={} state={}: book invalidated and quoting stopped until the "
+                   "next StartOfMessages\n",
+                   sess.feedFaults(), sess.lastFaultSeq(), sess.feedValid() ? "recovered" : "INVALID");
+    }
+}
+
+template <class Session>
+std::vector<LatencyRecorder*> recordersOf(Session& sess) {
+    std::vector<LatencyRecorder*> recs{&sess.t2t()};
+    if constexpr (build::kSwTiming) {
+        recs.push_back(&sess.t2tSw());
+        recs.push_back(&sess.proc());
+    }
+    return recs;
+}
+
+[[nodiscard]] inline FlushConfig flushOf(const MeasureConfig& m) {
+    return FlushConfig{.logFile    = m.logFile,
+                       .intervalNs = static_cast<std::uint64_t>(m.flushIntervalS) * 1'000'000'000ull};
 }
 
 template <BackendTraits T>
@@ -64,7 +92,8 @@ int runDut(const DutAppConfig& cfg, typename T::Type& backend, volatile std::sig
                    cfg.socket.oePort, cfg.socket.mdBindHost, cfg.socket.mdPort);
         sess.login(cfg.socket.session, cfg.socket.username);
 
-        RecorderThread consumer({&sess.t2t(), &sess.t2tSw(), &sess.proc()}, cfg.measure.histogramCore);
+        RecorderThread         consumer(recordersOf(sess), cfg.measure.histogramCore, flushOf(cfg.measure));
+        const util::PageFaults faultsAtStart = util::threadPageFaults();
         sess.run(stop, [&] {
             const std::uint64_t now = monotonicNs();
             if (now >= nextLog) {
@@ -74,7 +103,7 @@ int runDut(const DutAppConfig& cfg, typename T::Type& backend, volatile std::sig
         });
         consumer.stop();
         logDut(sess, monotonicNs() - start);
-        printDutReport(sess);
+        printDutReport(sess, faultsAtStart);
         return 0;
     } else {
         if (!util::pinThread(cfg.transport.cpuCore)) {
@@ -93,7 +122,8 @@ int runDut(const DutAppConfig& cfg, typename T::Type& backend, volatile std::sig
                    cfg.transport.marketData.dstPort, cfg.transport.orderEntry.srcPort,
                    cfg.transport.orderEntry.dstPort);
 
-        RecorderThread consumer({&sess.t2t(), &sess.t2tSw(), &sess.proc()}, cfg.measure.histogramCore);
+        RecorderThread         consumer(recordersOf(sess), cfg.measure.histogramCore, flushOf(cfg.measure));
+        const util::PageFaults faultsAtStart = util::threadPageFaults();
         sess.sendLogin(cfg.socket.session, cfg.socket.username);
         std::uint64_t nextLogin = monotonicNs() + kDutLogPeriodNs;
         std::uint64_t polls     = 0;
@@ -114,7 +144,7 @@ int runDut(const DutAppConfig& cfg, typename T::Type& backend, volatile std::sig
         }
         consumer.stop();
         logDut(sess, monotonicNs() - start);
-        printDutReport(sess);
+        printDutReport(sess, faultsAtStart);
         return 0;
     }
 }

@@ -34,6 +34,7 @@ public:
     [[nodiscard]] Quantity    sizeAt(Side side, Price price) const noexcept;
     [[nodiscard]] Quantity    restingShares(OrderId ref) const noexcept;
     [[nodiscard]] std::size_t liveOrders() const noexcept;
+    [[nodiscard]] std::size_t orderCapacity() const noexcept;
     [[nodiscard]] std::size_t ownOrders() const noexcept;
 
 private:

@@ -38,11 +38,13 @@ DutAppConfig loadDutConfig(const std::string& path) {
     c.quoter.quoteQty         = t["quoter"]["quote_qty"].value_or(c.quoter.quoteQty);
     c.quoter.skewTicksPerUnit = t["quoter"]["skew_ticks_per_unit"].value_or(c.quoter.skewTicksPerUnit);
 
-    c.measure.histogramCore = t["measure"]["histogram_core"].value_or(c.measure.histogramCore);
-    c.measure.queueCapacity = t["measure"]["queue_capacity"].value_or(c.measure.queueCapacity);
-    c.measure.sigFigs       = t["measure"]["sig_figs"].value_or(c.measure.sigFigs);
-    c.session.queueCapacity = c.measure.queueCapacity;
-    c.session.sigFigs       = c.measure.sigFigs;
+    c.measure.histogramCore  = t["measure"]["histogram_core"].value_or(c.measure.histogramCore);
+    c.measure.queueCapacity  = t["measure"]["queue_capacity"].value_or(c.measure.queueCapacity);
+    c.measure.sigFigs        = t["measure"]["sig_figs"].value_or(c.measure.sigFigs);
+    c.measure.logFile        = t["measure"]["log_file"].value_or(c.measure.logFile);
+    c.measure.flushIntervalS = t["measure"]["flush_interval_s"].value_or(c.measure.flushIntervalS);
+    c.session.queueCapacity  = c.measure.queueCapacity;
+    c.session.sigFigs        = c.measure.sigFigs;
 
     c.socket.oeHost     = t["socket"]["oe_host"].value_or(c.socket.oeHost);
     c.socket.oePort     = t["socket"]["oe_port"].value_or(c.socket.oePort);

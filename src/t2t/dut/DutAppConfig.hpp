@@ -11,9 +11,11 @@
 namespace abt::dut {
 
 struct MeasureConfig {
-    int         histogramCore = -1;
-    std::size_t queueCapacity = 1u << 16;
-    int         sigFigs       = 3;
+    int           histogramCore = -1;
+    std::size_t   queueCapacity = 1u << 16;
+    int           sigFigs       = 3;
+    std::string   logFile;
+    std::uint32_t flushIntervalS = 60;
 };
 
 struct DutSocketConfig {

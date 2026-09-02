@@ -23,6 +23,8 @@ skew_ticks_per_unit = 0.001   # quote shift per share of inventory (1000 shares 
 histogram_core = 7           # core the SPSC->HdrHistogram consumer thread pins to (-1 = unpinned)
 queue_capacity = 65536       # SPSC ring depth per recorder
 sig_figs       = 3           # HdrHistogram significant figures
+log_file       = "results/dut.hlog"   # HdrHistogram interval log, appended across runs ("" = off)
+flush_interval_s = 60        # one tagged line per recorder per interval (Tag=t2t_hw / t2t_sw / proc)
 
 [socket]
 oe_host      = "127.0.0.1"   # exchange sim order-entry TCP host

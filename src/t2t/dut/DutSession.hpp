@@ -26,9 +26,11 @@
 
 #include "third_party/abtrda3/RingConcepts.hpp"
 
+#include "t2t/BuildConfig.hpp"
 #include "t2t/dut/BookBuilder.hpp"
 #include "t2t/dut/LatencyRecorder.hpp"
 #include "t2t/dut/OrderManager.hpp"
+#include "t2t/dut/SampleContext.hpp"
 #include "t2t/dut/SequenceTracker.hpp"
 #include "t2t/dut/Strategy.hpp"
 #include "t2t/dut/TxStamp.hpp"
@@ -52,6 +54,11 @@ enum class IoMode {
 
 struct NoTransport {};
 
+struct NoRecorder {
+    static void record(std::uint64_t, std::uint64_t = 0) noexcept {
+    }
+};
+
 struct DutConfig {
     Price         minPrice = 0;
     Price         maxPrice = 0;
@@ -69,6 +76,8 @@ struct DutConfig {
 template <IoMode Mode, Strategy Strat, class Io = NoTransport>
 class DutSession {
 public:
+    using SwRecorder = std::conditional_t<build::kSwTiming, LatencyRecorder, NoRecorder>;
+
     // Rule of zero applies here
     DutSession(const DutConfig& cfg, Strat strat);
 
@@ -108,13 +117,18 @@ public:
     [[nodiscard]] const OrderManager&    oms() const noexcept;
     [[nodiscard]] const SequenceTracker& feed() const noexcept;
     [[nodiscard]] LatencyRecorder&       t2t() noexcept;
-    [[nodiscard]] LatencyRecorder&       t2tSw() noexcept;
-    [[nodiscard]] LatencyRecorder&       proc() noexcept;
-    [[nodiscard]] std::uint32_t          ordersSent() const noexcept;
-    [[nodiscard]] std::uint64_t          packetsReceived() const noexcept;
-    [[nodiscard]] std::uint64_t          foreignMessages() const noexcept;
-    [[nodiscard]] std::uint32_t          sessionResets() const noexcept;
-    [[nodiscard]] bool                   tradingAllowed() const noexcept;
+    [[nodiscard]] SwRecorder&            t2tSw() noexcept
+        requires (build::kSwTiming);
+    [[nodiscard]] SwRecorder& proc() noexcept
+        requires (build::kSwTiming);
+    [[nodiscard]] std::uint32_t ordersSent() const noexcept;
+    [[nodiscard]] std::uint64_t packetsReceived() const noexcept;
+    [[nodiscard]] std::uint64_t foreignMessages() const noexcept;
+    [[nodiscard]] std::uint32_t sessionResets() const noexcept;
+    [[nodiscard]] bool          tradingAllowed() const noexcept;
+    [[nodiscard]] bool          feedValid() const noexcept;
+    [[nodiscard]] std::uint32_t feedFaults() const noexcept;
+    [[nodiscard]] std::uint64_t lastFaultSeq() const noexcept;
 
     [[nodiscard]] const std::vector<std::vector<std::byte>>& capturedOrders() const
         requires (Mode == IoMode::Loopback);
@@ -125,6 +139,7 @@ private:
     struct InFlight {
         std::uint32_t userRef = 0;
         std::uint64_t rxHwts  = 0;
+        std::uint64_t ctx     = 0;
         bool          live    = false;
     };
 
@@ -152,9 +167,12 @@ private:
     void applyPacket(std::span<const std::byte> moldPacket, std::uint64_t rxHwts, std::uint64_t rxTsc);
     void applyMessage(std::span<const std::byte> msg);
     void onSystemEvent(std::span<const std::byte> msg) noexcept;
-    [[nodiscard]] bool                 sendOrder(std::span<const std::byte> ouch);
-    void                               recordSend(std::uint32_t userRef, std::uint64_t rxHwts) noexcept;
+    void invalidateFeed(std::uint64_t seq) noexcept;
+    [[nodiscard]] bool sendOrder(std::span<const std::byte> ouch);
+    void               recordSend(std::uint32_t userRef, std::uint64_t rxHwts, std::uint64_t ctx) noexcept;
     [[nodiscard]] static std::uint16_t udpDstPort(const std::uint8_t* frame) noexcept;
+    [[nodiscard]] static std::uint64_t swNow() noexcept;
+    [[nodiscard]] static SwRecorder    makeSwRecorder(const char* name, const DutConfig& cfg);
 
     DutConfig       m_cfg;
     Strat           m_strat;
@@ -162,14 +180,17 @@ private:
     OrderManager    m_oms;
     SequenceTracker m_seq;
     LatencyRecorder m_t2t;
-    LatencyRecorder m_t2tSw;
-    LatencyRecorder m_proc;
+    SwRecorder      m_t2tSw;
+    SwRecorder      m_proc;
     std::uint32_t   m_ordersSent = 0;
     std::uint64_t   m_packets    = 0;
     std::uint64_t   m_foreign    = 0;
     std::uint32_t   m_resets     = 0;
+    std::uint32_t   m_feedFaults = 0;
+    std::uint64_t   m_lastFault  = 0;
     bool            m_marketOpen = false;
     bool            m_trading    = true;
+    bool            m_feedValid  = true;
 
     std::array<Outbound, OrderManager::kMaxOutbound> m_out{};
     std::array<InFlight, kInFlight>                  m_inflight{};
@@ -186,8 +207,8 @@ DutSession<Mode, Strat, Io>::DutSession(const DutConfig& cfg, Strat strat)
       m_book(cfg.minPrice, cfg.maxPrice, cfg.tickWire, cfg.maxOrders, cfg.ownRefMin),
       m_oms(OmsConfig{.symbol = cfg.symbol, .firstUserRef = cfg.firstUserRef}),
       m_t2t("t2t_hw", cfg.queueCapacity, 1.0, cfg.sigFigs),
-      m_t2tSw("t2t_sw", cfg.queueCapacity, tsc::nsPerTick(), cfg.sigFigs),
-      m_proc("proc", cfg.queueCapacity, tsc::nsPerTick(), cfg.sigFigs) {
+      m_t2tSw(makeSwRecorder("t2t_sw", cfg)),
+      m_proc(makeSwRecorder("proc", cfg)) {
 }
 
 template <IoMode Mode, Strategy Strat, class Io>
@@ -195,7 +216,7 @@ void DutSession<Mode, Strat, Io>::onMarketData(std::span<const std::byte> moldPa
                                                std::uint64_t rxTsc)
     requires (Mode == IoMode::Loopback || Mode == IoMode::Socket)
 {
-    applyPacket(moldPacket, rxHwts, rxTsc == 0 ? tsc::now() : rxTsc);
+    applyPacket(moldPacket, rxHwts, rxTsc == 0 ? swNow() : rxTsc);
 }
 
 template <IoMode Mode, Strategy Strat, class Io>
@@ -311,7 +332,7 @@ void DutSession<Mode, Strat, Io>::run(volatile std::sig_atomic_t& stop, Periodic
             continue;
         }
         if ((pfds[0].revents & POLLIN) != 0) {
-            const std::uint64_t rxTsc = tsc::now();
+            const std::uint64_t rxTsc = swNow();
             const ssize_t       n     = ::recv(m_sock.mdFd.get(), rx.data(), rx.size(), 0);
             if (n > 0) {
                 onMarketData({rx.data(), static_cast<std::size_t>(n)}, monotonicNs(), rxTsc);
@@ -373,7 +394,7 @@ void DutSession<Mode, Strat, Io>::poll()
     requires (Mode == IoMode::Transport && RxRing<Io> && TxRing<Io>)
 {
     for (;;) {
-        const std::uint64_t rxTsc = tsc::now();
+        const std::uint64_t rxTsc = swNow();
         const auto          f     = m_io.io->tryReceive();
         if (f.status == 0) {
             break;
@@ -419,7 +440,7 @@ void DutSession<Mode, Strat, Io>::completeTx(std::uint32_t userRef, std::uint64_
     }
     slot.live = false;
     if (txHwts >= slot.rxHwts) {
-        m_t2t.record(txHwts - slot.rxHwts);
+        m_t2t.record(txHwts - slot.rxHwts, slot.ctx);
     }
 }
 
@@ -444,12 +465,16 @@ LatencyRecorder& DutSession<Mode, Strat, Io>::t2t() noexcept {
 }
 
 template <IoMode Mode, Strategy Strat, class Io>
-LatencyRecorder& DutSession<Mode, Strat, Io>::t2tSw() noexcept {
+DutSession<Mode, Strat, Io>::SwRecorder& DutSession<Mode, Strat, Io>::t2tSw() noexcept
+    requires (build::kSwTiming)
+{
     return m_t2tSw;
 }
 
 template <IoMode Mode, Strategy Strat, class Io>
-LatencyRecorder& DutSession<Mode, Strat, Io>::proc() noexcept {
+DutSession<Mode, Strat, Io>::SwRecorder& DutSession<Mode, Strat, Io>::proc() noexcept
+    requires (build::kSwTiming)
+{
     return m_proc;
 }
 
@@ -477,23 +502,43 @@ void DutSession<Mode, Strat, Io>::applyPacket(std::span<const std::byte> moldPac
         return;
     }
     ++m_packets;
-    const std::uint64_t           begin = tsc::now();
-    const SequenceTracker::Result r = m_seq.onPacket(mold::sequenceOf(moldPacket), mold::countOf(moldPacket));
+    const std::uint64_t           begin = swNow();
+    const std::uint64_t           seq   = mold::sequenceOf(moldPacket);
+    const std::uint16_t           msgs  = mold::countOf(moldPacket);
+    const SequenceTracker::Result r     = m_seq.onPacket(seq, msgs);
     if (r == SequenceTracker::Result::Stale) [[unlikely]] {
         return;
     }
+    if (r == SequenceTracker::Result::Gap) [[unlikely]] {
+        invalidateFeed(seq);
+    }
+    const std::size_t capBefore = m_book.orderCapacity();
     mold::forEachMessage(moldPacket, [this](std::uint64_t, std::span<const std::byte> msg) {
         applyMessage(msg);
     });
-    const QuoteTargets  targets = tradingAllowed() ? m_strat.onBook(m_book, m_oms.account()) : QuoteTargets{};
-    const std::size_t   n = m_oms.reconcile(targets, std::span<Outbound, OrderManager::kMaxOutbound>{m_out});
-    const std::uint64_t end = tsc::now();
-    m_proc.record(end - begin);
+    const QuoteTargets targets = tradingAllowed() ? m_strat.onBook(m_book, m_oms.account()) : QuoteTargets{};
+    const std::size_t  n = m_oms.reconcile(targets, std::span<Outbound, OrderManager::kMaxOutbound>{m_out});
+    std::uint8_t       flags = 0;
+    if (n > 0) {
+        flags |= SampleContext::kSent;
+    }
+    if (m_book.orderCapacity() != capBefore) {
+        flags |= SampleContext::kRehash;
+    }
+    if (r == SequenceTracker::Result::Gap) {
+        flags |= SampleContext::kGap;
+    }
+    const std::uint64_t ctx = SampleContext::pack(seq, msgs, flags);
+    if constexpr (build::kSwTiming) {
+        m_proc.record(tsc::now() - begin, ctx);
+    }
 
     for (std::size_t i = 0; i < n; ++i) {
         if (sendOrder({m_out[i].buf.data(), m_out[i].len}) && i == 0) {
-            m_t2tSw.record(tsc::now() - rxTsc);
-            recordSend(m_out[i].userRef, rxHwts);
+            if constexpr (build::kSwTiming) {
+                m_t2tSw.record(tsc::now() - rxTsc, ctx);
+            }
+            recordSend(m_out[i].userRef, rxHwts, ctx);
         }
     }
 }
@@ -506,6 +551,9 @@ void DutSession<Mode, Strat, Io>::applyMessage(std::span<const std::byte> msg) {
     const char type = static_cast<char>(msg[0]);
     if (type == 'S') [[unlikely]] {
         onSystemEvent(msg);
+        return;
+    }
+    if (!m_feedValid) [[unlikely]] {
         return;
     }
     if (m_cfg.stockLocate != 0) {
@@ -537,6 +585,7 @@ void DutSession<Mode, Strat, Io>::onSystemEvent(std::span<const std::byte> msg) 
             m_book.clear();
             m_marketOpen = false;
             m_trading    = true;
+            m_feedValid  = true;
             ++m_resets;
             break;
         case itch::SystemEventCode::StartOfMarketHours:
@@ -552,7 +601,30 @@ void DutSession<Mode, Strat, Io>::onSystemEvent(std::span<const std::byte> msg) 
 
 template <IoMode Mode, Strategy Strat, class Io>
 bool DutSession<Mode, Strat, Io>::tradingAllowed() const noexcept {
-    return !m_cfg.marketHoursOnly || (m_marketOpen && m_trading);
+    return m_feedValid && (!m_cfg.marketHoursOnly || (m_marketOpen && m_trading));
+}
+
+template <IoMode Mode, Strategy Strat, class Io>
+void DutSession<Mode, Strat, Io>::invalidateFeed(std::uint64_t seq) noexcept {
+    m_feedValid = false;
+    m_lastFault = seq;
+    ++m_feedFaults;
+    m_book.clear();
+}
+
+template <IoMode Mode, Strategy Strat, class Io>
+bool DutSession<Mode, Strat, Io>::feedValid() const noexcept {
+    return m_feedValid;
+}
+
+template <IoMode Mode, Strategy Strat, class Io>
+std::uint32_t DutSession<Mode, Strat, Io>::feedFaults() const noexcept {
+    return m_feedFaults;
+}
+
+template <IoMode Mode, Strategy Strat, class Io>
+std::uint64_t DutSession<Mode, Strat, Io>::lastFaultSeq() const noexcept {
+    return m_lastFault;
 }
 
 template <IoMode Mode, Strategy Strat, class Io>
@@ -590,14 +662,35 @@ bool DutSession<Mode, Strat, Io>::sendOrder(std::span<const std::byte> ouch) {
 }
 
 template <IoMode Mode, Strategy Strat, class Io>
-void DutSession<Mode, Strat, Io>::recordSend(std::uint32_t userRef, std::uint64_t rxHwts) noexcept {
-    m_inflight[userRef % kInFlight] = InFlight{userRef, rxHwts, true};
+void DutSession<Mode, Strat, Io>::recordSend(std::uint32_t userRef, std::uint64_t rxHwts,
+                                             std::uint64_t ctx) noexcept {
+    m_inflight[userRef % kInFlight] =
+        InFlight{.userRef = userRef, .rxHwts = rxHwts, .ctx = ctx, .live = true};
 }
 
 template <IoMode Mode, Strategy Strat, class Io>
 std::uint16_t DutSession<Mode, Strat, Io>::udpDstPort(const std::uint8_t* frame) noexcept {
     constexpr std::size_t off = net::kEthHeaderSize + net::kIpv4HeaderSize + 2;
     return static_cast<std::uint16_t>((static_cast<std::uint16_t>(frame[off]) << 8) | frame[off + 1]);
+}
+
+template <IoMode Mode, Strategy Strat, class Io>
+std::uint64_t DutSession<Mode, Strat, Io>::swNow() noexcept {
+    if constexpr (build::kSwTiming) {
+        return tsc::now();
+    } else {
+        return 0;
+    }
+}
+
+template <IoMode Mode, Strategy Strat, class Io>
+DutSession<Mode, Strat, Io>::SwRecorder DutSession<Mode, Strat, Io>::makeSwRecorder(const char*      name,
+                                                                                    const DutConfig& cfg) {
+    if constexpr (build::kSwTiming) {
+        return SwRecorder(name, cfg.queueCapacity, tsc::nsPerTick(), cfg.sigFigs);
+    } else {
+        return SwRecorder{};
+    }
 }
 
 }   // namespace abt::dut

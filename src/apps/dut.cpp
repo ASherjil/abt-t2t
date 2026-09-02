@@ -1,11 +1,14 @@
 #include "Backend.hpp"
 
 #include <csignal>
+#include <cstring>
 
 #include <fmt/core.h>
 
+#include "t2t/BuildConfig.hpp"
 #include "t2t/dut/DutAppConfig.hpp"
 #include "t2t/dut/DutRunner.hpp"
+#include "t2t/util/MemLock.hpp"
 #include "t2t/util/Tsc.hpp"
 
 using namespace abt;
@@ -35,7 +38,13 @@ void installSignals() {
 int main() {
     const dut::DutAppConfig cfg = dut::loadDutConfig(ABT_DUT_CONFIG_PATH);
     installSignals();
-    tsc::warmUp();
+    if (const auto lock = util::lockAndPrefaultMemory(); !lock.locked) {
+        fmt::print(stderr, "dut: mlockall failed ({}), page faults may hit the hot loop\n",
+                   std::strerror(lock.error));
+    }
+    if constexpr (build::kSwTiming) {
+        tsc::warmUp();
+    }
 
     const NicSpec nic     = dut::nicOf(cfg);
     auto          backend = Backend::make(nic);

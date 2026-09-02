@@ -19,6 +19,8 @@
 
 using namespace abt;
 
+itch::SystemEvent mkSys(char code);
+
 namespace {
 
 template <class T>
@@ -150,8 +152,6 @@ void test_quote_lifecycle_through_session() {
     CHECK_EQ(u.price.value(), 101u);
     CHECK(sess.oms().slot(Side::Buy).state == dut::QuoteState::PendingReplace);
 
-    (void)sess.proc().drain();
-    CHECK_EQ(sess.proc().count(), 3);
     CHECK_EQ(sess.feed().gaps(), 0u);
 }
 
@@ -182,9 +182,6 @@ void test_take_and_t2t() {
 
     (void)sess.t2t().drain();
     CHECK_EQ(sess.t2t().count(), 0);
-    (void)sess.t2tSw().drain();
-    CHECK_EQ(sess.t2tSw().count(), 1);
-    CHECK(sess.t2tSw().min() > 0 && sess.t2tSw().min() < 1'000'000);
 
     FakeStampSource src{};
     src.queue.push_back(dut::TxCompletion{.userRef = 1u, .sec = 0u, .nsec = 1850u, .status = 1u});
@@ -217,7 +214,13 @@ void test_sequence_gap_and_stale() {
     sess.onMarketData(p5.finalize(), 2u);
     CHECK_EQ(sess.feed().gaps(), 1u);
     CHECK_EQ(sess.feed().missed(), 3u);
-    CHECK_EQ(sess.book().sizeAt(Side::Buy, 99), 100u);
+    CHECK(!sess.feedValid());
+    CHECK(!sess.tradingAllowed());
+    CHECK_EQ(sess.feedFaults(), 1u);
+    CHECK_EQ(sess.lastFaultSeq(), 5u);
+    CHECK_EQ(sess.book().liveOrders(), 0u);
+    CHECK_EQ(sess.book().sizeAt(Side::Buy, 99), 0u);
+    CHECK_EQ(sess.book().sizeAt(Side::Buy, 100), 0u);
 
     mold::Packer p3("SESSION01", 3);
     p3.reset(buf.data(), buf.size());
@@ -226,6 +229,49 @@ void test_sequence_gap_and_stale() {
     CHECK_EQ(sess.feed().stale(), 1u);
     CHECK_EQ(sess.book().sizeAt(Side::Buy, 98), 0u);
     CHECK_EQ(sess.feed().expected(), 6u);
+
+    mold::Packer p6("SESSION01", 6);
+    p6.reset(buf.data(), buf.size());
+    (void)p6.append(bytesOf(mkAdd(4u, 'B', 50u, 97)));
+    sess.onMarketData(p6.finalize(), 4u);
+    CHECK(!sess.feedValid());
+    CHECK_EQ(sess.book().sizeAt(Side::Buy, 97), 0u);
+
+    mold::Packer p7("SESSION01", 7);
+    p7.reset(buf.data(), buf.size());
+    (void)p7.append(bytesOf(mkSys('O')));
+    (void)p7.append(bytesOf(mkAdd(5u, 'B', 60u, 96)));
+    sess.onMarketData(p7.finalize(), 5u);
+    CHECK(sess.feedValid());
+    CHECK(sess.tradingAllowed());
+    CHECK_EQ(sess.feedFaults(), 1u);
+    CHECK_EQ(sess.book().sizeAt(Side::Buy, 96), 60u);
+}
+
+void test_gap_pulls_live_quote() {
+    mold::Packer                                    packer("SESSION01", 1);
+    std::array<std::byte, 2048>                     buf{};
+    dut::DutSession<dut::IoMode::Loopback, JoinBid> sess(baseCfg(), JoinBid{10u});
+
+    packer.reset(buf.data(), buf.size());
+    (void)packer.append(bytesOf(mkAdd(1u, 'B', 500u, 100)));
+    (void)packer.append(bytesOf(mkAdd(2u, 'S', 300u, 102)));
+    sess.onMarketData(packer.finalize(), 1u);
+    CHECK_EQ(sess.ordersSent(), 1u);
+    sess.onAck(bytesOf(accepted(7u, 10u)));
+    CHECK(sess.oms().slot(Side::Buy).state == dut::QuoteState::Live);
+
+    mold::Packer p9("SESSION01", 9);
+    p9.reset(buf.data(), buf.size());
+    (void)p9.append(bytesOf(mkAdd(3u, 'B', 100u, 101)));
+    sess.onMarketData(p9.finalize(), 2u);
+    CHECK(!sess.feedValid());
+    CHECK_EQ(sess.ordersSent(), 2u);
+    ouch::CancelOrder c{};
+    std::memcpy(&c, sess.capturedOrders()[1].data(), sizeof c);
+    CHECK_EQ(c.type, ouch::InType::CancelOrder);
+    CHECK_EQ(c.userRefNum.value(), 7u);
+    CHECK(sess.oms().slot(Side::Buy).state == dut::QuoteState::PendingCancel);
 }
 
 }   // namespace
@@ -388,5 +434,6 @@ int main() {
     test_quote_lifecycle_through_session();
     test_take_and_t2t();
     test_sequence_gap_and_stale();
+    test_gap_pulls_live_quote();
     return abt::test::summary("dutsession");
 }

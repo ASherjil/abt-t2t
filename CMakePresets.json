@@ -10,6 +10,13 @@
       "cacheVariables": { "CMAKE_BUILD_TYPE": "Release" }
     },
     {
+      "name": "release-hw",
+      "displayName": "Release, hardware timestamps only (ABT_SW_TIMING=OFF)",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/release-hw",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Release", "ABT_SW_TIMING": "OFF" }
+    },
+    {
       "name": "relwithdebinfo",
       "displayName": "RelWithDebInfo (profiling)",
       "generator": "Ninja",
@@ -26,11 +33,13 @@
   ],
   "buildPresets": [
     { "name": "release", "configurePreset": "release" },
+    { "name": "release-hw", "configurePreset": "release-hw" },
     { "name": "relwithdebinfo", "configurePreset": "relwithdebinfo" },
     { "name": "debug", "configurePreset": "debug" }
   ],
   "testPresets": [
     { "name": "release", "configurePreset": "release", "output": { "outputOnFailure": true } },
+    { "name": "release-hw", "configurePreset": "release-hw", "output": { "outputOnFailure": true } },
     { "name": "debug", "configurePreset": "debug", "output": { "outputOnFailure": true } }
   ]
 }

@@ -57,6 +57,47 @@ struct NeverSend {
     }
 };
 
+struct BidOnce {
+    bool armed = true;
+
+    dut::QuoteTargets onBook(const dut::BookBuilder& book, const dut::Account&) noexcept {
+        dut::QuoteTargets t{};
+        if (!armed || book.bestAsk() == kNoPrice) {
+            return t;
+        }
+        armed      = false;
+        t.quoteBid = true;
+        t.bidPrice = book.bestAsk();
+        t.bidQty   = 5u;
+        return t;
+    }
+};
+
+void test_sw_recorders() {
+    dut::DutConfig cfg{};
+    cfg.minPrice = 0;
+    cfg.maxPrice = 100000;
+    cfg.tickWire = 100;
+    cfg.symbol   = "ABT";
+    dut::DutSession<dut::IoMode::Loopback, BidOnce> sess(cfg, BidOnce{});
+
+    std::array<std::byte, 512> buf{};
+    mold::Packer               packer("BENCHSESS", 1);
+    packer.reset(buf.data(), buf.size());
+    (void)packer.append(bytesOf(mkAdd(1u, 'B', 100u, 4000)));
+    sess.onMarketData(packer.finalize(), 0);
+    packer.reset(buf.data(), buf.size());
+    (void)packer.append(bytesOf(mkAdd(2u, 'S', 100u, 4100)));
+    sess.onMarketData(packer.finalize(), 0);
+    CHECK_EQ(sess.ordersSent(), 1u);
+
+    (void)sess.proc().drain();
+    CHECK_EQ(sess.proc().count(), 2);
+    (void)sess.t2tSw().drain();
+    CHECK_EQ(sess.t2tSw().count(), 1);
+    CHECK(sess.t2tSw().min() > 0 && sess.t2tSw().min() < 1'000'000);
+}
+
 void bench_proc() {
     dut::DutConfig cfg{};
     cfg.minPrice      = 0;
@@ -195,6 +236,7 @@ void bench_scan() {
 }   // namespace
 
 int main() {
+    test_sw_recorders();
     bench_proc();
     bench_book_throughput();
     bench_scan();

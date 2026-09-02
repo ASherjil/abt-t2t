@@ -39,6 +39,8 @@ mkdir -p "${out}"
         [[ -n "${d}" && -d "${d}/.git" ]] && echo "abtrda3 $(git -C "${d}" rev-parse --short HEAD)" && break
     done
     echo "backend ${backend}  preset ${preset}  duration ${duration}s  host $(hostname)  $(date -Is)"
+    echo "sw_timing $(sed -n 's/^ABT_SW_TIMING:BOOL=//p' "build/${preset}/CMakeCache.txt")"
+    echo "hlog $(sed -n 's/^log_file *= *"\([^"]*\)".*/\1/p' config/dut.toml)  start_epoch $(date +%s)"
 } > "${out}/versions.txt"
 sim_log="${out}/sim.log"
 dut_log="${out}/dut.log"

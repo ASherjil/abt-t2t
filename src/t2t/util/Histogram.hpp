@@ -8,9 +8,13 @@
 //
 
 #include <cstdint>
+#include <cstdio>
 #include <memory>
+#include <string>
+#include <string_view>
 
 struct hdr_histogram;
+struct hdr_log_writer;
 
 namespace abt::util {
 
@@ -35,8 +39,35 @@ public:
 
     void reset() noexcept;
 
+    [[nodiscard]] hdr_histogram* native() const noexcept {
+        return m_h.get();
+    }
+
 private:
     std::unique_ptr<hdr_histogram, HdrClose> m_h;
+};
+
+class HistogramLog {
+public:
+    HistogramLog() = default;
+    explicit HistogramLog(const std::string& path);
+
+    [[nodiscard]] bool open() const noexcept;
+    bool writeInterval(std::string_view tag, double startEpochSec, double intervalSec, const Histogram& h);
+    bool writeComment(std::string_view line);
+    void flush() noexcept;
+
+private:
+    struct FClose {
+        void operator()(std::FILE* f) const noexcept;
+    };
+
+    struct WriterDelete {
+        void operator()(hdr_log_writer* w) const noexcept;
+    };
+
+    std::unique_ptr<std::FILE, FClose>            m_file;
+    std::unique_ptr<hdr_log_writer, WriterDelete> m_writer;
 };
 
 }   // namespace abt::util

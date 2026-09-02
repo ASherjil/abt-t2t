@@ -1,12 +1,13 @@
 # Library targets. Headers and sources live side by side per module; the include root is src/, so
 # every include is spelled "t2t/<module>/<Name>.hpp" (vendored code as "third_party/<lib>/...").
-set(T2T_INCLUDE_ROOT ${PROJECT_SOURCE_DIR}/src)
+set(T2T_INCLUDE_ROOT ${PROJECT_SOURCE_DIR}/src ${PROJECT_BINARY_DIR}/generated)
 
 # ---------------------------------------------------------------------------
 # abt_util : clock/TSC, affinity, flat hash map, HdrHistogram binding.
 # ---------------------------------------------------------------------------
 add_library(abt_util STATIC
     util/Histogram.cpp
+    util/MemLock.cpp
     util/UniqueFd.cpp)
 add_library(abt::util ALIAS abt_util)
 target_include_directories(abt_util PUBLIC ${T2T_INCLUDE_ROOT})

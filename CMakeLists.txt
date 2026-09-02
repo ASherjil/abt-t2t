@@ -97,6 +97,18 @@ if(NOT ABT_BACKEND STREQUAL "socket")
 endif()
 message(STATUS "abt-t2t: backends = ${ABT_BACKENDS}")
 
+# Software timing instruments (rdtscp-based proc / t2t_sw recorders in the DUT hot loop). OFF for
+# hardware-timestamp campaigns so the hot loop carries zero rdtscp; exposed to C++ as the constexpr
+# abt::build::kSwTiming in the generated t2t/BuildConfig.hpp (no #ifdef in code).
+option(ABT_SW_TIMING "software timing instruments (rdtscp proc/t2t_sw) in the DUT hot loop" ON)
+if(ABT_SW_TIMING)
+    set(ABT_SW_TIMING_VALUE true)
+else()
+    set(ABT_SW_TIMING_VALUE false)
+endif()
+configure_file(src/t2t/BuildConfig.hpp.in ${PROJECT_BINARY_DIR}/generated/t2t/BuildConfig.hpp @ONLY)
+message(STATUS "abt-t2t: sw timing = ${ABT_SW_TIMING}")
+
 find_package(ZLIB REQUIRED)
 
 add_subdirectory(src/t2t)

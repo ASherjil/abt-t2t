@@ -113,6 +113,10 @@ std::size_t BookBuilder::liveOrders() const noexcept {
     return m_orders.size();
 }
 
+std::size_t BookBuilder::orderCapacity() const noexcept {
+    return m_orders.capacity();
+}
+
 std::size_t BookBuilder::ownOrders() const noexcept {
     return m_own;
 }

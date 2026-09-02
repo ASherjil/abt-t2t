@@ -1,0 +1,7 @@
+#pragma once
+
+namespace abt::build {
+
+inline constexpr bool kSwTiming = @ABT_SW_TIMING_VALUE@;
+
+}   // namespace abt::build
