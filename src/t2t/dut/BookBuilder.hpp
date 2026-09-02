@@ -55,6 +55,7 @@ public:
     [[nodiscard]] std::uint64_t outOfBandAdds() const noexcept;
     [[nodiscard]] std::uint32_t reanchors() const noexcept;
     [[nodiscard]] Price         tickWire() const noexcept;
+    [[nodiscard]] std::size_t   footprintBytes() const noexcept;
 
 private:
     struct Resting {
@@ -73,6 +74,7 @@ private:
     void removeShares(Side side, Price price, Quantity shares) noexcept;
 
     [[nodiscard]] bool        inBand(Price price) const noexcept;
+    [[nodiscard]] bool        offGrid(Price price) const noexcept;
     [[nodiscard]] std::size_t index(Price price) const noexcept;
     void                      anchor(Price price);
     void                      rebuildLevels();

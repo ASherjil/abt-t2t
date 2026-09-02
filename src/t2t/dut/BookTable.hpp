@@ -54,6 +54,7 @@ public:
     [[nodiscard]] std::size_t        symbols() const noexcept;
     [[nodiscard]] std::uint64_t      undirected() const noexcept;
     [[nodiscard]] std::uint64_t      rehashes() const noexcept;
+    [[nodiscard]] std::size_t        footprintBytes() const noexcept;
     [[nodiscard]] std::size_t        liveOrders() const noexcept;
     [[nodiscard]] std::size_t        bookCapacity(std::uint16_t locate) const noexcept;
 

@@ -120,6 +120,14 @@ std::uint64_t BookTable::rehashes() const noexcept {
     return m_rehashes;
 }
 
+std::size_t BookTable::footprintBytes() const noexcept {
+    std::size_t n = m_books.capacity() * sizeof(Entry);
+    for (const BookBuilder& b : m_storage) {
+        n += b.footprintBytes();
+    }
+    return n;
+}
+
 std::size_t BookTable::liveOrders() const noexcept {
     std::size_t n = 0;
     for (const BookBuilder& b : m_storage) {

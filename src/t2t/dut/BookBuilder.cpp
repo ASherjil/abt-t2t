@@ -52,10 +52,11 @@ void BookBuilder::anchor(Price price) {
             band = static_cast<std::size_t>(byPrice);
         }
     }
-    const Price span = static_cast<Price>(band) * m_tickWire;
-    m_minPrice       = price - span;
+    const Price span    = static_cast<Price>(band) * m_tickWire;
+    const Price aligned = price - price % m_tickWire;
+    m_minPrice          = aligned - span;
     if (m_minPrice < 0) {
-        m_minPrice = price % m_tickWire;
+        m_minPrice = 0;
     }
     m_maxPrice = m_minPrice + 2 * span;
     m_bidSize.assign(2 * band + 1, 0);
@@ -86,6 +87,11 @@ std::uint32_t BookBuilder::reanchors() const noexcept {
 
 Price BookBuilder::tickWire() const noexcept {
     return m_tickWire;
+}
+
+std::size_t BookBuilder::footprintBytes() const noexcept {
+    return (m_bidSize.capacity() + m_askSize.capacity()) * sizeof(Quantity) +
+           m_orders.capacity() * (sizeof(OrderId) + sizeof(Resting)) + sizeof(BookBuilder);
 }
 
 bool BookBuilder::anchored() const noexcept {
@@ -230,7 +236,7 @@ void BookBuilder::onAddOrder(const itch::AddOrder& msg) {
     const Side    side  = (msg.side == itch::Side::Buy) ? Side::Buy : Side::Sell;
     const Price   price = static_cast<Price>(msg.price.value());
     const bool    own   = m_ownRefMin != 0 && ref >= m_ownRefMin;
-    if (!m_anchored) [[unlikely]] {
+    if (!m_anchored || offGrid(price)) [[unlikely]] {
         anchor(price);
     }
     m_orders.insertOrAssign(ref, Resting{.price = price, .shares = shares, .side = side, .own = own});
@@ -257,6 +263,9 @@ void BookBuilder::onOrderReplace(const itch::OrderReplace& msg) {
         return;
     }
     const Price price = static_cast<Price>(msg.price.value());
+    if (offGrid(price)) [[unlikely]] {
+        anchor(price);
+    }
     m_orders.insertOrAssign(msg.newOrderRef.value(),
                             Resting{.price = price, .shares = shares, .side = orig.side, .own = orig.own});
     if (orig.own) [[unlikely]] {
@@ -346,6 +355,11 @@ void BookBuilder::removeShares(Side side, Price price, Quantity shares) noexcept
 
 bool BookBuilder::inBand(Price price) const noexcept {
     return price >= m_minPrice && price <= m_maxPrice;
+}
+
+bool BookBuilder::offGrid(Price price) const noexcept {
+    return m_bandTicks != 0 && m_subDollarTick > 0 && m_tickWire != m_subDollarTick &&
+           price % m_tickWire != 0;
 }
 
 std::size_t BookBuilder::index(Price price) const noexcept {

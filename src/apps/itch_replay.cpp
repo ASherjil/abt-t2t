@@ -138,8 +138,8 @@ int runValidator(const Args& a, replay::ItchFileReader& reader,
     fmt::print("read           {} messages, {} bytes; validated {} across {} books ({} arena)\n",
                reader.messages(), reader.bytes(), t.messages, t.symbols,
                a.arenaMb != 0 ? (arena.huge() ? "hugetlb" : "4K-page fallback") : "heap");
-    fmt::print("invariants     unknown ref {}  over-reduce {}  crossed {}  out-of-band adds {}\n",
-               t.unknownRef, t.overReduce, t.crossed, t.outOfBand);
+    fmt::print("invariants     unknown ref {}  over-reduce {}  crossed {}  locked {}  out-of-band adds {}\n",
+               t.unknownRef, t.overReduce, t.crossed, t.locked, t.outOfBand);
     fmt::print("anchoring      re-anchors on out-of-band trades {}  sub-dollar tick books {}\n", t.reanchors,
                t.subDollar);
     fmt::print("book           band {} ticks/side (min), max live orders {} (sampled every 64k msgs)\n",
@@ -147,8 +147,9 @@ int runValidator(const Args& a, replay::ItchFileReader& reader,
     rusage ru{};
     (void)getrusage(RUSAGE_SELF, &ru);
     const double elapsed = static_cast<double>(monotonicNs() - startNs) * 1e-9;
-    fmt::print("resources      {:.1f} s wall, {:.1f} M msg/s, peak RSS {} MB\n", elapsed,
-               static_cast<double>(reader.messages()) / elapsed / 1e6, ru.ru_maxrss / 1024);
+    fmt::print("resources      {:.1f} s wall, {:.1f} M msg/s, peak RSS {} MB, live book footprint {} MB\n",
+               elapsed, static_cast<double>(reader.messages()) / elapsed / 1e6, ru.ru_maxrss / 1024,
+               validator.books().footprintBytes() >> 20);
 
     std::vector<std::size_t> order;
     const auto&              per = validator.perSymbol();
@@ -160,15 +161,15 @@ int runValidator(const Args& a, replay::ItchFileReader& reader,
     std::sort(order.begin(), order.end(), [&](std::size_t x, std::size_t y) {
         return per[x].messages > per[y].messages;
     });
-    fmt::print("{:<10}{:>7}{:>12}{:>9}{:>9}{:>9}{:>9}\n", "symbol", "locate", "msgs", "unknown", "over",
-               "crossed", "maxlive");
+    fmt::print("{:<10}{:>7}{:>12}{:>9}{:>9}{:>9}{:>9}{:>9}\n", "symbol", "locate", "msgs", "unknown", "over",
+               "crossed", "locked", "maxlive");
     std::size_t shown = 0;
     for (const std::size_t l : order) {
         const replay::SymbolStats& s     = per[l];
         const bool                 fault = s.unknownRef + s.overReduce + s.crossed > 0;
         if (shown < 20 || fault) {
-            fmt::print("{:<10}{:>7}{:>12}{:>9}{:>9}{:>9}{:>9}{}\n", s.name.empty() ? "?" : s.name, l,
-                       s.messages, s.unknownRef, s.overReduce, s.crossed, s.maxLive,
+            fmt::print("{:<10}{:>7}{:>12}{:>9}{:>9}{:>9}{:>9}{:>9}{}\n", s.name.empty() ? "?" : s.name, l,
+                       s.messages, s.unknownRef, s.overReduce, s.crossed, s.locked, s.maxLive,
                        fault ? "  <-- FAULT" : "");
         }
         ++shown;

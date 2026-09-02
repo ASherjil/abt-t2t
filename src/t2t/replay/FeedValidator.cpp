@@ -107,7 +107,11 @@ void FeedValidator::onMessage(std::span<const std::byte> msg) {
             const Price ba = b->bestAsk();
             if ((type == 'A' || type == 'F' || type == 'U') && m_marketHours && m_trading[locate] &&
                 bb != kNoPrice && ba != kNoPrice && bb >= ba) {
-                ++st.crossed;
+                if (bb > ba) {
+                    ++st.crossed;
+                } else {
+                    ++st.locked;
+                }
             }
             if (b->liveOrders() > st.maxLive) {
                 st.maxLive = b->liveOrders();
@@ -146,6 +150,7 @@ FeedTotals FeedValidator::totals() const noexcept {
         t.unknownRef += s.unknownRef;
         t.overReduce += s.overReduce;
         t.crossed += s.crossed;
+        t.locked += s.locked;
     }
     m_books.forEachBook([&](std::uint16_t, const dut::BookBuilder& b) {
         t.outOfBand += b.outOfBandAdds();

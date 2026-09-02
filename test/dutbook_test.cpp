@@ -178,8 +178,8 @@ void test_dynamic_band_scales_with_price_and_clamps_at_zero() {
 
     dut::BookBuilder penny(cfg);
     penny.apply(bytesOf(mkAdd(1u, 'B', 1u, 350)));
-    CHECK_EQ(penny.bandLow(), 50);
-    CHECK_EQ(penny.bandHigh(), 50 + 2000);
+    CHECK_EQ(penny.bandLow(), 0);
+    CHECK_EQ(penny.bandHigh(), 2000);
     CHECK_EQ(penny.sizeAt(Side::Buy, 350), 1u);
 
     cfg.subDollarTickWire = 1;
@@ -190,6 +190,20 @@ void test_dynamic_band_scales_with_price_and_clamps_at_zero() {
     CHECK_EQ(subDollar.bandHigh(), 350 + 35);
     subDollar.apply(bytesOf(mkAdd(2u, 'S', 1u, 351)));
     CHECK_EQ(subDollar.bestAsk(), 351);
+
+    dut::BookBuilder junkFirst(cfg);
+    junkFirst.apply(bytesOf(mkAdd(1u, 'S', 5u, 50000)));
+    CHECK_EQ(junkFirst.tickWire(), 100);
+    junkFirst.apply(bytesOf(mkAdd(2u, 'B', 100u, 5384)));
+    CHECK_EQ(junkFirst.tickWire(), 1);
+    CHECK_EQ(junkFirst.reanchors(), 1u);
+    CHECK_EQ(junkFirst.bestBid(), 5384);
+    junkFirst.apply(bytesOf(mkAdd(3u, 'S', 100u, 5385)));
+    junkFirst.apply(bytesOf(mkAdd(4u, 'B', 100u, 5300)));
+    CHECK_EQ(junkFirst.bestAsk(), 5385);
+    junkFirst.apply(bytesOf(mkDelete(2u)));
+    CHECK_EQ(junkFirst.bestBid(), 5300);
+    CHECK_EQ(junkFirst.liveOrders(), 3u);
 }
 
 void test_out_of_band_trade_reanchors_and_rebuilds() {

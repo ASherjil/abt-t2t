@@ -16,6 +16,7 @@ struct SymbolStats {
     std::uint64_t unknownRef = 0;
     std::uint64_t overReduce = 0;
     std::uint64_t crossed    = 0;
+    std::uint64_t locked     = 0;
     std::uint64_t maxLive    = 0;
 };
 
@@ -24,6 +25,7 @@ struct FeedTotals {
     std::uint64_t unknownRef = 0;
     std::uint64_t overReduce = 0;
     std::uint64_t crossed    = 0;
+    std::uint64_t locked     = 0;
     std::uint64_t outOfBand  = 0;
     std::uint64_t reanchors  = 0;
     std::uint64_t maxLive    = 0;

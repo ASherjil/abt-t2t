@@ -170,6 +170,14 @@ std::vector<std::vector<std::byte>> allMoldMessages(const std::vector<std::vecto
     return out;
 }
 
+ouch::OutType firstOeType(const ExchangeSession<IoMode::Loopback>& ex) {
+    if (ex.capturedOrderEntry().empty()) {
+        return ouch::OutType{};
+    }
+    const soup::Packet p = soupOf(ex.capturedOrderEntry()[0]);
+    return p.payload.empty() ? ouch::OutType{} : static_cast<ouch::OutType>(p.payload[0]);
+}
+
 void test_two_venues_route_by_symbol_and_user_ref() {
     ExchangeConfig cfg{};
     cfg.symbols = {"AAPL", "MSFT"};
@@ -182,27 +190,30 @@ void test_two_venues_route_by_symbol_and_user_ref() {
     {
         const auto msgs = allMoldMessages(ex.capturedMarketData());
         CHECK_EQ(msgs.size(), 2u);
-        itch::StockDirectory r{};
-        std::memcpy(&r, msgs[1].data(), sizeof r);
-        CHECK(r.messageType == itch::MessageType::StockDirectory);
-        CHECK_EQ(r.stockLocate.value(), 7u);
-        CHECK(r.stock.view() == "MSFT");
+        if (msgs.size() == 2 && msgs[1].size() == sizeof(itch::StockDirectory)) {
+            itch::StockDirectory r{};
+            std::memcpy(&r, msgs[1].data(), sizeof r);
+            CHECK(r.messageType == itch::MessageType::StockDirectory);
+            CHECK_EQ(r.stockLocate.value(), 7u);
+            CHECK(r.stock.view() == "MSFT");
+        }
     }
     ex.clearCaptured();
 
     const auto msft = enterFor("MSFT", 41u, ouch::Side::Sell, 100u, 1'700'000u);
     ex.onOrderEntryBytes(soup::packUnsequencedData(feed.data(), bytesOf(msft)), 1'000);
     CHECK_EQ(ex.capturedOrderEntry().size(), 1u);
-    CHECK(static_cast<ouch::OutType>(soupOf(ex.capturedOrderEntry()[0]).payload[0]) ==
-          ouch::OutType::Accepted);
+    CHECK(firstOeType(ex) == ouch::OutType::Accepted);
     {
         const auto msgs = allMoldMessages(ex.capturedMarketData());
         CHECK_EQ(msgs.size(), 1u);
-        itch::AddOrder a{};
-        std::memcpy(&a, msgs[0].data(), sizeof a);
-        CHECK_EQ(a.stockLocate.value(), 7u);
-        CHECK(a.stock.view() == "MSFT");
-        CHECK_EQ(a.price.value(), 1'700'000u);
+        if (msgs.size() == 1 && msgs[0].size() == sizeof(itch::AddOrder)) {
+            itch::AddOrder a{};
+            std::memcpy(&a, msgs[0].data(), sizeof a);
+            CHECK_EQ(a.stockLocate.value(), 7u);
+            CHECK(a.stock.view() == "MSFT");
+            CHECK_EQ(a.price.value(), 1'700'000u);
+        }
     }
     CHECK_EQ(ex.venue(1).bestAsk(), 17000);
     CHECK_EQ(ex.venue(0).bestAsk(), kNoPrice);
@@ -212,8 +223,7 @@ void test_two_venues_route_by_symbol_and_user_ref() {
     const auto nope = enterFor("ZZZZ", 42u, ouch::Side::Buy, 10u, 100u);
     ex.onOrderEntryBytes(soup::packUnsequencedData(feed.data(), bytesOf(nope)), 1'100);
     CHECK_EQ(ex.capturedOrderEntry().size(), 1u);
-    CHECK(static_cast<ouch::OutType>(soupOf(ex.capturedOrderEntry()[0]).payload[0]) ==
-          ouch::OutType::Rejected);
+    CHECK(firstOeType(ex) == ouch::OutType::Rejected);
     ex.clearCaptured();
 
     ouch::CancelOrder x{};
@@ -223,8 +233,7 @@ void test_two_venues_route_by_symbol_and_user_ref() {
     x.appendageLength = 0;
     ex.onOrderEntryBytes(soup::packUnsequencedData(feed.data(), bytesOf(x)), 1'200);
     CHECK_EQ(ex.capturedOrderEntry().size(), 1u);
-    CHECK(static_cast<ouch::OutType>(soupOf(ex.capturedOrderEntry()[0]).payload[0]) ==
-          ouch::OutType::Canceled);
+    CHECK(firstOeType(ex) == ouch::OutType::Canceled);
     CHECK_EQ(ex.venue(1).bestAsk(), kNoPrice);
     CHECK_EQ(ex.liveOrders(), 0u);
     ex.clearCaptured();
