@@ -1,13 +1,22 @@
 #include "t2t/replay/ItchFile.hpp"
 
+#include <array>
+#include <cstdio>
 #include <cstring>
 
 #include <zlib.h>
 
 namespace abt::replay {
 
-ItchFileReader::ItchFileReader(const std::string& path, std::size_t bufferBytes)
-    : m_buf(bufferBytes < 65536 ? 65536 : bufferBytes) {
+ItchFileReader::ItchFileReader(const std::string& path, std::size_t bufferBytes) {
+    if (!isGzip(path)) {
+        m_map = util::MappedFile(path);
+        if (m_map.ok()) {
+            m_view = m_map.bytes();
+            return;
+        }
+    }
+    m_buf.resize(bufferBytes < 65536 ? 65536 : bufferBytes);
     gzFile_s* file = gzopen(path.c_str(), "rb");
     m_file.reset(file);
     if (m_file) {
@@ -15,8 +24,60 @@ ItchFileReader::ItchFileReader(const std::string& path, std::size_t bufferBytes)
     }
 }
 
+bool ItchFileReader::isGzip(const std::string& path) {
+    std::FILE* f = std::fopen(path.c_str(), "rb");
+    if (f == nullptr) {
+        return false;
+    }
+    std::array<unsigned char, 2> magic{};
+    const std::size_t            n = std::fread(magic.data(), 1, magic.size(), f);
+    (void)std::fclose(f);
+    return n == 2 && magic[0] == 0x1f && magic[1] == 0x8b;
+}
+
 bool ItchFileReader::ok() const noexcept {
-    return m_file != nullptr;
+    return m_map.ok() || m_file != nullptr;
+}
+
+bool ItchFileReader::mapped() const noexcept {
+    return m_map.ok();
+}
+
+void ItchFileReader::reset() {
+    m_pos       = 0;
+    m_len       = 0;
+    m_messages  = 0;
+    m_bytes     = 0;
+    m_eof       = false;
+    m_truncated = false;
+    if (m_file) {
+        (void)gzrewind(m_file.get());
+    }
+}
+
+bool ItchFileReader::nextMapped(std::span<const std::byte>& msg) noexcept {
+    for (;;) {
+        if (m_pos + 2 > m_view.size()) {
+            m_truncated = m_pos != m_view.size();
+            return false;
+        }
+        const std::size_t len = (std::to_integer<std::size_t>(m_view[m_pos]) << 8) |
+                                std::to_integer<std::size_t>(m_view[m_pos + 1]);
+        if (len == 0) {
+            m_pos += 2;
+            m_bytes += 2;
+            continue;
+        }
+        if (m_pos + 2 + len > m_view.size()) {
+            m_truncated = true;
+            return false;
+        }
+        msg = m_view.subspan(m_pos + 2, len);
+        m_pos += 2 + len;
+        m_bytes += 2 + len;
+        ++m_messages;
+        return true;
+    }
 }
 
 bool ItchFileReader::fill(std::size_t need) {
@@ -47,6 +108,9 @@ bool ItchFileReader::fill(std::size_t need) {
 }
 
 bool ItchFileReader::next(std::span<const std::byte>& msg) {
+    if (m_map.ok()) {
+        return nextMapped(msg);
+    }
     if (m_file == nullptr) {
         return false;
     }

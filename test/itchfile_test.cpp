@@ -234,6 +234,35 @@ void test_extract_then_replay(const std::string& src) {
     std::remove(out.c_str());
 }
 
+void test_plain_file_is_mapped_and_resets(const std::string& plain, const std::string& gz, const Fixture& f) {
+    replay::ItchFileReader r(plain);
+    CHECK(r.ok());
+    CHECK(r.mapped());
+    std::span<const std::byte> msg;
+    std::size_t                n = 0;
+    while (r.next(msg)) {
+        ++n;
+    }
+    CHECK_EQ(n, f.messages.size());
+    CHECK(!r.truncated());
+    r.reset();
+    CHECK_EQ(r.messages(), 0u);
+    CHECK(r.next(msg));
+    CHECK_EQ(msg.size(), f.messages[0].size());
+
+    replay::ItchFileReader g(gz);
+    CHECK(g.ok());
+    CHECK(!g.mapped());
+    n = 0;
+    while (g.next(msg)) {
+        ++n;
+    }
+    CHECK_EQ(n, f.messages.size());
+    g.reset();
+    CHECK(g.next(msg));
+    CHECK_EQ(g.messages(), 1u);
+}
+
 void test_truncated() {
     const std::string path = "itchfile_test_trunc.itch";
     {
@@ -266,6 +295,7 @@ int main() {
     writeGz(gz, f);
     test_roundtrip_and_replay(plain, f);
     test_roundtrip_and_replay(gz, f);
+    test_plain_file_is_mapped_and_resets(plain, gz, f);
     test_extract_then_replay(gz);
     test_truncated();
     test_time_format();

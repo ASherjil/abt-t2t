@@ -33,6 +33,7 @@ struct ReplayProgress {
     std::uint64_t maxLateNs   = 0;
     std::uint64_t lateOver1ms = 0;
     bool          preloaded   = false;
+    bool          mapped      = false;
     bool          finished    = false;
 };
 
@@ -79,8 +80,16 @@ bool MarketReplay<Session>::open() {
     if (!probe.ok()) {
         return false;
     }
-    const std::size_t          cap = m_cfg.preloadMaxMb << 20;
     std::span<const std::byte> msg;
+    if (probe.mapped()) {
+        while (probe.next(msg)) {
+            ++m_fileMessages;
+        }
+        m_progress.mapped = true;
+        m_reader.emplace(m_cfg.file);
+        return m_reader->ok() && m_fileMessages > 0;
+    }
+    const std::size_t cap = m_cfg.preloadMaxMb << 20;
     while (probe.next(msg)) {
         if (m_store.size() + msg.size() + 2 > cap) {
             m_store.clear();
@@ -103,6 +112,10 @@ bool MarketReplay<Session>::restart() {
     m_have     = false;
     m_anchored = false;
     if (m_progress.preloaded) {
+        return true;
+    }
+    if (m_reader.has_value()) {
+        m_reader->reset();
         return true;
     }
     m_reader.emplace(m_cfg.file);
@@ -128,7 +141,9 @@ bool MarketReplay<Session>::fetch() {
     if (!m_reader->next(m_cur)) {
         return false;
     }
-    ++m_fileMessages;
+    if (!m_progress.mapped) {
+        ++m_fileMessages;
+    }
     return true;
 }
 

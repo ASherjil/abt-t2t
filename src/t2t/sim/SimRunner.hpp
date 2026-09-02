@@ -53,9 +53,10 @@ int runReplay(Session& ex, const SimConfig& cfg, volatile std::sig_atomic_t& sto
         return 1;
     }
     fmt::print(stderr, "exchange-sim: replay {} ({}, {} msgs) speed={} loops={} skip_to={} stop_at={}\n",
-               cfg.replay.file, rp.progress().preloaded ? "preloaded" : "streamed", rp.fileMessages(),
-               cfg.replay.speed, cfg.replay.loops, replay::formatTimeOfDay(cfg.replay.skipToNs),
-               replay::formatTimeOfDay(cfg.replay.stopAtNs));
+               cfg.replay.file,
+               rp.progress().mapped ? "mmap" : (rp.progress().preloaded ? "preloaded" : "streamed"),
+               rp.fileMessages(), cfg.replay.speed, cfg.replay.loops,
+               replay::formatTimeOfDay(cfg.replay.skipToNs), replay::formatTimeOfDay(cfg.replay.stopAtNs));
     if (cfg.replay.waitForDut && !ex.clientSeen()) {
         fmt::print(stderr, "exchange-sim: waiting for the DUT to log in on order entry ...\n");
         while (stop == 0 && !ex.clientSeen()) {

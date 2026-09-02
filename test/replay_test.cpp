@@ -142,7 +142,8 @@ void test_afap_forwards_verbatim_and_loops() {
     rc.loops = 2;
     MarketReplay<ExchangeSession<IoMode::Loopback>> rp(ex, rc);
     CHECK(rp.open());
-    CHECK(rp.progress().preloaded);
+    CHECK(rp.progress().mapped);
+    CHECK(!rp.progress().preloaded);
     CHECK_EQ(rp.fileMessages(), day.size());
 
     std::size_t pumps = 0;

@@ -8,6 +8,8 @@
 #include <string>
 #include <vector>
 
+#include "t2t/util/MappedFile.hpp"
+
 struct gzFile_s;
 
 namespace abt::replay {
@@ -18,19 +20,25 @@ public:
 
     [[nodiscard]] bool ok() const noexcept;
     [[nodiscard]] bool next(std::span<const std::byte>& msg);
+    void               reset();
 
+    [[nodiscard]] bool          mapped() const noexcept;
     [[nodiscard]] std::uint64_t messages() const noexcept;
     [[nodiscard]] std::uint64_t bytes() const noexcept;
     [[nodiscard]] bool          truncated() const noexcept;
 
 private:
-    [[nodiscard]] bool fill(std::size_t need);
+    [[nodiscard]] bool        fill(std::size_t need);
+    [[nodiscard]] bool        nextMapped(std::span<const std::byte>& msg) noexcept;
+    [[nodiscard]] static bool isGzip(const std::string& path);
 
     struct GzClose {
         void operator()(gzFile_s* file) const noexcept;
     };
 
     std::unique_ptr<gzFile_s, GzClose> m_file;
+    util::MappedFile                   m_map;
+    std::span<const std::byte>         m_view;
     std::vector<std::byte>             m_buf;
     std::size_t                        m_pos       = 0;
     std::size_t                        m_len       = 0;
