@@ -1,9 +1,9 @@
 #include "TestHarness.hpp"
 
+#include <utility>
+
 #include <fcntl.h>
 #include <unistd.h>
-
-#include <utility>
 
 #include "t2t/util/UniqueFd.hpp"
 
@@ -40,7 +40,7 @@ void test_closes_on_destruction() {
 }
 
 void test_move_transfers_ownership() {
-    const int raw = makeFd();
+    const int      raw = makeFd();
     util::UniqueFd a{raw};
     util::UniqueFd b{std::move(a)};
     CHECK(!a);
@@ -55,8 +55,8 @@ void test_move_transfers_ownership() {
 }
 
 void test_move_assign_closes_previous() {
-    const int first  = makeFd();
-    const int second = makeFd();
+    const int      first  = makeFd();
+    const int      second = makeFd();
     util::UniqueFd a{first};
     util::UniqueFd b{second};
     a = std::move(b);
@@ -66,8 +66,8 @@ void test_move_assign_closes_previous() {
 }
 
 void test_reset() {
-    const int first  = makeFd();
-    const int second = makeFd();
+    const int      first  = makeFd();
+    const int      second = makeFd();
     util::UniqueFd fd{first};
     fd.reset(second);
     CHECK(!isOpen(first));
@@ -91,10 +91,10 @@ void test_release_gives_up_ownership() {
 }
 
 void test_self_move_keeps_fd() {
-    const int      raw = makeFd();
-    util::UniqueFd fd{raw};
+    const int       raw = makeFd();
+    util::UniqueFd  fd{raw};
     util::UniqueFd& alias = fd;
-    fd = std::move(alias);
+    fd                    = std::move(alias);
     CHECK_EQ(fd.get(), raw);
     CHECK(isOpen(raw));
 }

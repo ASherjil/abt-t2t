@@ -8,6 +8,7 @@
 
 #include "TestHarness.hpp"
 
+#include <algorithm>
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -51,7 +52,7 @@ itch::OrderDelete mkDelete(OrderId ref) {
 }
 
 struct NeverSend {
-    dut::QuoteTargets onBook(const dut::BookBuilder&, const dut::Account&) noexcept {
+    static dut::QuoteTargets onBook(const dut::BookBuilder&, const dut::Account&) noexcept {
         return {};
     }
 };
@@ -117,9 +118,7 @@ double runBookThroughput(std::size_t maxOrders, const std::vector<std::array<std
         }
         const std::uint64_t t1 = tsc::now();
         const double perMsg    = static_cast<double>(tsc::toNs(t1 - t0)) / static_cast<double>(msgs.size());
-        if (perMsg < best) {
-            best = perMsg;
-        }
+        best                   = std::min(perMsg, best);
     }
     CHECK(book.liveOrders() > 0);
     return best;

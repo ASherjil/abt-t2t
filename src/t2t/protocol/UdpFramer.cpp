@@ -30,7 +30,7 @@ UdpFramer::UdpFramer(const Endpoints& ep) noexcept {
     m_hdr.udp.checksum = 0;
 }
 
-void UdpFramer::patch(std::byte* frame, std::size_t payloadLen) const noexcept {
+void UdpFramer::patch(std::byte* frame, std::size_t payloadLen) noexcept {
     auto* ip  = reinterpret_cast<Ipv4Header*>(frame + kEthHeaderSize);
     auto* udp = reinterpret_cast<UdpHeader*>(frame + kEthHeaderSize + kIpv4HeaderSize);
 

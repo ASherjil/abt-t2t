@@ -12,7 +12,7 @@
 #include <cstdint>
 #include <limits>
 
-#if defined(__AVX2__)
+#ifdef __AVX2__
 #include <immintrin.h>
 #endif
 
@@ -45,7 +45,7 @@ inline constexpr std::size_t kNoIndex = std::numeric_limits<std::size_t>::max();
     return kNoIndex;
 }
 
-#if defined(__AVX2__)
+#ifdef __AVX2__
 
 [[nodiscard]] inline std::size_t scanDownNonZeroAvx2(const std::uint32_t* a, std::size_t start) noexcept {
     const __m256i zero = _mm256_setzero_si256();
@@ -100,7 +100,7 @@ inline constexpr std::size_t kNoIndex = std::numeric_limits<std::size_t>::max();
 #endif
 
 [[nodiscard]] inline std::size_t scanDownNonZero(const std::uint32_t* a, std::size_t start) noexcept {
-#if defined(__AVX2__)
+#ifdef __AVX2__
     return scanDownNonZeroAvx2(a, start);
 #else
     return scanDownNonZeroScalar(a, start);
@@ -109,7 +109,7 @@ inline constexpr std::size_t kNoIndex = std::numeric_limits<std::size_t>::max();
 
 [[nodiscard]] inline std::size_t scanUpNonZero(const std::uint32_t* a, std::size_t start,
                                                std::size_t last) noexcept {
-#if defined(__AVX2__)
+#ifdef __AVX2__
     return scanUpNonZeroAvx2(a, start, last);
 #else
     return scanUpNonZeroScalar(a, start, last);

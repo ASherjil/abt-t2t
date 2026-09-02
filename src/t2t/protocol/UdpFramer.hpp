@@ -39,7 +39,7 @@ public:
         return std::as_bytes(std::span{&m_hdr, 1});
     }
 
-    void patch(std::byte* frame, std::size_t payloadLen) const noexcept;
+    static void patch(std::byte* frame, std::size_t payloadLen) noexcept;
 
 private:
     FrameHeader m_hdr{};

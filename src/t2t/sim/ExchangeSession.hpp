@@ -685,7 +685,7 @@ template <IoMode Mode, class Tx>
 util::UniqueFd ExchangeSession<Mode, Tx>::acceptOrderEntry(std::uint16_t port)
     requires (Mode == IoMode::Socket)
 {
-    util::UniqueFd lfd{::socket(AF_INET, SOCK_STREAM, 0)};
+    const util::UniqueFd lfd{::socket(AF_INET, SOCK_STREAM, 0)};
     if (!lfd) {
         die("socket(tcp)");
     }

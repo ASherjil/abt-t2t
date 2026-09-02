@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <optional>
@@ -15,7 +16,7 @@ namespace abt {
 
 struct ReplayConfig {
     bool          enabled = false;
-    std::string   file{};
+    std::string   file;
     double        speed        = 1.0;
     std::uint32_t loops        = 0;
     std::uint64_t skipToNs     = 0;
@@ -57,7 +58,7 @@ private:
     std::size_t                           m_cursor = 0;
     std::optional<replay::ItchFileReader> m_reader;
     std::uint64_t                         m_fileMessages = 0;
-    std::span<const std::byte>            m_cur{};
+    std::span<const std::byte>            m_cur;
     bool                                  m_have       = false;
     bool                                  m_anchored   = false;
     std::uint64_t                         m_anchorMono = 0;
@@ -194,9 +195,7 @@ bool MarketReplay<Session>::pump(std::uint64_t nowMono) {
                 }
             }
             const std::uint64_t late = nowMono - due;
-            if (late > m_progress.maxLateNs) {
-                m_progress.maxLateNs = late;
-            }
+            m_progress.maxLateNs     = std::max(late, m_progress.maxLateNs);
             if (late > 1'000'000ull) {
                 ++m_progress.lateOver1ms;
             }

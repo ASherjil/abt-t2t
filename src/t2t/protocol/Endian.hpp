@@ -48,7 +48,7 @@ struct BigEndian {
         std::memcpy(bytes.data(), &v, sizeof(T));
     }
 
-    [[nodiscard]] operator T() const noexcept {
+    [[nodiscard]] explicit operator T() const noexcept {
         return value();
     }
 
@@ -83,7 +83,7 @@ struct Uint48 {
         }
     }
 
-    [[nodiscard]] operator std::uint64_t() const noexcept {
+    [[nodiscard]] explicit operator std::uint64_t() const noexcept {
         return value();
     }
 

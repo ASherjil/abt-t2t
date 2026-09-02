@@ -56,7 +56,7 @@ struct DutConfig {
     Price         minPrice = 0;
     Price         maxPrice = 0;
     Price         tickWire = 1;
-    std::string   symbol{};
+    std::string   symbol;
     std::uint16_t stockLocate     = 0;
     bool          marketHoursOnly = false;
     OrderId       ownRefMin       = 0;

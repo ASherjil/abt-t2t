@@ -6,7 +6,7 @@
 
 #include "t2t/util/Affinity.hpp"
 
-#if defined(__x86_64__)
+#ifdef __x86_64__
 #include <immintrin.h>
 #endif
 
@@ -18,7 +18,7 @@ constexpr std::int64_t kLowestNs  = 1;
 constexpr std::int64_t kHighestNs = 10'000'000'000ll;
 
 void relax() noexcept {
-#if defined(__x86_64__)
+#ifdef __x86_64__
     _mm_pause();
 #endif
 }

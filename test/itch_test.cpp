@@ -18,7 +18,7 @@ namespace {
 
 template <class T>
 std::uint8_t byte_at(const T& v, std::size_t off) {
-    std::uint8_t b;
+    std::uint8_t b = 0;
     std::memcpy(&b, reinterpret_cast<const std::byte*>(&v) + off, 1);
     return b;
 }

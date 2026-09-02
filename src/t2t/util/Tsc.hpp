@@ -10,7 +10,7 @@
 #include <cstdint>
 #include <ctime>
 
-#if defined(__x86_64__)
+#ifdef __x86_64__
 #include <x86intrin.h>
 #endif
 
@@ -29,7 +29,7 @@ namespace detail {
 // Read the counter. rdtscp waits for prior instructions to retire; the trailing lfence stops the
 // read from floating past later instructions, so the bracketed region is measured tightly.
 [[nodiscard]] inline std::uint64_t now() noexcept {
-#if defined(__x86_64__)
+#ifdef __x86_64__
     unsigned            aux = 0;
     const std::uint64_t t   = __rdtscp(&aux);
     _mm_lfence();

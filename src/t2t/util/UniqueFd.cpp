@@ -1,30 +1,31 @@
 #include "UniqueFd.hpp"
-#include <unistd.h>
+
 #include <utility>
+
+#include <unistd.h>
 
 namespace abt::util {
 
 UniqueFd::UniqueFd(int fd) noexcept
-    : m_fd(fd) {}
-
-UniqueFd::UniqueFd(UniqueFd &&other) noexcept
-    :m_fd(std::exchange(other.m_fd, -1)){
-
+    : m_fd(fd) {
 }
 
-UniqueFd& UniqueFd::operator=(UniqueFd &&other) noexcept {
+UniqueFd::UniqueFd(UniqueFd&& other) noexcept
+    : m_fd(std::exchange(other.m_fd, -1)) {
+}
+
+UniqueFd& UniqueFd::operator=(UniqueFd&& other) noexcept {
     reset(std::exchange(other.m_fd, -1));
     return *this;
 }
 
-UniqueFd::~UniqueFd(){
+UniqueFd::~UniqueFd() {
     reset();
 }
 
 [[nodiscard]] int UniqueFd::release() noexcept {
     return std::exchange(m_fd, -1);
 }
-
 
 void UniqueFd::reset(int fd) noexcept {
     if (m_fd >= 0) {
@@ -33,4 +34,4 @@ void UniqueFd::reset(int fd) noexcept {
     m_fd = fd;
 }
 
-} // abt::util
+}   // namespace abt::util

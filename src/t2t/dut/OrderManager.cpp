@@ -220,7 +220,7 @@ void OrderManager::encodeEnter(Outbound& out, std::uint32_t userRef, Side side, 
 }
 
 void OrderManager::encodeReplace(Outbound& out, std::uint32_t origRef, std::uint32_t userRef, Price price,
-                                 Quantity qty) const noexcept {
+                                 Quantity qty) noexcept {
     ouch::ReplaceOrder u{};
     u.type               = ouch::InType::ReplaceOrder;
     u.origUserRefNum     = origRef;
@@ -237,7 +237,7 @@ void OrderManager::encodeReplace(Outbound& out, std::uint32_t origRef, std::uint
     out.userRef = userRef;
 }
 
-void OrderManager::encodeCancel(Outbound& out, std::uint32_t userRef) const noexcept {
+void OrderManager::encodeCancel(Outbound& out, std::uint32_t userRef) noexcept {
     ouch::CancelOrder x{};
     x.type            = ouch::InType::CancelOrder;
     x.userRefNum      = userRef;

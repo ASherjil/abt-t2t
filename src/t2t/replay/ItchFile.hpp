@@ -31,13 +31,13 @@ private:
     };
 
     std::unique_ptr<gzFile_s, GzClose> m_file;
-    std::vector<std::byte> m_buf;
-    std::size_t            m_pos       = 0;
-    std::size_t            m_len       = 0;
-    std::uint64_t          m_messages  = 0;
-    std::uint64_t          m_bytes     = 0;
-    bool                   m_eof       = false;
-    bool                   m_truncated = false;
+    std::vector<std::byte>             m_buf;
+    std::size_t                        m_pos       = 0;
+    std::size_t                        m_len       = 0;
+    std::uint64_t                      m_messages  = 0;
+    std::uint64_t                      m_bytes     = 0;
+    bool                               m_eof       = false;
+    bool                               m_truncated = false;
 };
 
 class ItchFileWriter {
@@ -54,7 +54,7 @@ private:
     };
 
     std::unique_ptr<std::FILE, FClose> m_file;
-    std::uint64_t m_messages = 0;
+    std::uint64_t                      m_messages = 0;
 };
 
 }   // namespace abt::replay

@@ -4,8 +4,7 @@ namespace abt::util {
 
 class UniqueFd {
 public:
-
-// Rule of 5 must be implemented here
+    // Rule of 5 must be implemented here
     UniqueFd() noexcept = default;
     explicit UniqueFd(int fd) noexcept;
     UniqueFd(const UniqueFd&) = delete;
@@ -13,7 +12,6 @@ public:
     UniqueFd& operator=(const UniqueFd&) = delete;
     UniqueFd& operator=(UniqueFd&& other) noexcept;
     ~UniqueFd();
-
 
     [[nodiscard]] int release() noexcept;
 
@@ -25,10 +23,10 @@ public:
         return m_fd >= 0;
     }
 
-    void reset(int fd=-1) noexcept;
+    void reset(int fd = -1) noexcept;
+
 private:
     int m_fd{-1};
 };
 
-} // abt::util
-
+}   // namespace abt::util

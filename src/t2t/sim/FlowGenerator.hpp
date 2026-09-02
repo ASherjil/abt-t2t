@@ -51,7 +51,7 @@ void FlowGenerator<Market>::step(std::uint64_t ts) {
     const Quantity qty      = m_cfg.minQty + static_cast<Quantity>(rng() % (m_cfg.maxQty - m_cfg.minQty + 1));
     const bool     crossing = roll >= 100 - m_cfg.crossPct;
 
-    Price tick;
+    Price tick = 0;
     if (crossing) {
         if (buy) {
             tick = m_market->bestAsk() != kNoPrice ? m_market->bestAsk() : m_cfg.midTick;

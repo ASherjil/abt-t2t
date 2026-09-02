@@ -43,7 +43,8 @@ void test_generator_book_invariant() {
 }
 
 void test_generator_deterministic() {
-    CountSink        s1, s2;
+    CountSink        s1;
+    CountSink        s2;
     Venue<CountSink> v1(s1, "AAPL", 1, 1, 100000, 100);
     Venue<CountSink> v2(s2, "AAPL", 1, 1, 100000, 100);
 

@@ -13,7 +13,7 @@
 namespace abt::dut {
 
 struct OmsConfig {
-    std::string   symbol{};
+    std::string   symbol;
     std::uint32_t firstUserRef = 1;
 };
 
@@ -80,19 +80,19 @@ private:
     [[nodiscard]] QuoteSlot*    slotByRef(std::uint32_t userRef) noexcept;
     [[nodiscard]] QuoteSlot*    slotByPending(std::uint32_t userRef) noexcept;
 
-    void encodeEnter(Outbound& out, std::uint32_t userRef, Side side, Price price,
-                     Quantity qty) const noexcept;
-    void encodeReplace(Outbound& out, std::uint32_t origRef, std::uint32_t userRef, Price price,
-                       Quantity qty) const noexcept;
-    void encodeCancel(Outbound& out, std::uint32_t userRef) const noexcept;
+    void        encodeEnter(Outbound& out, std::uint32_t userRef, Side side, Price price,
+                            Quantity qty) const noexcept;
+    static void encodeReplace(Outbound& out, std::uint32_t origRef, std::uint32_t userRef, Price price,
+                              Quantity qty) noexcept;
+    static void encodeCancel(Outbound& out, std::uint32_t userRef) noexcept;
 
-    void onAccepted(const ouch::Accepted& m) noexcept;
-    void onReplaced(const ouch::Replaced& m) noexcept;
-    void onExecuted(const ouch::Executed& m) noexcept;
-    void onCanceled(const ouch::Canceled& m) noexcept;
-    void onRejected(const ouch::Rejected& m) noexcept;
-    void onCancelReject(const ouch::CancelReject& m) noexcept;
-    void settle(QuoteSlot& s) noexcept;
+    void        onAccepted(const ouch::Accepted& m) noexcept;
+    void        onReplaced(const ouch::Replaced& m) noexcept;
+    void        onExecuted(const ouch::Executed& m) noexcept;
+    void        onCanceled(const ouch::Canceled& m) noexcept;
+    void        onRejected(const ouch::Rejected& m) noexcept;
+    void        onCancelReject(const ouch::CancelReject& m) noexcept;
+    static void settle(QuoteSlot& s) noexcept;
 
     OmsConfig                     m_cfg;
     Account                       m_acct{};

@@ -8,11 +8,9 @@
 
 namespace abt::util {
 
-
 void HdrClose::operator()(hdr_histogram* hdr) const noexcept {
     hdr_close(hdr);
 }
-
 
 Histogram::Histogram(std::int64_t lowest, std::int64_t highest, int sigFigs) {
     // hdr_init allocates; on failure m_h stays null and every method degrades to a no-op.
@@ -20,7 +18,6 @@ Histogram::Histogram(std::int64_t lowest, std::int64_t highest, int sigFigs) {
     (void)hdr_init(lowest, highest, sigFigs, &h);
     m_h.reset(h);
 }
-
 
 void Histogram::record(std::int64_t value) noexcept {
     if (m_h) {

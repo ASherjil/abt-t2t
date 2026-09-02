@@ -1,5 +1,7 @@
 #include "t2t/replay/BookReplay.hpp"
 
+#include <algorithm>
+
 #include "t2t/protocol/Itch50.hpp"
 
 namespace abt::replay {
@@ -155,9 +157,7 @@ void BookReplay::onMessage(std::span<const std::byte> msg) {
     }
 
     m_book.apply(msg);
-    if (m_book.liveOrders() > m_stats.maxLive) {
-        m_stats.maxLive = m_book.liveOrders();
-    }
+    m_stats.maxLive = std::max(m_book.liveOrders(), m_stats.maxLive);
     checkCrossed();
 }
 

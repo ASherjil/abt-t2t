@@ -1,12 +1,13 @@
 #include "t2t/replay/ItchFile.hpp"
+
 #include <cstring>
+
 #include <zlib.h>
 
 namespace abt::replay {
 
 ItchFileReader::ItchFileReader(const std::string& path, std::size_t bufferBytes)
     : m_buf(bufferBytes < 65536 ? 65536 : bufferBytes) {
-
     gzFile_s* file = gzopen(path.c_str(), "rb");
     m_file.reset(file);
     if (m_file) {
@@ -82,10 +83,9 @@ bool ItchFileReader::truncated() const noexcept {
     return m_truncated;
 }
 
-void ItchFileReader::GzClose::operator()(gzFile_s *file) const noexcept {
+void ItchFileReader::GzClose::operator()(gzFile_s* file) const noexcept {
     (void)gzclose(file);
 }
-
 
 ItchFileWriter::ItchFileWriter(const std::string& path) {
     std::FILE* file = std::fopen(path.c_str(), "wb");
@@ -111,7 +111,7 @@ std::uint64_t ItchFileWriter::messages() const noexcept {
     return m_messages;
 }
 
-void ItchFileWriter::FClose::operator()(std::FILE *file) const noexcept {
+void ItchFileWriter::FClose::operator()(std::FILE* file) const noexcept {
     (void)std::fclose(file);
 }
 
