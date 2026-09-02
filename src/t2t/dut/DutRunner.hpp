@@ -35,12 +35,15 @@ void logDut(const Session& sess, std::uint64_t elapsedNs) {
 }
 
 template <class Session>
-void printDutReport(Session& sess, util::PageFaults faultsAtStart) {
-    const util::PageFaults    faults = util::threadPageFaults();
-    const util::ProcessMemory mem    = util::processMemory();
+void printDutReport(Session& sess, util::ThreadCounters atStart) {
+    const util::ThreadCounters now = util::threadCounters();
+    const util::ProcessMemory  mem = util::processMemory();
     fmt::print("[mem] rss={} MB peak={} MB hugetlb={} MB\n", mem.rssMb, mem.peakRssMb, mem.hugetlbMb);
     fmt::print("[mem] hot-thread page faults during run: minor={} major={}\n",
-               faults.minor - faultsAtStart.minor, faults.major - faultsAtStart.major);
+               now.minorFaults - atStart.minorFaults, now.majorFaults - atStart.majorFaults);
+    fmt::print("[sched] hot-thread context switches during run: involuntary={} voluntary={}\n",
+               now.involuntarySwitches - atStart.involuntarySwitches,
+               now.voluntarySwitches - atStart.voluntarySwitches);
     sess.t2t().summary();
     if constexpr (build::kSwTiming) {
         sess.t2tSw().summary();
@@ -103,8 +106,8 @@ int runDut(const DutAppConfig& cfg, typename T::Type& backend, volatile std::sig
                    cfg.socket.oePort, cfg.socket.mdBindHost, cfg.socket.mdPort);
         sess.login(cfg.socket.session, cfg.socket.username);
 
-        RecorderThread         consumer(recordersOf(sess), cfg.measure.histogramCore, flushOf(cfg.measure));
-        const util::PageFaults faultsAtStart = util::threadPageFaults();
+        RecorderThread consumer(recordersOf(sess), cfg.measure.histogramCore, flushOf(cfg.measure));
+        const util::ThreadCounters countersAtStart = util::threadCounters();
         sess.run(stop, [&] {
             const std::uint64_t now = monotonicNs();
             if (now >= nextLog) {
@@ -114,7 +117,7 @@ int runDut(const DutAppConfig& cfg, typename T::Type& backend, volatile std::sig
         });
         consumer.stop();
         logDut(sess, monotonicNs() - start);
-        printDutReport(sess, faultsAtStart);
+        printDutReport(sess, countersAtStart);
         return 0;
     } else {
         if (!util::pinThread(cfg.transport.cpuCore)) {
@@ -133,8 +136,8 @@ int runDut(const DutAppConfig& cfg, typename T::Type& backend, volatile std::sig
                    cfg.transport.marketData.dstPort, cfg.transport.orderEntry.srcPort,
                    cfg.transport.orderEntry.dstPort);
 
-        RecorderThread         consumer(recordersOf(sess), cfg.measure.histogramCore, flushOf(cfg.measure));
-        const util::PageFaults faultsAtStart = util::threadPageFaults();
+        RecorderThread consumer(recordersOf(sess), cfg.measure.histogramCore, flushOf(cfg.measure));
+        const util::ThreadCounters countersAtStart = util::threadCounters();
         sess.sendLogin(cfg.socket.session, cfg.socket.username);
         std::uint64_t nextLogin = monotonicNs() + kDutLogPeriodNs;
         std::uint64_t polls     = 0;
@@ -155,7 +158,7 @@ int runDut(const DutAppConfig& cfg, typename T::Type& backend, volatile std::sig
         }
         consumer.stop();
         logDut(sess, monotonicNs() - start);
-        printDutReport(sess, faultsAtStart);
+        printDutReport(sess, countersAtStart);
         return 0;
     }
 }

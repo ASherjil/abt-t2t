@@ -85,7 +85,9 @@ BookBuilder* BookTable::create(std::uint16_t locate, bool hot) {
     bc.ownRefMin         = m_cfg.ownRefMin;
     bc.memory            = m_cfg.memory;
     bc.rehashes          = &m_rehashes;
+    bc.reanchors         = &m_reanchors;
     m_storage.emplace_back(bc);
+    ++m_created;
     m_books[locate].book = &m_storage.back();
     return m_books[locate].book;
 }
@@ -121,6 +123,14 @@ std::uint64_t BookTable::undirected() const noexcept {
 
 std::uint64_t BookTable::rehashes() const noexcept {
     return m_rehashes;
+}
+
+std::uint64_t BookTable::reanchors() const noexcept {
+    return m_reanchors;
+}
+
+std::uint64_t BookTable::created() const noexcept {
+    return m_created;
 }
 
 std::size_t BookTable::footprintBytes() const noexcept {

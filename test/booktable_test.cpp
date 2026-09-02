@@ -112,6 +112,22 @@ void test_undirected_locate_gets_a_cold_book() {
     CHECK_EQ(table.apply(bytesOf(mkDelete(99, 1u))), dut::BookTable::kCold);
     CHECK_EQ(table.undirected(), 1u);
     CHECK_EQ(table.book(99)->liveOrders(), 0u);
+    CHECK_EQ(table.created(), 1u);
+    CHECK_EQ(table.reanchors(), 0u);
+}
+
+void test_table_counts_reanchors_across_books() {
+    dut::BookTable table(baseCfg());
+    table.apply(bytesOf(mkAdd(99, 1u, 'B', 10u, 1000)));
+    itch::TradeNonCross trade{};
+    trade.messageType = itch::MessageType::TradeNonCross;
+    trade.stockLocate = 99;
+    trade.shares      = 1;
+    trade.price       = 50'000'000;
+    table.apply(bytesOf(trade));
+    CHECK_EQ(table.reanchors(), 1u);
+    CHECK_EQ(table.book(99)->reanchors(), 1u);
+    CHECK_EQ(table.created(), 1u);
 }
 
 void test_halt_and_clear() {
@@ -210,6 +226,7 @@ void test_feed_validator_counts_faults() {
 int main() {
     test_directory_resolves_hot_symbols();
     test_undirected_locate_gets_a_cold_book();
+    test_table_counts_reanchors_across_books();
     test_halt_and_clear();
     test_table_on_arena();
     test_feed_validator_counts_faults();

@@ -5,9 +5,11 @@
 namespace abt::dut {
 
 struct SampleContext {
-    static constexpr std::uint8_t kSent   = 1u << 0;
-    static constexpr std::uint8_t kRehash = 1u << 1;
-    static constexpr std::uint8_t kGap    = 1u << 2;
+    static constexpr std::uint8_t kSent     = 1u << 0;
+    static constexpr std::uint8_t kRehash   = 1u << 1;
+    static constexpr std::uint8_t kGap      = 1u << 2;
+    static constexpr std::uint8_t kReanchor = 1u << 3;
+    static constexpr std::uint8_t kNewBook  = 1u << 4;
 
     [[nodiscard]] static constexpr std::uint64_t pack(std::uint64_t seq, std::uint16_t msgs,
                                                       std::uint8_t flags) noexcept {

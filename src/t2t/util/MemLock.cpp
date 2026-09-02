@@ -57,12 +57,15 @@ ProcessMemory processMemory() {
     return m;
 }
 
-PageFaults threadPageFaults() noexcept {
+ThreadCounters threadCounters() noexcept {
     rusage ru{};
     if (::getrusage(RUSAGE_THREAD, &ru) != 0) {
         return {};
     }
-    return {.minor = ru.ru_minflt, .major = ru.ru_majflt};
+    return {.minorFaults         = ru.ru_minflt,
+            .majorFaults         = ru.ru_majflt,
+            .involuntarySwitches = ru.ru_nivcsw,
+            .voluntarySwitches   = ru.ru_nvcsw};
 }
 
 }   // namespace abt::util

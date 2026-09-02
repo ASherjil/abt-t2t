@@ -55,6 +55,8 @@ public:
     [[nodiscard]] std::size_t        symbols() const noexcept;
     [[nodiscard]] std::uint64_t      undirected() const noexcept;
     [[nodiscard]] std::uint64_t      rehashes() const noexcept;
+    [[nodiscard]] std::uint64_t      reanchors() const noexcept;
+    [[nodiscard]] std::uint64_t      created() const noexcept;
     [[nodiscard]] std::size_t        footprintBytes() const noexcept;
     [[nodiscard]] std::size_t        liveOrders() const noexcept;
     [[nodiscard]] std::size_t        bookCapacity(std::uint16_t locate) const noexcept;
@@ -89,6 +91,8 @@ private:
     std::vector<HotSymbol>       m_hot;
     std::uint64_t                m_undirected = 0;
     std::uint64_t                m_rehashes   = 0;
+    std::uint64_t                m_reanchors  = 0;
+    std::uint64_t                m_created    = 0;
 };
 
 inline std::uint16_t BookTable::locateOf(std::span<const std::byte> msg) noexcept {

@@ -30,10 +30,12 @@ double epochSeconds() noexcept {
 
 std::string describe(std::uint64_t ctx) {
     const std::uint8_t f = SampleContext::flags(ctx);
-    return fmt::format("seq={} msgs={} {}{}{}", SampleContext::seq(ctx), SampleContext::msgs(ctx),
+    return fmt::format("seq={} msgs={} {}{}{}{}{}", SampleContext::seq(ctx), SampleContext::msgs(ctx),
                        (f & SampleContext::kSent) != 0 ? "S" : "-",
                        (f & SampleContext::kRehash) != 0 ? "R" : "-",
-                       (f & SampleContext::kGap) != 0 ? "G" : "-");
+                       (f & SampleContext::kGap) != 0 ? "G" : "-",
+                       (f & SampleContext::kReanchor) != 0 ? "A" : "-",
+                       (f & SampleContext::kNewBook) != 0 ? "N" : "-");
 }
 
 std::string describeWorst(std::span<const Outlier> worst) {

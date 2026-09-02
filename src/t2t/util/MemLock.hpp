@@ -9,9 +9,11 @@ struct MemLockResult {
     int  error  = 0;
 };
 
-struct PageFaults {
-    long minor = 0;
-    long major = 0;
+struct ThreadCounters {
+    long minorFaults         = 0;
+    long majorFaults         = 0;
+    long involuntarySwitches = 0;
+    long voluntarySwitches   = 0;
 };
 
 struct ProcessMemory {
@@ -20,8 +22,8 @@ struct ProcessMemory {
     std::size_t hugetlbMb = 0;
 };
 
-[[nodiscard]] MemLockResult lockAndPrefaultMemory() noexcept;
-[[nodiscard]] PageFaults    threadPageFaults() noexcept;
-[[nodiscard]] ProcessMemory processMemory();
+[[nodiscard]] MemLockResult  lockAndPrefaultMemory() noexcept;
+[[nodiscard]] ThreadCounters threadCounters() noexcept;
+[[nodiscard]] ProcessMemory  processMemory();
 
 }   // namespace abt::util

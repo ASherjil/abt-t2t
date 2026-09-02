@@ -37,11 +37,15 @@ BookBuilder::BookBuilder(const BookConfig& cfg)
       m_askSize(cfg.memory == nullptr ? std::pmr::get_default_resource() : cfg.memory),
       m_orders(cfg.maxOrders, cfg.memory) {
     m_orders.countGrowsIn(cfg.rehashes);
+    m_reanchorsOut = cfg.reanchors;
 }
 
 void BookBuilder::anchor(Price price, bool trusted) {
     if (m_anchored) {
         ++m_reanchors;
+        if (m_reanchorsOut != nullptr) {
+            ++*m_reanchorsOut;
+        }
     }
     m_tickWire       = (m_subDollarTick > 0 && price < 10000) ? m_subDollarTick : m_baseTick;
     m_tickDiv        = util::DivBy(static_cast<std::uint32_t>(m_tickWire));

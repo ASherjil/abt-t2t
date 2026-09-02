@@ -570,7 +570,9 @@ void DutSession<Mode, Strat, Io>::applyPacket(std::span<const std::byte> moldPac
     if (r == SequenceTracker::Result::Gap) [[unlikely]] {
         invalidateFeed(seq);
     }
-    const std::uint64_t rehashBefore = m_books.rehashes();
+    const std::uint64_t rehashBefore   = m_books.rehashes();
+    const std::uint64_t reanchorBefore = m_books.reanchors();
+    const std::uint64_t createdBefore  = m_books.created();
     ++m_gen;
     m_touchedCount = 0;
     mold::forEachMessage(moldPacket, [this](std::uint64_t, std::span<const std::byte> msg) {
@@ -598,6 +600,12 @@ void DutSession<Mode, Strat, Io>::applyPacket(std::span<const std::byte> moldPac
     }
     if (m_books.rehashes() != rehashBefore) {
         flags |= SampleContext::kRehash;
+    }
+    if (m_books.reanchors() != reanchorBefore) {
+        flags |= SampleContext::kReanchor;
+    }
+    if (m_books.created() != createdBefore) {
+        flags |= SampleContext::kNewBook;
     }
     if (r == SequenceTracker::Result::Gap) {
         flags |= SampleContext::kGap;
