@@ -8,12 +8,15 @@
 #include <string_view>
 #include <vector>
 
+#include <sys/resource.h>
+
 #include <fmt/core.h>
 
 #include "t2t/replay/BookReplay.hpp"
 #include "t2t/replay/FeedValidator.hpp"
 #include "t2t/replay/ItchFile.hpp"
 #include "t2t/replay/SymbolFilter.hpp"
+#include "t2t/util/Clock.hpp"
 #include "t2t/util/HugePageArena.hpp"
 
 using namespace abt;
@@ -89,6 +92,7 @@ bool parseArgs(int argc, char** argv, Args& a) {
 
 int runValidator(const Args& a, replay::ItchFileReader& reader,
                  std::optional<replay::ItchFileWriter>& writer) {
+    const std::uint64_t  startNs = monotonicNs();
     util::HugePageArena  arena(a.arenaMb << 20);
     dut::BookTableConfig cfg{};
     cfg.tickWire      = a.tickWire;
@@ -137,6 +141,11 @@ int runValidator(const Args& a, replay::ItchFileReader& reader,
                t.unknownRef, t.overReduce, t.crossed, t.outOfBand);
     fmt::print("book           band {} ticks/side (min), max live orders {} (sampled every 64k msgs)\n",
                a.bandTicks, t.maxLive);
+    rusage ru{};
+    (void)getrusage(RUSAGE_SELF, &ru);
+    const double elapsed = static_cast<double>(monotonicNs() - startNs) * 1e-9;
+    fmt::print("resources      {:.1f} s wall, {:.1f} M msg/s, peak RSS {} MB\n", elapsed,
+               static_cast<double>(reader.messages()) / elapsed / 1e6, ru.ru_maxrss / 1024);
 
     std::vector<std::size_t> order;
     const auto&              per = validator.perSymbol();
