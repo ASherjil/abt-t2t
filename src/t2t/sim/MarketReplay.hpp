@@ -206,12 +206,14 @@ bool MarketReplay<Session>::pump(std::uint64_t nowMono) {
                 m_afapStart = nowMono;
                 m_afapSent  = 0;
             }
-            const std::uint64_t due = m_afapStart + (m_afapSent * 1'000'000'000ull) / m_cfg.afapMaxPerSec;
-            if (due > nowMono) {
-                nowMono = monotonicNs();
+            if (batch == 0 && m_afapSent > 0) {
+                const std::uint64_t due = m_afapStart + (m_afapSent * 1'000'000'000ull) / m_cfg.afapMaxPerSec;
                 if (due > nowMono) {
-                    m_session->flushMarketData();
-                    return true;
+                    nowMono = monotonicNs();
+                    if (due > nowMono) {
+                        m_session->flushMarketData();
+                        return true;
+                    }
                 }
             }
             ++m_afapSent;
