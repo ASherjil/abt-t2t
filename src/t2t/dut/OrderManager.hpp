@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <span>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "t2t/dut/Quote.hpp"
@@ -43,6 +44,7 @@ struct OmsStats {
     std::uint64_t fills    = 0;
     std::uint64_t rejects  = 0;
     std::uint64_t unknown  = 0;
+    std::uint64_t tests    = 0;
 };
 
 struct Outbound {
@@ -54,13 +56,16 @@ struct Outbound {
 
 class OrderManager {
 public:
-    static constexpr std::size_t kMaxOutbound = 2;
+    static constexpr std::size_t      kMaxOutbound = 2;
+    static constexpr std::uint16_t    kTestSym     = 0xffffu;
+    static constexpr std::string_view kTestSymbol  = "ZVZZT";
 
     explicit OrderManager(const OmsConfig& cfg);
 
     std::size_t reconcile(std::size_t sym, const QuoteTargets& t,
                           std::span<Outbound, kMaxOutbound> out) noexcept;
     void        onAck(std::span<const std::byte> ouch) noexcept;
+    void        encodeTestOrder(Outbound& out) noexcept;
 
     [[nodiscard]] std::size_t      symbolCount() const noexcept;
     [[nodiscard]] const Account&   account(std::size_t sym = 0) const noexcept;
@@ -86,6 +91,7 @@ private:
     [[nodiscard]] std::uint32_t allocRef(std::size_t sym, Side side) noexcept;
     [[nodiscard]] bool          lookupRef(std::uint32_t userRef, std::size_t& sym, Side& side) const noexcept;
     [[nodiscard]] QuoteSlot*    slotByRef(std::uint32_t userRef, std::size_t& sym) noexcept;
+    [[nodiscard]] bool          isTestRef(std::uint32_t userRef) const noexcept;
     [[nodiscard]] QuoteSlot*    slotByPending(std::uint32_t userRef) noexcept;
 
     void        encodeEnter(Outbound& out, std::size_t sym, std::uint32_t userRef, Side side, Price price,

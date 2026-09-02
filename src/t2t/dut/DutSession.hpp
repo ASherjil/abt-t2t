@@ -29,6 +29,7 @@
 #include "t2t/BuildConfig.hpp"
 #include "t2t/dut/BookBuilder.hpp"
 #include "t2t/dut/BookTable.hpp"
+#include "t2t/dut/DutStatus.hpp"
 #include "t2t/dut/LatencyRecorder.hpp"
 #include "t2t/dut/OrderManager.hpp"
 #include "t2t/dut/SampleContext.hpp"
@@ -135,6 +136,9 @@ public:
     [[nodiscard]] std::uint32_t sessionResets() const noexcept;
     [[nodiscard]] bool          tradingAllowed(std::size_t hot = 0) const noexcept;
     [[nodiscard]] bool          feedValid() const noexcept;
+    [[nodiscard]] bool          marketOpen() const noexcept;
+    void                        sendTestOrder() noexcept;
+    [[nodiscard]] DutStatus     status(std::uint64_t elapsedNs) const noexcept;
     [[nodiscard]] std::uint32_t feedFaults() const noexcept;
     [[nodiscard]] std::uint64_t lastFaultSeq() const noexcept;
 
@@ -586,20 +590,7 @@ void DutSession<Mode, Strat, Io>::applyPacket(std::span<const std::byte> moldPac
             touch(static_cast<int>(h));
         }
     }
-    std::size_t n = 0;
-    for (std::size_t k = 0; k < m_touchedCount; ++k) {
-        const std::size_t  h       = m_touched[k];
-        const QuoteTargets targets = tradingAllowed(h)
-                                         ? m_strats[h].onBook(m_books.hotBook(h), m_oms.account(h))
-                                         : QuoteTargets{};
-        n += m_oms.reconcile(h, targets,
-                             std::span<Outbound, OrderManager::kMaxOutbound>{&m_out[n],
-                                                                             OrderManager::kMaxOutbound});
-    }
     std::uint8_t flags = 0;
-    if (n > 0) {
-        flags |= SampleContext::kSent;
-    }
     if (m_books.rehashes() != rehashBefore) {
         flags |= SampleContext::kRehash;
     }
@@ -612,18 +603,30 @@ void DutSession<Mode, Strat, Io>::applyPacket(std::span<const std::byte> moldPac
     if (r == SequenceTracker::Result::Gap) {
         flags |= SampleContext::kGap;
     }
-    const std::uint64_t ctx = SampleContext::pack(seq, msgs, flags);
-    if constexpr (build::kSwTiming) {
-        m_proc.record(tsc::now() - begin, ctx);
-    }
-
-    for (std::size_t i = 0; i < n; ++i) {
-        if (sendOrder({m_out[i].buf.data(), m_out[i].len}) && i == 0) {
-            if constexpr (build::kSwTiming) {
-                m_t2tSw.record(tsc::now() - rxTsc, ctx);
+    const std::uint64_t sentCtx = SampleContext::pack(seq, msgs, flags | SampleContext::kSent);
+    std::size_t         n       = 0;
+    bool                sent    = false;
+    for (std::size_t k = 0; k < m_touchedCount; ++k) {
+        const std::size_t  h       = m_touched[k];
+        const QuoteTargets targets = tradingAllowed(h)
+                                         ? m_strats[h].onBook(m_books.hotBook(h), m_oms.account(h))
+                                         : QuoteTargets{};
+        const std::size_t  base    = n;
+        n += m_oms.reconcile(h, targets,
+                             std::span<Outbound, OrderManager::kMaxOutbound>{&m_out[base],
+                                                                             OrderManager::kMaxOutbound});
+        for (std::size_t i = base; i < n; ++i) {
+            if (sendOrder({m_out[i].buf.data(), m_out[i].len}) && !sent) {
+                sent = true;
+                if constexpr (build::kSwTiming) {
+                    m_t2tSw.record(tsc::now() - rxTsc, sentCtx);
+                }
+                recordSend(m_out[i].userRef, rxHwts, sentCtx);
             }
-            recordSend(m_out[i].userRef, rxHwts, ctx);
         }
+    }
+    if constexpr (build::kSwTiming) {
+        m_proc.record(tsc::now() - begin, sent ? sentCtx : SampleContext::pack(seq, msgs, flags));
     }
 }
 
@@ -674,6 +677,15 @@ void DutSession<Mode, Strat, Io>::onSystemEvent(std::span<const std::byte> msg) 
 }
 
 template <IoMode Mode, Strategy Strat, class Io>
+void DutSession<Mode, Strat, Io>::sendTestOrder() noexcept {
+    if constexpr (Mode == IoMode::Transport) {
+        Outbound out{};
+        m_oms.encodeTestOrder(out);
+        (void)sendOrder({out.buf.data(), out.len});
+    }
+}
+
+template <IoMode Mode, Strategy Strat, class Io>
 bool DutSession<Mode, Strat, Io>::tradingAllowed(std::size_t hot) const noexcept {
     return m_feedValid && (!m_cfg.marketHoursOnly || (m_marketOpen && m_books.hot(hot).trading));
 }
@@ -690,6 +702,33 @@ void DutSession<Mode, Strat, Io>::invalidateFeed(std::uint64_t seq) noexcept {
 template <IoMode Mode, Strategy Strat, class Io>
 bool DutSession<Mode, Strat, Io>::feedValid() const noexcept {
     return m_feedValid;
+}
+
+template <IoMode Mode, Strategy Strat, class Io>
+bool DutSession<Mode, Strat, Io>::marketOpen() const noexcept {
+    return m_marketOpen;
+}
+
+template <IoMode Mode, Strategy Strat, class Io>
+DutStatus DutSession<Mode, Strat, Io>::status(std::uint64_t elapsedNs) const noexcept {
+    const OmsStats&    s = m_oms.stats();
+    const BookBuilder& b = m_books.hotBook(0);
+    return DutStatus{.elapsedNs = elapsedNs,
+                     .packets   = m_packets,
+                     .seq       = m_seq.expected(),
+                     .gaps      = m_seq.gaps(),
+                     .live      = m_books.liveOrders(),
+                     .enters    = s.enters,
+                     .replaces  = s.replaces,
+                     .cancels   = s.cancels,
+                     .accepts   = s.accepts,
+                     .fills     = s.fills,
+                     .rejects   = s.rejects,
+                     .position  = m_oms.netPosition(),
+                     .sent      = m_ordersSent,
+                     .bid       = b.bestBid(),
+                     .ask       = b.bestAsk(),
+                     .feedValid = m_feedValid};
 }
 
 template <IoMode Mode, Strategy Strat, class Io>

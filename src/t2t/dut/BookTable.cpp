@@ -27,7 +27,7 @@ BookTable::BookTable(const BookTableConfig& cfg)
     }
     m_byName.reserve(cfg.profiles.size());
     for (const SymbolProfile& p : cfg.profiles) {
-        if (p.name.empty() || p.refPrice <= 0 || m_byName.contains(p.name)) {
+        if (p.name.empty() || m_byName.contains(p.name)) {
             continue;
         }
         const int    h = hotIndexByName(p.name);
@@ -68,7 +68,14 @@ int BookTable::apply(std::span<const std::byte> msg) {
         }
         return h;
     }
-    e.book->apply(msg);
+    BookBuilder& b = *e.book;
+    if (b.epoch() != m_epoch) [[unlikely]] {
+        b.clear();
+        b.setEpoch(m_epoch);
+    }
+    const std::size_t before = b.liveOrders();
+    b.apply(msg);
+    m_live += b.liveOrders() - before;
     return e.hot;
 }
 
@@ -131,7 +138,9 @@ BookBuilder* BookTable::createProfiled(const SymbolProfile& p, bool hot) {
     if (want > bc.maxOrders) {
         bc.maxOrders = std::bit_ceil(want);
     }
-    bc.anchorPrice = p.refPrice;
+    if (p.refPrice > 0) {
+        bc.anchorPrice = p.refPrice;
+    }
     m_storage.emplace_back(bc);
     ++m_created;
     return &m_storage.back();
@@ -196,11 +205,7 @@ std::size_t BookTable::footprintBytes() const noexcept {
 }
 
 std::size_t BookTable::liveOrders() const noexcept {
-    std::size_t n = 0;
-    for (const BookBuilder& b : m_storage) {
-        n += b.liveOrders();
-    }
-    return n;
+    return m_live;
 }
 
 std::size_t BookTable::bookCapacity(std::uint16_t locate) const noexcept {
@@ -209,11 +214,14 @@ std::size_t BookTable::bookCapacity(std::uint16_t locate) const noexcept {
 }
 
 void BookTable::clearAll() noexcept {
-    for (BookBuilder& b : m_storage) {
-        b.clear();
-    }
+    ++m_epoch;
+    m_live = 0;
     for (HotSymbol& h : m_hot) {
         h.trading = true;
+        if (h.book != nullptr) {
+            h.book->clear();
+            h.book->setEpoch(m_epoch);
+        }
     }
 }
 

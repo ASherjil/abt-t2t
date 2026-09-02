@@ -46,7 +46,8 @@ std::vector<SymbolProfile> readSymbolProfile(const std::string& path) {
         }
         SymbolProfile          p;
         const std::string_view name = nextField(rest);
-        if (name.empty() || !parseInto(nextField(rest), p.refPrice) || !parseInto(nextField(rest), p.peakOrders)) {
+        if (name.empty() || !parseInto(nextField(rest), p.refPrice) ||
+            !parseInto(nextField(rest), p.peakOrders)) {
             continue;
         }
         p.name = std::string(name);

@@ -64,7 +64,7 @@ add_library(abt_replay STATIC
 add_library(abt::replay ALIAS abt_replay)
 target_link_libraries(abt_replay
     PUBLIC abt_dut abt_lob
-    PRIVATE abt_flags ZLIB::ZLIB)
+    PRIVATE abt_flags fmt::fmt ZLIB::ZLIB)
 
 # ---------------------------------------------------------------------------
 # abt_sim : header-only venue glue (OUCH <-> matching engine <-> ITCH/OUCH) + market replay.

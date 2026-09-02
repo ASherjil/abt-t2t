@@ -169,6 +169,15 @@ void LatencyRecorder::reset() noexcept {
     m_dropped.store(0, std::memory_order_relaxed);
 }
 
+void printDutStatus(const DutStatus& s) {
+    fmt::print(stderr,
+               "[dut +{:>4}s] pkts={} seq={} gaps={} feed={} sent={} enter={} replace={} cancel={} accept={} "
+               "fill={} reject={} pos={} bid={} ask={} live={}\n",
+               s.elapsedNs / 1'000'000'000ull, s.packets, s.seq, s.gaps, s.feedValid ? "ok" : "INVALID",
+               s.sent, s.enters, s.replaces, s.cancels, s.accepts, s.fills, s.rejects, s.position, s.bid,
+               s.ask, s.live);
+}
+
 void LatencyRecorder::summary() {
     fmt::print("[{}] ns: n={} dropped={} min={} p50={} p90={} p99={} p99.9={} p99.99={} p99.999={} max={}\n",
                m_name, count(), dropped(), min(), percentile(50.0), percentile(90.0), percentile(99.0),
@@ -178,10 +187,12 @@ void LatencyRecorder::summary() {
     }
 }
 
-RecorderThread::RecorderThread(std::vector<LatencyRecorder*> recorders, int cpuCore, FlushConfig flush)
-    : m_thread([recs = std::move(recorders), cpuCore, fl = std::move(flush)](const std::stop_token& stop) {
-          loop(stop, recs, cpuCore, fl);
-      }) {
+RecorderThread::RecorderThread(std::vector<LatencyRecorder*> recorders, int cpuCore, FlushConfig flush,
+                               StatusQueue* status)
+    : m_thread(
+          [recs = std::move(recorders), cpuCore, fl = std::move(flush), status](const std::stop_token& stop) {
+              loop(stop, recs, cpuCore, fl, status);
+          }) {
 }
 
 void RecorderThread::stop() {
@@ -196,7 +207,7 @@ bool RecorderThread::running() const noexcept {
 }
 
 void RecorderThread::loop(const std::stop_token& stop, const std::vector<LatencyRecorder*>& recorders,
-                          int core, const FlushConfig& flush) noexcept {
+                          int core, const FlushConfig& flush, StatusQueue* status) noexcept {
     (void)util::pinThread(core);
     util::HistogramLog log(flush.logFile);
     const bool         flushing      = log.open() && flush.intervalNs > 0;
@@ -207,6 +218,12 @@ void RecorderThread::loop(const std::stop_token& stop, const std::vector<Latency
         bool any = false;
         for (LatencyRecorder* r : recorders) {
             any |= r->drainOne();
+        }
+        if (status != nullptr) {
+            while (const DutStatus* s = status->front()) {
+                printDutStatus(*s);
+                status->pop();
+            }
         }
         if (!any) {
             relax();

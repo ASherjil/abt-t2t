@@ -59,6 +59,8 @@ public:
     [[nodiscard]] std::uint64_t outOfBandAdds() const noexcept;
     [[nodiscard]] std::uint32_t reanchors() const noexcept;
     [[nodiscard]] std::uint64_t parkedShares() const noexcept;
+    [[nodiscard]] std::uint32_t epoch() const noexcept;
+    void                        setEpoch(std::uint32_t epoch) noexcept;
     [[nodiscard]] Price         tickWire() const noexcept;
     [[nodiscard]] std::size_t   footprintBytes() const noexcept;
 
@@ -111,6 +113,7 @@ private:
     std::uint32_t  m_reanchors     = 0;
     std::uint64_t* m_reanchorsOut  = nullptr;
     std::uint64_t  m_parkedShares  = 0;
+    std::uint32_t  m_epoch         = 0;
     Price          m_parkedLo      = kNoPrice;
     Price          m_parkedHi      = kNoPrice;
 

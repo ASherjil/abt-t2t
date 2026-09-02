@@ -203,9 +203,35 @@ bool OrderManager::lookupRef(std::uint32_t userRef, std::size_t& sym, Side& side
     return true;
 }
 
+bool OrderManager::isTestRef(std::uint32_t userRef) const noexcept {
+    const RefSide& r = m_refs[userRef % kRefRing];
+    return r.userRef == userRef && r.sym == kTestSym;
+}
+
+void OrderManager::encodeTestOrder(Outbound& out) noexcept {
+    const std::uint32_t ref = allocRef(kTestSym, Side::Buy);
+    ouch::EnterOrder    o{};
+    o.type               = ouch::InType::EnterOrder;
+    o.userRefNum         = ref;
+    o.side               = ouchSide(Side::Buy);
+    o.quantity           = 1;
+    o.symbol             = kTestSymbol;
+    o.price              = wirePrice(100);
+    o.timeInForce        = ouch::TimeInForce::Day;
+    o.display            = ouch::Display::Visible;
+    o.capacity           = ouch::Capacity::Principal;
+    o.imSweepEligibility = ouch::ImSweep::NotEligible;
+    o.crossType          = ouch::CrossType::Continuous;
+    o.clOrdId            = std::string_view{};
+    o.appendageLength    = 0;
+    std::memcpy(out.buf.data(), &o, sizeof o);
+    out.len     = sizeof o;
+    out.userRef = ref;
+}
+
 QuoteSlot* OrderManager::slotByRef(std::uint32_t userRef, std::size_t& sym) noexcept {
     Side side = Side::Buy;
-    if (std::size_t hint = 0; lookupRef(userRef, hint, side)) {
+    if (std::size_t hint = 0; lookupRef(userRef, hint, side) && hint < m_slots.size()) {
         QuoteSlot& s = m_slots[hint][idx(side)];
         if (s.state != QuoteState::Idle && s.userRef == userRef) {
             sym = hint;
@@ -285,6 +311,10 @@ void OrderManager::encodeCancel(Outbound& out, std::uint32_t userRef) noexcept {
 }
 
 void OrderManager::onAccepted(const ouch::Accepted& m) noexcept {
+    if (isTestRef(m.userRefNum.value())) [[unlikely]] {
+        ++m_stats.tests;
+        return;
+    }
     std::size_t sym = 0;
     QuoteSlot*  s   = slotByRef(m.userRefNum.value(), sym);
     if (s == nullptr || s->state != QuoteState::PendingNew) {
@@ -367,6 +397,10 @@ void OrderManager::onCanceled(const ouch::Canceled& m) noexcept {
 
 void OrderManager::onRejected(const ouch::Rejected& m) noexcept {
     const std::uint32_t ref = m.userRefNum.value();
+    if (isTestRef(ref)) [[unlikely]] {
+        ++m_stats.tests;
+        return;
+    }
     ++m_stats.rejects;
     if (QuoteSlot* p = slotByPending(ref); p != nullptr) {
         p->pendingRef = 0;

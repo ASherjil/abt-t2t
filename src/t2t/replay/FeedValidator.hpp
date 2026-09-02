@@ -44,6 +44,7 @@ public:
     explicit FeedValidator(const dut::BookTableConfig& cfg);
 
     void onMessage(std::span<const std::byte> msg);
+    void traceReanchors(std::string symbol);
 
     [[nodiscard]] FeedTotals                      totals() const noexcept;
     [[nodiscard]] const std::vector<SymbolStats>& perSymbol() const noexcept;
@@ -58,9 +59,14 @@ private:
     std::vector<bool>          m_trading;
     std::vector<std::uint64_t> m_resumedAt;
     bool                       m_marketHours = false;
-    std::uint64_t              m_messages    = 0;
-    std::uint64_t              m_liveNow     = 0;
-    std::uint64_t              m_maxLive     = 0;
+    bool                       m_afterClose  = false;
+    std::uint16_t              m_traceLocate = 0xffffu;
+    std::string                m_traceName;
+    std::vector<std::uint32_t> m_traceCount;
+    bool                       m_traceAll = false;
+    std::uint64_t              m_messages = 0;
+    std::uint64_t              m_liveNow  = 0;
+    std::uint64_t              m_maxLive  = 0;
 };
 
 }   // namespace abt::replay

@@ -12,6 +12,7 @@
 
 #include <rigtorp/SPSCQueue.h>
 
+#include "t2t/dut/DutStatus.hpp"
 #include "t2t/util/Histogram.hpp"
 
 namespace abt::dut {
@@ -79,15 +80,17 @@ struct FlushConfig {
 
 class RecorderThread {
 public:
-    explicit RecorderThread(std::vector<LatencyRecorder*> recorders, int cpuCore = -1,
-                            FlushConfig flush = {});
+    using StatusQueue = rigtorp::SPSCQueue<DutStatus>;
+
+    explicit RecorderThread(std::vector<LatencyRecorder*> recorders, int cpuCore = -1, FlushConfig flush = {},
+                            StatusQueue* status = nullptr);
 
     void               stop();
     [[nodiscard]] bool running() const noexcept;
 
 private:
     static void loop(const std::stop_token& stop, const std::vector<LatencyRecorder*>& recorders, int core,
-                     const FlushConfig& flush) noexcept;
+                     const FlushConfig& flush, StatusQueue* status) noexcept;
     static void flushInterval(util::HistogramLog& log, const std::vector<LatencyRecorder*>& recorders,
                               std::uint64_t startNs, std::uint64_t endNs) noexcept;
 

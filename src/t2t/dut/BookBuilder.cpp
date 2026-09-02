@@ -45,7 +45,7 @@ BookBuilder::BookBuilder(const BookConfig& cfg)
 }
 
 void BookBuilder::anchor(Price price, bool trusted) {
-    const Price tick = tickFor(price);
+    const Price tick = m_anchored ? std::min(tickFor(price), m_tickWire) : tickFor(price);
     std::size_t band = m_bandTicks;
     if (trusted && m_bandFraction > 0.0) {
         const double byPrice = std::floor(static_cast<double>(price) * m_bandFraction /
@@ -173,6 +173,14 @@ std::uint64_t BookBuilder::parkedShares() const noexcept {
     return m_parkedShares;
 }
 
+std::uint32_t BookBuilder::epoch() const noexcept {
+    return m_epoch;
+}
+
+void BookBuilder::setEpoch(std::uint32_t epoch) noexcept {
+    m_epoch = epoch;
+}
+
 void BookBuilder::onTradePrice(Price price) {
     if (needsAnchor(price)) [[unlikely]] {
         anchor(price, true);
@@ -282,6 +290,11 @@ void BookBuilder::apply(std::span<const std::byte> itchMessage) {
 }
 
 void BookBuilder::clear() noexcept {
+    if (m_orders.size() == 0 && m_own == 0 && m_parkedShares == 0) {
+        m_bestBid = kNoPrice;
+        m_bestAsk = kNoPrice;
+        return;
+    }
     std::fill(m_bidSize.begin(), m_bidSize.end(), 0u);
     std::fill(m_askSize.begin(), m_askSize.end(), 0u);
     m_orders.clear();
@@ -479,7 +492,7 @@ Price BookBuilder::tickFor(Price price) const noexcept {
 }
 
 bool BookBuilder::needsAnchor(Price price) const noexcept {
-    return !inRange(price) || tickFor(price) != m_tickWire;
+    return !inRange(price) || tickFor(price) < m_tickWire;
 }
 
 std::size_t BookBuilder::index(Price price) const noexcept {

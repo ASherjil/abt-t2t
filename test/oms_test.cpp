@@ -220,6 +220,23 @@ void test_fill_during_pending_replace() {
     CHECK(oms.slot(Side::Buy).state == QuoteState::Idle);
 }
 
+void test_test_order_is_warmup_only() {
+    dut::OrderManager oms(dut::OmsConfig{.symbols = {"AAPL"}, .firstUserRef = 1});
+    dut::Outbound     out{};
+    oms.encodeTestOrder(out);
+    CHECK_EQ(out.len, sizeof(ouch::EnterOrder));
+    ouch::EnterOrder o{};
+    std::memcpy(&o, out.buf.data(), sizeof o);
+    CHECK(o.symbol.view() == dut::OrderManager::kTestSymbol);
+    CHECK_EQ(o.userRefNum.value(), out.userRef);
+    CHECK_EQ(o.quantity.value(), 1u);
+    oms.onAck(bytesOf(rejected(out.userRef)));
+    CHECK_EQ(oms.stats().tests, 1u);
+    CHECK_EQ(oms.stats().rejects, 0u);
+    CHECK_EQ(oms.stats().unknown, 0u);
+    CHECK_EQ(oms.nextUserRef(), out.userRef + 1);
+}
+
 void test_rejects() {
     auto                         oms = makeOms();
     std::array<dut::Outbound, 2> out{};
@@ -293,6 +310,7 @@ int main() {
     test_pull_side_cancels();
     test_fills_drive_position_and_requote();
     test_fill_during_pending_replace();
+    test_test_order_is_warmup_only();
     test_rejects();
     test_ioc_dead_on_accept();
     return abt::test::summary("oms");

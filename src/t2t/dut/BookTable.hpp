@@ -111,6 +111,8 @@ private:
     std::uint64_t                                                            m_rehashes   = 0;
     std::uint64_t                                                            m_reanchors  = 0;
     std::uint64_t                                                            m_created    = 0;
+    std::uint32_t                                                            m_epoch      = 0;
+    std::size_t                                                              m_live       = 0;
 };
 
 inline std::uint16_t BookTable::locateOf(std::span<const std::byte> msg) noexcept {

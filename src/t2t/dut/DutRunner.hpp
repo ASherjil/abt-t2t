@@ -22,22 +22,8 @@ inline constexpr std::uint64_t kDutLogPeriodNs       = 1'000'000'000ull;
 inline constexpr std::uint64_t kDutPollsPerClockRead = 1u << 16;
 
 template <class Session>
-void logDut(const Session& sess, std::uint64_t elapsedNs) {
-    const OmsStats&        s = sess.oms().stats();
-    const SequenceTracker& f = sess.feed();
-    fmt::print(stderr,
-               "[dut +{:>4}s] pkts={} seq={} gaps={} feed={} sent={} enter={} replace={} cancel={} accept={} "
-               "fill={} reject={} pos={} bid={} ask={} live={}\n",
-               elapsedNs / 1'000'000'000ull, sess.packetsReceived(), f.expected(), f.gaps(),
-               sess.feedValid() ? "ok" : "INVALID", sess.ordersSent(), s.enters, s.replaces, s.cancels,
-               s.accepts, s.fills, s.rejects, sess.oms().netPosition(), sess.book().bestBid(),
-               sess.book().bestAsk(), sess.books().liveOrders());
-}
-
-template <class Session>
-void printDutReport(Session& sess, util::ThreadCounters atStart) {
-    const util::ThreadCounters now = util::threadCounters();
-    const util::ProcessMemory  mem = util::processMemory();
+void printDutReport(Session& sess, util::ThreadCounters atStart, util::ThreadCounters now) {
+    const util::ProcessMemory mem = util::processMemory();
     fmt::print("[mem] rss={} MB peak={} MB hugetlb={} MB\n", mem.rssMb, mem.peakRssMb, mem.hugetlbMb);
     fmt::print("[mem] hot-thread page faults during run: minor={} major={}\n",
                now.minorFaults - atStart.minorFaults, now.majorFaults - atStart.majorFaults);
@@ -51,9 +37,9 @@ void printDutReport(Session& sess, util::ThreadCounters atStart) {
     }
     const OmsStats& s = sess.oms().stats();
     fmt::print("[oms] orders sent={} enters={} replaces={} cancels={} accepts={} fills={} rejects={} "
-               "unknown={} position={}\n",
+               "unknown={} test={} position={}\n",
                sess.ordersSent(), s.enters, s.replaces, s.cancels, s.accepts, s.fills, s.rejects, s.unknown,
-               sess.oms().netPosition());
+               s.tests, sess.oms().netPosition());
     for (std::size_t h = 0; h < sess.books().hotCount(); ++h) {
         const HotSymbol& hs = sess.books().hot(h);
         fmt::print("[oms] {:<8} locate={} resolved={} position={} bid={} ask={} live={}\n", hs.name,
@@ -97,8 +83,8 @@ int runDut(const DutAppConfig& cfg, typename T::Type& backend, volatile std::sig
     const std::uint64_t start   = monotonicNs();
     std::uint64_t       nextLog = start + kDutLogPeriodNs;
 
+    RecorderThread::StatusQueue statusQ(64);
     if constexpr (kIsSocketBackend<T>) {
-        (void)util::pinThread(cfg.transport.cpuCore);
         DutSession<IoMode::Socket, QuoterStrategy> sess(cfg.session, QuoterStrategy(cfg.quoter));
         if (!sess.connectVenue(cfg.socket.oeHost.c_str(), cfg.socket.oePort, cfg.socket.mdBindHost.c_str(),
                                cfg.socket.mdPort)) {
@@ -108,24 +94,22 @@ int runDut(const DutAppConfig& cfg, typename T::Type& backend, volatile std::sig
                    cfg.socket.oePort, cfg.socket.mdBindHost, cfg.socket.mdPort);
         sess.login(cfg.socket.session, cfg.socket.username);
 
-        RecorderThread consumer(recordersOf(sess), cfg.measure.histogramCore, flushOf(cfg.measure));
+        RecorderThread consumer(recordersOf(sess), cfg.measure.histogramCore, flushOf(cfg.measure), &statusQ);
+        (void)util::pinThread(cfg.transport.cpuCore);
         const util::ThreadCounters countersAtStart = util::threadCounters();
         sess.run(stop, [&] {
             const std::uint64_t now = monotonicNs();
             if (now >= nextLog) {
-                logDut(sess, now - start);
+                (void)statusQ.try_push(sess.status(now - start));
                 nextLog += kDutLogPeriodNs;
             }
         });
+        const util::ThreadCounters countersAtEnd = util::threadCounters();
         consumer.stop();
-        logDut(sess, monotonicNs() - start);
-        printDutReport(sess, countersAtStart);
+        printDutStatus(sess.status(monotonicNs() - start));
+        printDutReport(sess, countersAtStart, countersAtEnd);
         return 0;
     } else {
-        if (!util::pinThread(cfg.transport.cpuCore)) {
-            fmt::print(stderr, "dut: cannot pin to core {}\n", cfg.transport.cpuCore);
-            return 1;
-        }
         DutSession<IoMode::Transport, QuoterStrategy, typename T::Type> sess(cfg.session,
                                                                              QuoterStrategy(cfg.quoter));
         if (!sess.prepareTransport(backend, cfg.transport.orderEntry, T::kMaxTxFrame)) {
@@ -138,7 +122,11 @@ int runDut(const DutAppConfig& cfg, typename T::Type& backend, volatile std::sig
                    cfg.transport.marketData.dstPort, cfg.transport.orderEntry.srcPort,
                    cfg.transport.orderEntry.dstPort);
 
-        RecorderThread consumer(recordersOf(sess), cfg.measure.histogramCore, flushOf(cfg.measure));
+        RecorderThread consumer(recordersOf(sess), cfg.measure.histogramCore, flushOf(cfg.measure), &statusQ);
+        if (!util::pinThread(cfg.transport.cpuCore)) {
+            fmt::print(stderr, "dut: cannot pin to core {}\n", cfg.transport.cpuCore);
+            return 1;
+        }
         const util::ThreadCounters countersAtStart = util::threadCounters();
         sess.sendLogin(cfg.socket.session, cfg.socket.username);
         std::uint64_t nextLogin = monotonicNs() + kDutLogPeriodNs;
@@ -153,14 +141,18 @@ int runDut(const DutAppConfig& cfg, typename T::Type& backend, volatile std::sig
                     nextLogin = now + kDutLogPeriodNs;
                 }
                 if (now >= nextLog) {
-                    logDut(sess, now - start);
+                    (void)statusQ.try_push(sess.status(now - start));
                     nextLog += kDutLogPeriodNs;
+                    if (sess.sessionEstablished() && !sess.marketOpen()) {
+                        sess.sendTestOrder();
+                    }
                 }
             }
         }
+        const util::ThreadCounters countersAtEnd = util::threadCounters();
         consumer.stop();
-        logDut(sess, monotonicNs() - start);
-        printDutReport(sess, countersAtStart);
+        printDutStatus(sess.status(monotonicNs() - start));
+        printDutReport(sess, countersAtStart, countersAtEnd);
         return 0;
     }
 }

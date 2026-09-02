@@ -1,5 +1,7 @@
 #include "t2t/replay/FeedValidator.hpp"
 
+#include <fmt/core.h>
+
 #include "t2t/protocol/Itch50.hpp"
 
 namespace abt::replay {
@@ -17,7 +19,8 @@ FeedValidator::FeedValidator(const dut::BookTableConfig& cfg)
     : m_books(cfg),
       m_sym(dut::BookTable::kLocates),
       m_trading(dut::BookTable::kLocates, true),
-      m_resumedAt(dut::BookTable::kLocates, 0) {
+      m_resumedAt(dut::BookTable::kLocates, 0),
+      m_traceCount(dut::BookTable::kLocates, 0) {
 }
 
 void FeedValidator::onMessage(std::span<const std::byte> msg) {
@@ -33,12 +36,14 @@ void FeedValidator::onMessage(std::span<const std::byte> msg) {
         switch (static_cast<itch::SystemEventCode>(s->eventCode)) {
             case itch::SystemEventCode::StartOfMessages:
                 m_books.clearAll();
+                m_afterClose = false;
                 break;
             case itch::SystemEventCode::StartOfMarketHours:
                 m_marketHours = true;
                 break;
             case itch::SystemEventCode::EndOfMarketHours:
                 m_marketHours = false;
+                m_afterClose  = true;
                 break;
             default:
                 break;
@@ -54,6 +59,9 @@ void FeedValidator::onMessage(std::span<const std::byte> msg) {
         case 'R': {
             if (const auto* r = as<itch::StockDirectory>(msg); r != nullptr) {
                 st.name = std::string(r->stock.view());
+                if (!m_traceName.empty() && st.name == m_traceName) {
+                    m_traceLocate = locate;
+                }
             }
             break;
         }
@@ -75,7 +83,8 @@ void FeedValidator::onMessage(std::span<const std::byte> msg) {
             if (const auto* e = as<itch::OrderExecuted>(msg); e != nullptr) {
                 checkReference(locate, e->orderRef.value(), e->executedShares.value());
                 if (const dut::BookBuilder* b = m_books.book(locate); b != nullptr) {
-                    if (const Price px = b->restingPrice(e->orderRef.value()); px != kNoPrice) {
+                    if (const Price px = b->restingPrice(e->orderRef.value());
+                        px != kNoPrice && !m_afterClose) {
                         st.lastTrade = px;
                     }
                 }
@@ -85,21 +94,22 @@ void FeedValidator::onMessage(std::span<const std::byte> msg) {
         case 'C': {
             if (const auto* c = as<itch::OrderExecutedWithPrice>(msg); c != nullptr) {
                 checkReference(locate, c->orderRef.value(), c->executedShares.value());
-                if (c->executionPrice.value() > 0) {
+                if (c->executionPrice.value() > 0 && !m_afterClose) {
                     st.lastTrade = static_cast<Price>(c->executionPrice.value());
                 }
             }
             break;
         }
         case 'P': {
-            if (const auto* p = as<itch::TradeNonCross>(msg); p != nullptr && p->price.value() > 0) {
+            if (const auto* p = as<itch::TradeNonCross>(msg);
+                p != nullptr && p->price.value() > 0 && !m_afterClose) {
                 st.lastTrade = static_cast<Price>(p->price.value());
             }
             break;
         }
         case 'Q': {
             if (const auto* q = as<itch::CrossTrade>(msg);
-                q != nullptr && q->shares.value() > 0 && q->crossPrice.value() > 0) {
+                q != nullptr && q->shares.value() > 0 && q->crossPrice.value() > 0 && !m_afterClose) {
                 st.lastTrade = static_cast<Price>(q->crossPrice.value());
             }
             break;
@@ -128,6 +138,24 @@ void FeedValidator::onMessage(std::span<const std::byte> msg) {
     }
 
     (void)m_books.apply(msg);
+
+    if (m_traceAll || locate == m_traceLocate) [[unlikely]] {
+        if (const dut::BookBuilder* b = m_books.book(locate);
+            b != nullptr && b->reanchors() != m_traceCount[locate]) {
+            m_traceCount[locate] = b->reanchors();
+            std::uint64_t ts     = 0;
+            for (std::size_t i = 5; i < 11; ++i) {
+                ts = (ts << 8) | std::to_integer<std::uint64_t>(msg[i]);
+            }
+            fmt::print(
+                stderr,
+                "reanchor {} #{} at msg {} type {} {:02}:{:02}:{:02}.{:03} band [{}, {}] tick {} live {} "
+                "parked {}\n",
+                st.name, m_traceCount[locate], m_messages, type, ts / 3'600'000'000'000ull,
+                (ts / 60'000'000'000ull) % 60, (ts / 1'000'000'000ull) % 60, (ts / 1'000'000ull) % 1000,
+                b->bandLow(), b->bandHigh(), b->tickWire(), b->liveOrders(), b->parkedShares());
+        }
+    }
 
     if (type == 'A' || type == 'F' || type == 'U' || type == 'D' || type == 'E' || type == 'C' ||
         type == 'X') {
@@ -174,6 +202,11 @@ void FeedValidator::checkReference(std::uint16_t locate, OrderId ref, Quantity r
     }
 }
 
+void FeedValidator::traceReanchors(std::string symbol) {
+    m_traceAll  = symbol == "*";
+    m_traceName = std::move(symbol);
+}
+
 FeedTotals FeedValidator::totals() const noexcept {
     FeedTotals t{};
     t.messages = m_messages;
@@ -210,11 +243,12 @@ const dut::BookTable& FeedValidator::books() const noexcept {
 std::vector<dut::SymbolProfile> FeedValidator::profiles() const {
     std::vector<dut::SymbolProfile> out;
     for (const SymbolStats& s : m_sym) {
-        if (s.name.empty() || s.lastTrade <= 0) {
+        if (s.name.empty()) {
             continue;
         }
-        out.push_back(dut::SymbolProfile{
-            .name = s.name, .refPrice = s.lastTrade, .peakOrders = static_cast<std::uint32_t>(s.maxLive)});
+        out.push_back(dut::SymbolProfile{.name       = s.name,
+                                         .refPrice   = s.lastTrade > 0 ? s.lastTrade : 0,
+                                         .peakOrders = static_cast<std::uint32_t>(s.maxLive)});
     }
     return out;
 }

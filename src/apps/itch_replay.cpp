@@ -31,6 +31,7 @@ struct Args {
     std::optional<std::string> extractTo;
     std::optional<std::string> writeProfile;
     std::optional<std::string> profile;
+    std::optional<std::string> traceReanchor;
     Price                      minPrice      = 0;
     Price                      maxPrice      = 20'000'000;
     Price                      tickWire      = 100;
@@ -42,7 +43,7 @@ struct Args {
 void usage() {
     fmt::print(stderr, "usage: itch_replay <file.itch|.gz> <SYMBOL[,SYMBOL...]|--all> [--extract <out.itch>] "
                        "[--max-price <wire>] [--tick <wire>] [--band <ticks>] [--arena-mb <MB>] "
-                       "[--profile <in>] [--write-profile <out>]\n");
+                       "[--profile <in>] [--write-profile <out>] [--trace-reanchor <SYM>]\n");
 }
 
 std::vector<std::string> splitSymbols(std::string_view list) {
@@ -91,6 +92,8 @@ bool parseArgs(int argc, char** argv, Args& a) {
             a.profile = argv[++i];
         } else if (opt == "--write-profile" && hasValue) {
             a.writeProfile = argv[++i];
+        } else if (opt == "--trace-reanchor" && hasValue) {
+            a.traceReanchor = argv[++i];
         } else {
             return false;
         }
@@ -117,7 +120,10 @@ int runValidator(const Args& a, replay::ItchFileReader& reader,
             return 1;
         }
     }
-    replay::FeedValidator               validator(cfg);
+    replay::FeedValidator validator(cfg);
+    if (a.traceReanchor) {
+        validator.traceReanchors(*a.traceReanchor);
+    }
     std::optional<replay::SymbolFilter> filter;
     if (!a.all) {
         filter.emplace(a.symbols);

@@ -145,7 +145,13 @@ void test_halt_and_clear() {
     (void)table.apply(bytesOf(mkHalt(13, 'H')));
     table.clearAll();
     CHECK(table.hot(0).trading);
+    CHECK_EQ(table.liveOrders(), 0u);
     CHECK_EQ(table.hotBook(0).liveOrders(), 0u);
+    (void)table.apply(bytesOf(mkAdd(13, 2u, 'S', 5u, 32100)));
+    CHECK_EQ(table.hotBook(0).liveOrders(), 1u);
+    CHECK_EQ(table.hotBook(0).bestBid(), kNoPrice);
+    CHECK_EQ(table.hotBook(0).bestAsk(), 32100);
+    CHECK_EQ(table.liveOrders(), 1u);
     CHECK(table.hotBook(0).anchored());
     (void)table.apply(bytesOf(mkDir(13, "AAPL")));
     CHECK_EQ(table.symbols(), 1u);
@@ -230,11 +236,13 @@ void test_profile_prebuilds_books_and_binds_by_name() {
     dut::BookTableConfig cfg = baseCfg();
     cfg.bandFraction         = 0.10;
     cfg.profiles             = {dut::SymbolProfile{.name = "AAPL", .refPrice = 3'200'000, .peakOrders = 3000},
-                                dut::SymbolProfile{.name = "ZZZZ", .refPrice = 50'000, .peakOrders = 10}};
+                                dut::SymbolProfile{.name = "ZZZZ", .refPrice = 50'000, .peakOrders = 10},
+                                dut::SymbolProfile{.name = "QUIET", .refPrice = 0, .peakOrders = 0}};
     dut::BookTable table(cfg);
-    CHECK_EQ(table.symbols(), 2u);
-    CHECK_EQ(table.profiled(), 2u);
-    CHECK_EQ(table.created(), 2u);
+    CHECK_EQ(table.symbols(), 3u);
+    CHECK_EQ(table.profiled(), 3u);
+    CHECK_EQ(table.created(), 3u);
+    CHECK(table.bookByName("QUIET") != nullptr && !table.bookByName("QUIET")->anchored());
     CHECK(table.hotBook(0).anchored());
     CHECK_EQ(table.hotBook(0).bandLow(), 3'200'000 - 320'000);
     CHECK(!table.hot(0).resolved);
@@ -244,7 +252,7 @@ void test_profile_prebuilds_books_and_binds_by_name() {
     CHECK_EQ(table.apply(bytesOf(mkDir(13, "AAPL"))), 0);
     CHECK(table.hot(0).resolved);
     CHECK(table.book(13) == &table.hotBook(0));
-    CHECK_EQ(table.created(), 2u);
+    CHECK_EQ(table.created(), 3u);
     CHECK(table.bookCapacity(13) >= 6000u);
     CHECK_EQ(table.apply(bytesOf(mkAdd(13, 1u, 'B', 10u, 3'000'000))), 0);
     CHECK_EQ(table.hotBook(0).bestBid(), 3'000'000);
@@ -253,9 +261,20 @@ void test_profile_prebuilds_books_and_binds_by_name() {
 
     CHECK_EQ(table.apply(bytesOf(mkDir(77, "ZZZZ"))), dut::BookTable::kCold);
     CHECK(table.book(77) == table.bookByName("ZZZZ"));
-    CHECK_EQ(table.created(), 2u);
-    CHECK_EQ(table.apply(bytesOf(mkDir(78, "NEWX"))), dut::BookTable::kCold);
     CHECK_EQ(table.created(), 3u);
+    CHECK_EQ(table.apply(bytesOf(mkDir(78, "NEWX"))), dut::BookTable::kCold);
+    CHECK_EQ(table.created(), 4u);
+
+    CHECK_EQ(table.apply(bytesOf(mkAdd(77, 5u, 'B', 10u, 49'000))), dut::BookTable::kCold);
+    CHECK_EQ(table.liveOrders(), 2u);
+    table.clearAll();
+    CHECK_EQ(table.liveOrders(), 0u);
+    CHECK_EQ(table.book(77)->liveOrders(), 1u);
+    CHECK_EQ(table.apply(bytesOf(mkAdd(77, 6u, 'S', 10u, 51'000))), dut::BookTable::kCold);
+    CHECK_EQ(table.book(77)->liveOrders(), 1u);
+    CHECK_EQ(table.book(77)->bestBid(), kNoPrice);
+    CHECK_EQ(table.book(77)->bestAsk(), 51'000);
+    CHECK_EQ(table.liveOrders(), 1u);
     CHECK(table.book(78) != nullptr && !table.book(78)->anchored());
 }
 
@@ -274,15 +293,18 @@ void test_validator_exports_profile_and_file_round_trips() {
     v.onMessage(bytesOf(mkDir(14, "QUIET")));
     v.onMessage(bytesOf(mkAdd(14, 3u, 'B', 10u, 1000)));
     const auto rows = v.profiles();
-    CHECK_EQ(rows.size(), 1u);
+    CHECK_EQ(rows.size(), 2u);
     CHECK(rows[0].name == "AAPL");
     CHECK_EQ(rows[0].refPrice, 320'050);
     CHECK_EQ(rows[0].peakOrders, 2u);
+    CHECK(rows[1].name == "QUIET");
+    CHECK_EQ(rows[1].refPrice, 0);
+    CHECK_EQ(rows[1].peakOrders, 1u);
 
     const std::string path = (std::filesystem::temp_directory_path() / "abt_profile_test.txt").string();
     CHECK(dut::writeSymbolProfile(path, rows));
     const auto back = dut::readSymbolProfile(path);
-    CHECK_EQ(back.size(), 1u);
+    CHECK_EQ(back.size(), 2u);
     CHECK(back[0].name == "AAPL");
     CHECK_EQ(back[0].refPrice, 320'050);
     CHECK_EQ(back[0].peakOrders, 2u);
