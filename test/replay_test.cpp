@@ -44,10 +44,10 @@ std::vector<std::byte> bytesOf(const T& m) {
 
 std::vector<std::byte> systemEvent(char code, std::uint64_t ts) {
     itch::SystemEvent s{};
-    s.messageType = 'S';
+    s.messageType = itch::MessageType::SystemEvent;
     s.stockLocate = 0;
     s.timestamp   = ts;
-    s.eventCode   = code;
+    s.eventCode   = static_cast<itch::SystemEventCode>(code);
     return bytesOf(s);
 }
 

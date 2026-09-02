@@ -63,17 +63,17 @@ enum class CrossType : char {
 };
 
 struct SystemEvent {
-    char   messageType;
-    u16be  stockLocate;
-    u16be  trackingNumber;
-    Uint48 timestamp;
-    char   eventCode;
+    MessageType     messageType;
+    u16be           stockLocate;
+    u16be           trackingNumber;
+    Uint48          timestamp;
+    SystemEventCode eventCode;
 };
 
 static_assert(sizeof(SystemEvent) == 12);
 
 struct StockDirectory {
-    char           messageType;
+    MessageType    messageType;
     u16be          stockLocate;
     u16be          trackingNumber;
     Uint48         timestamp;
@@ -96,12 +96,12 @@ struct StockDirectory {
 static_assert(sizeof(StockDirectory) == 39);
 
 struct StockTradingAction {
-    char           messageType;
+    MessageType    messageType;
     u16be          stockLocate;
     u16be          trackingNumber;
     Uint48         timestamp;
     stock_t        stock;
-    char           tradingState;
+    TradingState   tradingState;
     char           reserved;
     wire::Alpha<4> reason;
 };
@@ -109,26 +109,26 @@ struct StockTradingAction {
 static_assert(sizeof(StockTradingAction) == 25);
 
 struct AddOrder {
-    char    messageType;
-    u16be   stockLocate;
-    u16be   trackingNumber;
-    Uint48  timestamp;
-    u64be   orderRef;
-    char    side;
-    u32be   shares;
-    stock_t stock;
-    u32be   price;
+    MessageType messageType;
+    u16be       stockLocate;
+    u16be       trackingNumber;
+    Uint48      timestamp;
+    u64be       orderRef;
+    Side        side;
+    u32be       shares;
+    stock_t     stock;
+    u32be       price;
 };
 
 static_assert(sizeof(AddOrder) == 36);
 
 struct AddOrderMpid {
-    char           messageType;
+    MessageType    messageType;
     u16be          stockLocate;
     u16be          trackingNumber;
     Uint48         timestamp;
     u64be          orderRef;
-    char           side;
+    Side           side;
     u32be          shares;
     stock_t        stock;
     u32be          price;
@@ -138,90 +138,90 @@ struct AddOrderMpid {
 static_assert(sizeof(AddOrderMpid) == 40);
 
 struct OrderExecuted {
-    char   messageType;
-    u16be  stockLocate;
-    u16be  trackingNumber;
-    Uint48 timestamp;
-    u64be  orderRef;
-    u32be  executedShares;
-    u64be  matchNumber;
+    MessageType messageType;
+    u16be       stockLocate;
+    u16be       trackingNumber;
+    Uint48      timestamp;
+    u64be       orderRef;
+    u32be       executedShares;
+    u64be       matchNumber;
 };
 
 static_assert(sizeof(OrderExecuted) == 31);
 
 struct OrderExecutedWithPrice {
-    char   messageType;
-    u16be  stockLocate;
-    u16be  trackingNumber;
-    Uint48 timestamp;
-    u64be  orderRef;
-    u32be  executedShares;
-    u64be  matchNumber;
-    char   printable;
-    u32be  executionPrice;
+    MessageType messageType;
+    u16be       stockLocate;
+    u16be       trackingNumber;
+    Uint48      timestamp;
+    u64be       orderRef;
+    u32be       executedShares;
+    u64be       matchNumber;
+    char        printable;
+    u32be       executionPrice;
 };
 
 static_assert(sizeof(OrderExecutedWithPrice) == 36);
 
 struct OrderCancel {
-    char   messageType;
-    u16be  stockLocate;
-    u16be  trackingNumber;
-    Uint48 timestamp;
-    u64be  orderRef;
-    u32be  cancelledShares;
+    MessageType messageType;
+    u16be       stockLocate;
+    u16be       trackingNumber;
+    Uint48      timestamp;
+    u64be       orderRef;
+    u32be       cancelledShares;
 };
 
 static_assert(sizeof(OrderCancel) == 23);
 
 struct OrderDelete {
-    char   messageType;
-    u16be  stockLocate;
-    u16be  trackingNumber;
-    Uint48 timestamp;
-    u64be  orderRef;
+    MessageType messageType;
+    u16be       stockLocate;
+    u16be       trackingNumber;
+    Uint48      timestamp;
+    u64be       orderRef;
 };
 
 static_assert(sizeof(OrderDelete) == 19);
 
 struct OrderReplace {
-    char   messageType;
-    u16be  stockLocate;
-    u16be  trackingNumber;
-    Uint48 timestamp;
-    u64be  origOrderRef;
-    u64be  newOrderRef;
-    u32be  shares;
-    u32be  price;
+    MessageType messageType;
+    u16be       stockLocate;
+    u16be       trackingNumber;
+    Uint48      timestamp;
+    u64be       origOrderRef;
+    u64be       newOrderRef;
+    u32be       shares;
+    u32be       price;
 };
 
 static_assert(sizeof(OrderReplace) == 35);
 
 struct TradeNonCross {
-    char    messageType;
-    u16be   stockLocate;
-    u16be   trackingNumber;
-    Uint48  timestamp;
-    u64be   orderRef;
-    char    side;
-    u32be   shares;
-    stock_t stock;
-    u32be   price;
-    u64be   matchNumber;
+    MessageType messageType;
+    u16be       stockLocate;
+    u16be       trackingNumber;
+    Uint48      timestamp;
+    u64be       orderRef;
+    Side        side;
+    u32be       shares;
+    stock_t     stock;
+    u32be       price;
+    u64be       matchNumber;
 };
 
 static_assert(sizeof(TradeNonCross) == 44);
 
 struct CrossTrade {
-    char    messageType;
-    u16be   stockLocate;
-    u16be   trackingNumber;
-    Uint48  timestamp;
-    u64be   shares;
-    stock_t stock;
-    u32be   crossPrice;
-    u64be   matchNumber;
-    char    crossType;
+    MessageType messageType;
+    u16be       stockLocate;
+    u16be       trackingNumber;
+    Uint48      timestamp;
+    u64be       shares;
+    stock_t     stock;
+    u32be       crossPrice;
+    u64be       matchNumber;
+    CrossType   crossType;
 };
 
 static_assert(sizeof(CrossTrade) == 40);

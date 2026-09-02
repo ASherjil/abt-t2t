@@ -88,7 +88,7 @@ void test_enter_rests() {
 
     const auto add = decode<itch::AddOrder>(sink.md[0]);
     CHECK_EQ(add.orderRef.value(), 1u);
-    CHECK(add.side == 'B');
+    CHECK(add.side == itch::Side::Buy);
     CHECK_EQ(add.shares.value(), 100u);
     CHECK_EQ(add.price.value(), 520000u);
     CHECK(add.stock.view() == "AAPL");

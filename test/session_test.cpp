@@ -67,8 +67,8 @@ void test_end_to_end() {
         CHECK_EQ(msgs[0].size(), sizeof(itch::AddOrder));
         itch::AddOrder a{};
         std::memcpy(&a, msgs[0].data(), sizeof a);
-        CHECK(a.messageType == 'A');
-        CHECK(a.side == 'S');
+        CHECK(a.messageType == itch::MessageType::AddOrder);
+        CHECK(a.side == itch::Side::Sell);
         CHECK_EQ(a.shares.value(), 100u);
         CHECK_EQ(a.price.value(), 520000u);
         CHECK_EQ(a.orderRef.value(), 1u);
@@ -116,7 +116,7 @@ void test_end_to_end() {
         CHECK_EQ(msgs.size(), 1u);
         itch::OrderExecuted e{};
         std::memcpy(&e, msgs[0].data(), sizeof e);
-        CHECK(e.messageType == 'E');
+        CHECK(e.messageType == itch::MessageType::OrderExecuted);
         CHECK_EQ(e.orderRef.value(), 1u);
         CHECK_EQ(e.executedShares.value(), 100u);
         CHECK_EQ(e.matchNumber.value(), 1u);

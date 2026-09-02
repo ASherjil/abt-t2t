@@ -261,7 +261,7 @@ void ExchangeSession<Mode, Tx>::mirror(std::span<const std::byte> msg, std::uint
                 return;
             }
             const auto* a    = reinterpret_cast<const itch::AddOrder*>(d);
-            const Side  side = a->side == static_cast<char>(itch::Side::Buy) ? Side::Buy : Side::Sell;
+            const Side  side = a->side == itch::Side::Buy ? Side::Buy : Side::Sell;
             m_venue.mirrorAdd(a->orderRef.value(), side, a->price.value(), a->shares.value(), ts);
             break;
         }

@@ -70,7 +70,7 @@ void BookReplay::onMessage(std::span<const std::byte> msg) {
     if (type == 'H') {
         const auto* h = as<itch::StockTradingAction>(msg);
         if (h != nullptr) {
-            m_trading = h->tradingState == static_cast<char>(itch::TradingState::Trading);
+            m_trading = h->tradingState == itch::TradingState::Trading;
         }
         return;
     }

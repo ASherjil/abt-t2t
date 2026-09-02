@@ -35,9 +35,9 @@ std::span<const std::byte> bytesOf(const T& msg) {
 
 itch::AddOrder mkAdd(OrderId ref, char side, Quantity shares, Price price) {
     itch::AddOrder a{};
-    a.messageType = 'A';
+    a.messageType = itch::MessageType::AddOrder;
     a.orderRef    = ref;
-    a.side        = side;
+    a.side        = static_cast<itch::Side>(side);
     a.shares      = shares;
     a.price       = static_cast<std::uint32_t>(price);
     return a;
@@ -45,7 +45,7 @@ itch::AddOrder mkAdd(OrderId ref, char side, Quantity shares, Price price) {
 
 itch::OrderDelete mkDelete(OrderId ref) {
     itch::OrderDelete d{};
-    d.messageType = 'D';
+    d.messageType = itch::MessageType::OrderDelete;
     d.orderRef    = ref;
     return d;
 }

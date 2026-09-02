@@ -28,9 +28,9 @@ std::span<const std::byte> bytesOf(const T& msg) {
 
 itch::AddOrder mkAdd(OrderId ref, char side, Quantity shares, Price price) {
     itch::AddOrder a{};
-    a.messageType = 'A';
+    a.messageType = itch::MessageType::AddOrder;
     a.orderRef    = ref;
-    a.side        = side;
+    a.side        = static_cast<itch::Side>(side);
     a.shares      = shares;
     a.price       = static_cast<std::uint32_t>(price);
     return a;
@@ -238,16 +238,16 @@ itch::AddOrder mkAddAt(std::uint16_t locate, OrderId ref, char side, Quantity sh
 
 itch::SystemEvent mkSys(char code) {
     itch::SystemEvent s{};
-    s.messageType = 'S';
-    s.eventCode   = code;
+    s.messageType = itch::MessageType::SystemEvent;
+    s.eventCode   = static_cast<itch::SystemEventCode>(code);
     return s;
 }
 
 itch::StockTradingAction mkHalt(std::uint16_t locate, char state) {
     itch::StockTradingAction h{};
-    h.messageType  = 'H';
+    h.messageType  = itch::MessageType::StockTradingAction;
     h.stockLocate  = locate;
-    h.tradingState = state;
+    h.tradingState = static_cast<itch::TradingState>(state);
     return h;
 }
 

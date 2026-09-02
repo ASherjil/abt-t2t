@@ -69,7 +69,7 @@ struct DutConfig {
 template <IoMode Mode, Strategy Strat, class Io = NoTransport>
 class DutSession {
 public:
-// Rule of zero applies here
+    // Rule of zero applies here
     DutSession(const DutConfig& cfg, Strat strat);
 
     void onMarketData(std::span<const std::byte> moldPacket, std::uint64_t rxHwts, std::uint64_t rxTsc = 0)
@@ -519,7 +519,7 @@ void DutSession<Mode, Strat, Io>::applyMessage(std::span<const std::byte> msg) {
     if (type == 'H') [[unlikely]] {
         if (msg.size() >= sizeof(itch::StockTradingAction)) {
             const auto* h = reinterpret_cast<const itch::StockTradingAction*>(msg.data());
-            m_trading     = h->tradingState == static_cast<char>(itch::TradingState::Trading);
+            m_trading     = h->tradingState == itch::TradingState::Trading;
         }
         return;
     }

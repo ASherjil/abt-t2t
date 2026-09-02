@@ -107,8 +107,8 @@ void test_socket_roundtrip() {
             ++count;
             itch::AddOrder a{};
             std::memcpy(&a, m.data(), sizeof a);
-            CHECK(a.messageType == 'A');
-            CHECK(a.side == 'S');
+            CHECK(a.messageType == itch::MessageType::AddOrder);
+            CHECK(a.side == itch::Side::Sell);
         });
         CHECK_EQ(count, 1u);
     }
@@ -150,7 +150,7 @@ void test_socket_roundtrip() {
             ++count;
             itch::OrderExecuted e{};
             std::memcpy(&e, m.data(), sizeof e);
-            CHECK(e.messageType == 'E');
+            CHECK(e.messageType == itch::MessageType::OrderExecuted);
             CHECK_EQ(e.executedShares.value(), 100u);
         });
         CHECK_EQ(count, 1u);

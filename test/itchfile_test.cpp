@@ -42,7 +42,7 @@ std::vector<std::byte> bytesOf(const T& m) {
 
 std::vector<std::byte> stockDirectory(std::uint16_t locate, std::string_view sym, std::uint64_t ts) {
     itch::StockDirectory r{};
-    r.messageType    = 'R';
+    r.messageType    = itch::MessageType::StockDirectory;
     r.stockLocate    = locate;
     r.timestamp      = ts;
     r.stock          = sym;
@@ -53,10 +53,10 @@ std::vector<std::byte> stockDirectory(std::uint16_t locate, std::string_view sym
 
 std::vector<std::byte> systemEvent(char code, std::uint64_t ts) {
     itch::SystemEvent s{};
-    s.messageType = 'S';
+    s.messageType = itch::MessageType::SystemEvent;
     s.stockLocate = 0;
     s.timestamp   = ts;
-    s.eventCode   = code;
+    s.eventCode   = static_cast<itch::SystemEventCode>(code);
     return bytesOf(s);
 }
 

@@ -24,9 +24,9 @@ std::span<const std::byte> bytesOf(const T& msg) {
 
 void addOrder(dut::BookBuilder& book, OrderId ref, char side, Quantity shares, Price price) {
     itch::AddOrder a{};
-    a.messageType = 'A';
+    a.messageType = itch::MessageType::AddOrder;
     a.orderRef    = ref;
-    a.side        = side;
+    a.side        = static_cast<itch::Side>(side);
     a.shares      = shares;
     a.price       = static_cast<std::uint32_t>(price);
     book.apply(bytesOf(a));

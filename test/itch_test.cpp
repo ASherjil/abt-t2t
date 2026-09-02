@@ -79,12 +79,12 @@ void test_message_sizes() {
 
 void test_add_order_layout() {
     itch::AddOrder a{};
-    a.messageType    = static_cast<char>(itch::MessageType::AddOrder);
+    a.messageType    = itch::MessageType::AddOrder;
     a.stockLocate    = 0x1234u;
     a.trackingNumber = 0u;
     a.timestamp      = 34200000000001ull;
     a.orderRef       = 0xDEADBEEFCAFEBABEull;
-    a.side           = static_cast<char>(itch::Side::Buy);
+    a.side           = itch::Side::Buy;
     a.shares         = 100u;
     a.stock          = std::string_view{"AAPL"};
     a.price          = 1502500u;
@@ -106,9 +106,9 @@ void test_add_order_layout() {
 
 void test_overlay_roundtrip() {
     itch::AddOrder src{};
-    src.messageType = 'A';
+    src.messageType = itch::MessageType::AddOrder;
     src.orderRef    = 42ull;
-    src.side        = 'S';
+    src.side        = itch::Side::Sell;
     src.shares      = 250u;
     src.stock       = std::string_view{"MSFT"};
     src.price       = 4207500u;
@@ -120,7 +120,7 @@ void test_overlay_roundtrip() {
     std::memcpy(&dst, frame.data(), sizeof dst);
 
     CHECK_EQ(dst.orderRef.value(), 42ull);
-    CHECK(dst.side == 'S');
+    CHECK(dst.side == itch::Side::Sell);
     CHECK_EQ(dst.shares.value(), 250u);
     CHECK(dst.stock.view() == "MSFT");
     CHECK_EQ(dst.price.value(), 4207500u);

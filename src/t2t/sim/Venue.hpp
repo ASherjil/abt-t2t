@@ -103,7 +103,7 @@ private:
     template <class Msg>
     void sendOe(const Msg& m);
 
-    static char       itchSide(Side s) noexcept;
+    static itch::Side itchSide(Side s) noexcept;
     static ouch::Side ouchSide(Side s) noexcept;
 
     void emitItchAdd(OrderId ref, Side side, Price tick, Quantity shares, std::uint64_t ts);
@@ -156,11 +156,11 @@ Venue<Sink>::Venue(Sink& sink, std::string_view symbol, std::uint16_t stockLocat
 template <class Sink>
 void Venue<Sink>::sessionEvent(itch::SystemEventCode code, std::uint64_t ts) {
     itch::SystemEvent s{};
-    s.messageType    = static_cast<char>(itch::MessageType::SystemEvent);
+    s.messageType    = itch::MessageType::SystemEvent;
     s.stockLocate    = 0;
     s.trackingNumber = 0;
     s.timestamp      = ts;
-    s.eventCode      = static_cast<char>(code);
+    s.eventCode      = code;
     sendMd(s);
 }
 
@@ -671,8 +671,8 @@ void Venue<Sink>::sendOe(const Msg& m) {
 }
 
 template <class Sink>
-char Venue<Sink>::itchSide(Side s) noexcept {
-    return s == Side::Buy ? static_cast<char>(itch::Side::Buy) : static_cast<char>(itch::Side::Sell);
+itch::Side Venue<Sink>::itchSide(Side s) noexcept {
+    return s == Side::Buy ? itch::Side::Buy : itch::Side::Sell;
 }
 
 template <class Sink>
@@ -683,7 +683,7 @@ ouch::Side Venue<Sink>::ouchSide(Side s) noexcept {
 template <class Sink>
 void Venue<Sink>::emitItchAdd(OrderId ref, Side side, Price tick, Quantity shares, std::uint64_t ts) {
     itch::AddOrder a{};
-    a.messageType    = static_cast<char>(itch::MessageType::AddOrder);
+    a.messageType    = itch::MessageType::AddOrder;
     a.stockLocate    = m_stockLocate;
     a.trackingNumber = 0;
     a.timestamp      = ts;
@@ -698,7 +698,7 @@ void Venue<Sink>::emitItchAdd(OrderId ref, Side side, Price tick, Quantity share
 template <class Sink>
 void Venue<Sink>::emitItchExecuted(OrderId ref, Quantity shares, std::uint64_t match, std::uint64_t ts) {
     itch::OrderExecuted e{};
-    e.messageType    = static_cast<char>(itch::MessageType::OrderExecuted);
+    e.messageType    = itch::MessageType::OrderExecuted;
     e.stockLocate    = m_stockLocate;
     e.trackingNumber = 0;
     e.timestamp      = ts;
@@ -711,7 +711,7 @@ void Venue<Sink>::emitItchExecuted(OrderId ref, Quantity shares, std::uint64_t m
 template <class Sink>
 void Venue<Sink>::emitItchCancel(OrderId ref, Quantity shares, std::uint64_t ts) {
     itch::OrderCancel x{};
-    x.messageType     = static_cast<char>(itch::MessageType::OrderCancel);
+    x.messageType     = itch::MessageType::OrderCancel;
     x.stockLocate     = m_stockLocate;
     x.trackingNumber  = 0;
     x.timestamp       = ts;
@@ -723,7 +723,7 @@ void Venue<Sink>::emitItchCancel(OrderId ref, Quantity shares, std::uint64_t ts)
 template <class Sink>
 void Venue<Sink>::emitItchDelete(OrderId ref, std::uint64_t ts) {
     itch::OrderDelete d{};
-    d.messageType    = static_cast<char>(itch::MessageType::OrderDelete);
+    d.messageType    = itch::MessageType::OrderDelete;
     d.stockLocate    = m_stockLocate;
     d.trackingNumber = 0;
     d.timestamp      = ts;
@@ -735,7 +735,7 @@ template <class Sink>
 void Venue<Sink>::emitItchReplace(OrderId origRef, OrderId newRef, Quantity shares, Price tick,
                                   std::uint64_t ts) {
     itch::OrderReplace u{};
-    u.messageType    = static_cast<char>(itch::MessageType::OrderReplace);
+    u.messageType    = itch::MessageType::OrderReplace;
     u.stockLocate    = m_stockLocate;
     u.trackingNumber = 0;
     u.timestamp      = ts;
