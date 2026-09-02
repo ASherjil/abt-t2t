@@ -29,6 +29,8 @@ BookBuilder::BookBuilder(const BookConfig& cfg)
       m_tickDiv(static_cast<std::uint32_t>(cfg.tickWire)),
       m_bandTicks(cfg.bandTicks),
       m_bandFraction(cfg.bandFraction),
+      m_baseTick(cfg.tickWire),
+      m_subDollarTick(cfg.subDollarTickWire),
       m_anchored(false),
       m_bidSize(cfg.memory == nullptr ? std::pmr::get_default_resource() : cfg.memory),
       m_askSize(cfg.memory == nullptr ? std::pmr::get_default_resource() : cfg.memory),
@@ -37,6 +39,11 @@ BookBuilder::BookBuilder(const BookConfig& cfg)
 }
 
 void BookBuilder::anchor(Price price) {
+    if (m_anchored) {
+        ++m_reanchors;
+    }
+    m_tickWire       = (m_subDollarTick > 0 && price < 10000) ? m_subDollarTick : m_baseTick;
+    m_tickDiv        = util::DivBy(static_cast<std::uint32_t>(m_tickWire));
     std::size_t band = m_bandTicks;
     if (m_bandFraction > 0.0) {
         const double byPrice = std::floor(static_cast<double>(price) * m_bandFraction /
@@ -53,7 +60,32 @@ void BookBuilder::anchor(Price price) {
     m_maxPrice = m_minPrice + 2 * span;
     m_bidSize.assign(2 * band + 1, 0);
     m_askSize.assign(2 * band + 1, 0);
+    m_bestBid  = kNoPrice;
+    m_bestAsk  = kNoPrice;
     m_anchored = true;
+    rebuildLevels();
+}
+
+void BookBuilder::rebuildLevels() {
+    m_orders.forEach([this](OrderId, const Resting& r) {
+        if (!r.own) {
+            addShares(r.side, r.price, r.shares);
+        }
+    });
+}
+
+void BookBuilder::onTradePrice(Price price) {
+    if (!inBand(price)) [[unlikely]] {
+        anchor(price);
+    }
+}
+
+std::uint32_t BookBuilder::reanchors() const noexcept {
+    return m_reanchors;
+}
+
+Price BookBuilder::tickWire() const noexcept {
+    return m_tickWire;
 }
 
 bool BookBuilder::anchored() const noexcept {
@@ -92,21 +124,37 @@ void BookBuilder::apply(std::span<const std::byte> itchMessage) {
         case 'E': {
             if (itchMessage.size() >= sizeof(itch::OrderExecuted)) {
                 const auto* e = reinterpret_cast<const itch::OrderExecuted*>(data);
-                reduceOrder(e->orderRef.value(), e->executedShares.value());
+                reduceOrder(e->orderRef.value(), e->executedShares.value(), true);
             }
             break;
         }
         case 'C': {
             if (itchMessage.size() >= sizeof(itch::OrderExecutedWithPrice)) {
                 const auto* c = reinterpret_cast<const itch::OrderExecutedWithPrice*>(data);
-                reduceOrder(c->orderRef.value(), c->executedShares.value());
+                reduceOrder(c->orderRef.value(), c->executedShares.value(), true);
             }
             break;
         }
         case 'X': {
             if (itchMessage.size() >= sizeof(itch::OrderCancel)) {
                 const auto* x = reinterpret_cast<const itch::OrderCancel*>(data);
-                reduceOrder(x->orderRef.value(), x->cancelledShares.value());
+                reduceOrder(x->orderRef.value(), x->cancelledShares.value(), false);
+            }
+            break;
+        }
+        case 'P': {
+            if (itchMessage.size() >= sizeof(itch::TradeNonCross)) {
+                const auto* p = reinterpret_cast<const itch::TradeNonCross*>(data);
+                onTradePrice(static_cast<Price>(p->price.value()));
+            }
+            break;
+        }
+        case 'Q': {
+            if (itchMessage.size() >= sizeof(itch::CrossTrade)) {
+                const auto* q = reinterpret_cast<const itch::CrossTrade*>(data);
+                if (q->shares.value() > 0 && q->crossPrice.value() > 0) {
+                    onTradePrice(static_cast<Price>(q->crossPrice.value()));
+                }
             }
             break;
         }
@@ -218,10 +266,13 @@ void BookBuilder::onOrderReplace(const itch::OrderReplace& msg) {
     addShares(orig.side, price, shares);
 }
 
-void BookBuilder::reduceOrder(OrderId ref, Quantity by) {
+void BookBuilder::reduceOrder(OrderId ref, Quantity by, bool trade) {
     Resting* o = m_orders.find(ref);
     if (o == nullptr) {
         return;
+    }
+    if (trade && !inBand(o->price)) [[unlikely]] {
+        anchor(o->price);
     }
     const Quantity gone = (by < o->shares) ? by : o->shares;
     if (!o->own) {

@@ -21,13 +21,14 @@
 namespace abt::dut {
 
 struct BookConfig {
-    Price                      tickWire     = 1;
-    std::size_t                bandTicks    = 2048;
-    double                     bandFraction = 0.0;
-    std::size_t                maxOrders    = 1u << 10;
-    OrderId                    ownRefMin    = 0;
-    std::pmr::memory_resource* memory       = nullptr;
-    std::uint64_t*             rehashes     = nullptr;
+    Price                      tickWire          = 1;
+    Price                      subDollarTickWire = 0;
+    std::size_t                bandTicks         = 2048;
+    double                     bandFraction      = 0.0;
+    std::size_t                maxOrders         = 1u << 10;
+    OrderId                    ownRefMin         = 0;
+    std::pmr::memory_resource* memory            = nullptr;
+    std::uint64_t*             rehashes          = nullptr;
 };
 
 class BookBuilder {
@@ -52,6 +53,8 @@ public:
     [[nodiscard]] Price         bandLow() const noexcept;
     [[nodiscard]] Price         bandHigh() const noexcept;
     [[nodiscard]] std::uint64_t outOfBandAdds() const noexcept;
+    [[nodiscard]] std::uint32_t reanchors() const noexcept;
+    [[nodiscard]] Price         tickWire() const noexcept;
 
 private:
     struct Resting {
@@ -63,7 +66,8 @@ private:
 
     void onAddOrder(const itch::AddOrder& msg);
     void onOrderReplace(const itch::OrderReplace& msg);
-    void reduceOrder(OrderId ref, Quantity by);
+    void reduceOrder(OrderId ref, Quantity by, bool trade);
+    void onTradePrice(Price price);
     void removeOrder(OrderId ref);
     void addShares(Side side, Price price, Quantity shares) noexcept;
     void removeShares(Side side, Price price, Quantity shares) noexcept;
@@ -71,6 +75,7 @@ private:
     [[nodiscard]] bool        inBand(Price price) const noexcept;
     [[nodiscard]] std::size_t index(Price price) const noexcept;
     void                      anchor(Price price);
+    void                      rebuildLevels();
     void                      rescanBestBid() noexcept;
     void                      rescanBestAsk() noexcept;
 
@@ -80,12 +85,15 @@ private:
     OrderId       m_ownRefMin;
     std::size_t   m_own = 0;
     util::DivBy   m_tickDiv;   // price-offset / tickWire without a hardware divide
-    Price         m_bestBid      = kNoPrice;
-    Price         m_bestAsk      = kNoPrice;
-    std::size_t   m_bandTicks    = 0;
-    double        m_bandFraction = 0.0;
-    bool          m_anchored     = true;
-    std::uint64_t m_oob          = 0;
+    Price         m_bestBid       = kNoPrice;
+    Price         m_bestAsk       = kNoPrice;
+    std::size_t   m_bandTicks     = 0;
+    double        m_bandFraction  = 0.0;
+    Price         m_baseTick      = 1;
+    Price         m_subDollarTick = 0;
+    bool          m_anchored      = true;
+    std::uint64_t m_oob           = 0;
+    std::uint32_t m_reanchors     = 0;
 
     std::pmr::vector<Quantity>          m_bidSize;
     std::pmr::vector<Quantity>          m_askSize;

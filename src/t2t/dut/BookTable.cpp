@@ -75,13 +75,14 @@ void BookTable::onDirectory(std::span<const std::byte> msg, std::uint16_t locate
 
 BookBuilder* BookTable::create(std::uint16_t locate, bool hot) {
     BookConfig bc{};
-    bc.tickWire     = m_cfg.tickWire;
-    bc.bandTicks    = hot ? m_cfg.hotBandTicks : m_cfg.coldBandTicks;
-    bc.bandFraction = m_cfg.bandFraction;
-    bc.maxOrders    = hot ? m_cfg.hotMapSlots : m_cfg.coldMapSlots;
-    bc.ownRefMin    = m_cfg.ownRefMin;
-    bc.memory       = m_cfg.memory;
-    bc.rehashes     = &m_rehashes;
+    bc.tickWire          = m_cfg.tickWire;
+    bc.subDollarTickWire = m_cfg.subDollarTick;
+    bc.bandTicks         = hot ? m_cfg.hotBandTicks : m_cfg.coldBandTicks;
+    bc.bandFraction      = m_cfg.bandFraction;
+    bc.maxOrders         = hot ? m_cfg.hotMapSlots : m_cfg.coldMapSlots;
+    bc.ownRefMin         = m_cfg.ownRefMin;
+    bc.memory            = m_cfg.memory;
+    bc.rehashes          = &m_rehashes;
     m_storage.emplace_back(bc);
     m_books[locate].book = &m_storage.back();
     return m_books[locate].book;

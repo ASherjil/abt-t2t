@@ -181,11 +181,59 @@ void test_dynamic_band_scales_with_price_and_clamps_at_zero() {
     CHECK_EQ(penny.bandLow(), 50);
     CHECK_EQ(penny.bandHigh(), 50 + 2000);
     CHECK_EQ(penny.sizeAt(Side::Buy, 350), 1u);
+
+    cfg.subDollarTickWire = 1;
+    dut::BookBuilder subDollar(cfg);
+    subDollar.apply(bytesOf(mkAdd(1u, 'B', 1u, 350)));
+    CHECK_EQ(subDollar.tickWire(), 1);
+    CHECK_EQ(subDollar.bandLow(), 350 - 35);
+    CHECK_EQ(subDollar.bandHigh(), 350 + 35);
+    subDollar.apply(bytesOf(mkAdd(2u, 'S', 1u, 351)));
+    CHECK_EQ(subDollar.bestAsk(), 351);
+}
+
+void test_out_of_band_trade_reanchors_and_rebuilds() {
+    dut::BookConfig cfg{};
+    cfg.tickWire     = 100;
+    cfg.bandTicks    = 16;
+    cfg.bandFraction = 0.0;
+    dut::BookBuilder book(cfg);
+    book.apply(bytesOf(mkAdd(1u, 'S', 10u, 99'990'000)));
+    CHECK_EQ(book.bestAsk(), 99'990'000);
+    book.apply(bytesOf(mkAdd(2u, 'B', 100u, 320'000)));
+    book.apply(bytesOf(mkAdd(3u, 'S', 100u, 320'100)));
+    CHECK_EQ(book.outOfBandAdds(), 2u);
+    CHECK_EQ(book.bestBid(), kNoPrice);
+    CHECK_EQ(book.liveOrders(), 3u);
+
+    book.apply(bytesOf(mkExec(2u, 40u)));
+    CHECK_EQ(book.reanchors(), 1u);
+    CHECK_EQ(book.bandLow(), 320'000 - 1600);
+    CHECK_EQ(book.bestBid(), 320'000);
+    CHECK_EQ(book.bestAsk(), 320'100);
+    CHECK_EQ(book.sizeAt(Side::Buy, 320'000), 60u);
+    CHECK_EQ(book.sizeAt(Side::Sell, 320'100), 100u);
+    CHECK_EQ(book.restingShares(1u), 10u);
+    CHECK_EQ(book.liveOrders(), 3u);
+
+    itch::TradeNonCross p{};
+    p.messageType = itch::MessageType::TradeNonCross;
+    p.shares      = 5;
+    p.price       = 320'050;
+    book.apply(bytesOf(p));
+    CHECK_EQ(book.reanchors(), 1u);
+    p.price = 400'000;
+    book.apply(bytesOf(p));
+    CHECK_EQ(book.reanchors(), 2u);
+    CHECK_EQ(book.bestBid(), kNoPrice);
+    CHECK_EQ(book.bestAsk(), kNoPrice);
+    CHECK_EQ(book.liveOrders(), 3u);
 }
 
 int main() {
     test_dynamic_band_anchors_on_first_add();
     test_dynamic_band_scales_with_price_and_clamps_at_zero();
+    test_out_of_band_trade_reanchors_and_rebuilds();
     test_book();
     test_own_orders_excluded_from_view();
     return abt::test::summary("dutbook");

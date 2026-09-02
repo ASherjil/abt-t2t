@@ -15,6 +15,7 @@ namespace abt::dut {
 
 struct BookTableConfig {
     Price                      tickWire      = 100;
+    Price                      subDollarTick = 1;
     std::size_t                coldBandTicks = 2048;
     std::size_t                hotBandTicks  = 8192;
     double                     bandFraction  = 0.10;

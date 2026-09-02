@@ -141,8 +141,16 @@ void test_table_on_arena() {
     CHECK_EQ(table.book(150)->bestBid(), 1000 + 150 * 100);
 }
 
+itch::SystemEvent mkSys(char code) {
+    itch::SystemEvent s{};
+    s.messageType = itch::MessageType::SystemEvent;
+    s.eventCode   = static_cast<itch::SystemEventCode>(code);
+    return s;
+}
+
 void test_feed_validator_counts_faults() {
     replay::FeedValidator v(baseCfg());
+    v.onMessage(bytesOf(mkSys('Q')));
     v.onMessage(bytesOf(mkDir(13, "AAPL")));
     v.onMessage(bytesOf(mkAdd(13, 1u, 'B', 100u, 32000)));
     v.onMessage(bytesOf(mkAdd(13, 2u, 'S', 100u, 32100)));

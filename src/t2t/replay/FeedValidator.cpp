@@ -15,7 +15,8 @@ const T* as(std::span<const std::byte> msg) noexcept {
 
 FeedValidator::FeedValidator(const dut::BookTableConfig& cfg)
     : m_books(cfg),
-      m_sym(dut::BookTable::kLocates) {
+      m_sym(dut::BookTable::kLocates),
+      m_trading(dut::BookTable::kLocates, true) {
 }
 
 void FeedValidator::onMessage(std::span<const std::byte> msg) {
@@ -25,9 +26,21 @@ void FeedValidator::onMessage(std::span<const std::byte> msg) {
     const char type = static_cast<char>(msg[0]);
     if (type == 'S') {
         const auto* s = as<itch::SystemEvent>(msg);
-        if (s != nullptr &&
-            static_cast<itch::SystemEventCode>(s->eventCode) == itch::SystemEventCode::StartOfMessages) {
-            m_books.clearAll();
+        if (s == nullptr) {
+            return;
+        }
+        switch (static_cast<itch::SystemEventCode>(s->eventCode)) {
+            case itch::SystemEventCode::StartOfMessages:
+                m_books.clearAll();
+                break;
+            case itch::SystemEventCode::StartOfMarketHours:
+                m_marketHours = true;
+                break;
+            case itch::SystemEventCode::EndOfMarketHours:
+                m_marketHours = false;
+                break;
+            default:
+                break;
         }
         return;
     }
@@ -40,6 +53,12 @@ void FeedValidator::onMessage(std::span<const std::byte> msg) {
         case 'R': {
             if (const auto* r = as<itch::StockDirectory>(msg); r != nullptr) {
                 st.name = std::string(r->stock.view());
+            }
+            break;
+        }
+        case 'H': {
+            if (const auto* h = as<itch::StockTradingAction>(msg); h != nullptr) {
+                m_trading[locate] = h->tradingState == itch::TradingState::Trading;
             }
             break;
         }
@@ -86,7 +105,8 @@ void FeedValidator::onMessage(std::span<const std::byte> msg) {
         if (b != nullptr) {
             const Price bb = b->bestBid();
             const Price ba = b->bestAsk();
-            if ((type == 'A' || type == 'F' || type == 'U') && bb != kNoPrice && ba != kNoPrice && bb >= ba) {
+            if ((type == 'A' || type == 'F' || type == 'U') && m_marketHours && m_trading[locate] &&
+                bb != kNoPrice && ba != kNoPrice && bb >= ba) {
                 ++st.crossed;
             }
             if (b->liveOrders() > st.maxLive) {
@@ -129,6 +149,10 @@ FeedTotals FeedValidator::totals() const noexcept {
     }
     m_books.forEachBook([&](std::uint16_t, const dut::BookBuilder& b) {
         t.outOfBand += b.outOfBandAdds();
+        t.reanchors += b.reanchors();
+        if (b.anchored() && b.tickWire() == 1) {
+            ++t.subDollar;
+        }
     });
     return t;
 }

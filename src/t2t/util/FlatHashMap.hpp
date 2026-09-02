@@ -47,6 +47,15 @@ public:
     [[nodiscard]] std::size_t size() const noexcept;
     [[nodiscard]] std::size_t capacity() const noexcept;
 
+    template <class Fn>
+    void forEach(Fn fn) const {
+        for (const Slot& s : m_slots) {
+            if (s.key != Empty) {
+                fn(s.key, s.value);
+            }
+        }
+    }
+
 private:
     struct Slot {
         Key   key;

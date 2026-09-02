@@ -25,8 +25,10 @@ struct FeedTotals {
     std::uint64_t overReduce = 0;
     std::uint64_t crossed    = 0;
     std::uint64_t outOfBand  = 0;
+    std::uint64_t reanchors  = 0;
     std::uint64_t maxLive    = 0;
     std::size_t   symbols    = 0;
+    std::size_t   subDollar  = 0;
 };
 
 class FeedValidator {
@@ -44,9 +46,11 @@ private:
 
     dut::BookTable           m_books;
     std::vector<SymbolStats> m_sym;
-    std::uint64_t            m_messages = 0;
-    std::uint64_t            m_liveNow  = 0;
-    std::uint64_t            m_maxLive  = 0;
+    std::vector<bool>        m_trading;
+    bool                     m_marketHours = false;
+    std::uint64_t            m_messages    = 0;
+    std::uint64_t            m_liveNow     = 0;
+    std::uint64_t            m_maxLive     = 0;
 };
 
 }   // namespace abt::replay

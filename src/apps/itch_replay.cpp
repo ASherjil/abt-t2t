@@ -100,6 +100,7 @@ int runValidator(const Args& a, replay::ItchFileReader& reader,
     cfg.hotBandTicks  = a.bandTicks;
     cfg.bandFraction  = 0.10;
     cfg.coldMapSlots  = 1024;
+    cfg.subDollarTick = 1;
     cfg.memory        = a.arenaMb != 0 ? arena.resource() : nullptr;
     replay::FeedValidator               validator(cfg);
     std::optional<replay::SymbolFilter> filter;
@@ -139,6 +140,8 @@ int runValidator(const Args& a, replay::ItchFileReader& reader,
                a.arenaMb != 0 ? (arena.huge() ? "hugetlb" : "4K-page fallback") : "heap");
     fmt::print("invariants     unknown ref {}  over-reduce {}  crossed {}  out-of-band adds {}\n",
                t.unknownRef, t.overReduce, t.crossed, t.outOfBand);
+    fmt::print("anchoring      re-anchors on out-of-band trades {}  sub-dollar tick books {}\n", t.reanchors,
+               t.subDollar);
     fmt::print("book           band {} ticks/side (min), max live orders {} (sampled every 64k msgs)\n",
                a.bandTicks, t.maxLive);
     rusage ru{};
