@@ -109,11 +109,8 @@ struct Alpha {
     }
 
     void store(std::string_view s) noexcept {
-        const std::size_t n = s.size() < N ? s.size() : N;
-        std::memcpy(chars.data(), s.data(), n);
-        for (std::size_t i = n; i < N; ++i) {
-            chars[i] = ' ';
-        }
+        const std::size_t n = s.copy(chars.data(), N);
+        std::fill(chars.begin() + static_cast<std::ptrdiff_t>(n), chars.end(), ' ');
     }
 
     Alpha& operator=(std::string_view s) noexcept {
