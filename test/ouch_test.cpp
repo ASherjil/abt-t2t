@@ -38,17 +38,17 @@ void test_message_sizes() {
 
 void test_enter_order_layout() {
     ouch::EnterOrder o{};
-    o.type               = static_cast<char>(ouch::InType::EnterOrder);
+    o.type               = ouch::InType::EnterOrder;
     o.userRefNum         = 0x01020304u;
-    o.side               = static_cast<char>(ouch::Side::Buy);
+    o.side               = ouch::Side::Buy;
     o.quantity           = 100u;
     o.symbol             = std::string_view{"AAPL"};
     o.price              = 1502500u;
-    o.timeInForce        = static_cast<char>(ouch::TimeInForce::Day);
-    o.display            = static_cast<char>(ouch::Display::Visible);
-    o.capacity           = static_cast<char>(ouch::Capacity::Agency);
-    o.imSweepEligibility = static_cast<char>(ouch::ImSweep::NotEligible);
-    o.crossType          = static_cast<char>(ouch::CrossType::Continuous);
+    o.timeInForce        = ouch::TimeInForce::Day;
+    o.display            = ouch::Display::Visible;
+    o.capacity           = ouch::Capacity::Agency;
+    o.imSweepEligibility = ouch::ImSweep::NotEligible;
+    o.crossType          = ouch::CrossType::Continuous;
     o.clOrdId            = std::string_view{"ORDER-0001"};
     o.appendageLength    = 0u;
 
@@ -74,15 +74,15 @@ void test_enter_order_layout() {
 
 void test_accepted_roundtrip() {
     ouch::Accepted a{};
-    a.type                 = static_cast<char>(ouch::OutType::Accepted);
+    a.type                 = ouch::OutType::Accepted;
     a.timestamp            = 34200000000123ull;
     a.userRefNum           = 777u;
-    a.side                 = static_cast<char>(ouch::Side::Sell);
+    a.side                 = ouch::Side::Sell;
     a.quantity             = 500u;
     a.symbol               = std::string_view{"MSFT"};
     a.price                = 4207500u;
     a.orderReferenceNumber = 0xCAFED00DBEEFull;
-    a.orderState           = static_cast<char>(ouch::OrderState::Live);
+    a.orderState           = ouch::OrderState::Live;
     a.clOrdId              = std::string_view{"CID-42"};
     a.appendageLength      = 0u;
 
@@ -94,13 +94,13 @@ void test_accepted_roundtrip() {
 
     CHECK_EQ(d.timestamp.value(), 34200000000123ull);
     CHECK_EQ(d.userRefNum.value(), 777u);
-    CHECK(d.side == 'S');
+    CHECK(d.side == ouch::Side::Sell);
     CHECK_EQ(d.quantity.value(), 500u);
     CHECK(d.symbol.view() == "MSFT");
     CHECK_EQ(d.price.value(), 4207500u);
     CHECK_EQ(d.price.value() / ouch::kPriceScale, 420u);
     CHECK_EQ(d.orderReferenceNumber.value(), 0xCAFED00DBEEFull);
-    CHECK(d.orderState == 'L');
+    CHECK(d.orderState == ouch::OrderState::Live);
     CHECK(d.clOrdId.view() == "CID-42");
 }
 

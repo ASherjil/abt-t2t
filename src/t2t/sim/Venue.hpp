@@ -82,7 +82,7 @@ private:
     friend struct TradeEmitter;
 
     [[nodiscard]] bool validPrice(std::uint64_t wire, Price& tick) const noexcept;
-    [[nodiscard]] bool parseSide(char c, Side& side) const noexcept;
+    [[nodiscard]] bool parseSide(ouch::Side c, Side& side) const noexcept;
     void     processOrder(OrderId ref, Side side, Price tick, Quantity qty, std::uint64_t ts, bool client,
                           std::uint32_t user);
     void     processImmediate(OrderId ref, Side side, Price tick, Quantity qty, std::uint64_t ts,
@@ -103,14 +103,15 @@ private:
     template <class Msg>
     void sendOe(const Msg& m);
 
-    static char itchSide(Side s) noexcept;
+    static char       itchSide(Side s) noexcept;
+    static ouch::Side ouchSide(Side s) noexcept;
 
     void emitItchAdd(OrderId ref, Side side, Price tick, Quantity shares, std::uint64_t ts);
     void emitItchExecuted(OrderId ref, Quantity shares, std::uint64_t match, std::uint64_t ts);
     void emitItchCancel(OrderId ref, Quantity shares, std::uint64_t ts);
     void emitItchDelete(OrderId ref, std::uint64_t ts);
     void emitItchReplace(OrderId origRef, OrderId newRef, Quantity shares, Price tick, std::uint64_t ts);
-    void emitAccepted(const ouch::EnterOrder& o, OrderId ref, char orderState, std::uint64_t ts);
+    void emitAccepted(const ouch::EnterOrder& o, OrderId ref, ouch::OrderState orderState, std::uint64_t ts);
     void emitExecuted(std::uint32_t user, Quantity shares, Price tick, char liq, std::uint64_t match,
                       std::uint64_t ts);
     void emitCanceled(std::uint32_t user, Quantity decremented, ouch::CancelReason r, std::uint64_t ts);
@@ -185,10 +186,9 @@ void Venue<Sink>::onEnterOrder(const ouch::EnterOrder& o, std::uint64_t ts) {
         return;
     }
 
-    const OrderId ref       = m_nextOrderRef++;
-    const bool    immediate = o.timeInForce == static_cast<char>(ouch::TimeInForce::IOC);
-    const char    state     = immediate ? static_cast<char>(ouch::OrderState::Dead)
-                                        : static_cast<char>(ouch::OrderState::Live);
+    const OrderId          ref       = m_nextOrderRef++;
+    const bool             immediate = o.timeInForce == ouch::TimeInForce::IOC;
+    const ouch::OrderState state     = immediate ? ouch::OrderState::Dead : ouch::OrderState::Live;
     emitAccepted(o, ref, state, ts);
     if (immediate) {
         processImmediate(ref, side, tick, o.quantity.value(), ts, user);
@@ -454,14 +454,14 @@ bool Venue<Sink>::validPrice(std::uint64_t wire, Price& tick) const noexcept {
 }
 
 template <class Sink>
-bool Venue<Sink>::parseSide(char c, Side& side) const noexcept {
+bool Venue<Sink>::parseSide(ouch::Side c, Side& side) const noexcept {
     switch (c) {
-        case static_cast<char>(ouch::Side::Buy):
+        case ouch::Side::Buy:
             side = Side::Buy;
             return true;
-        case static_cast<char>(ouch::Side::Sell):
-        case static_cast<char>(ouch::Side::SellShort):
-        case static_cast<char>(ouch::Side::SellShortExempt):
+        case ouch::Side::Sell:
+        case ouch::Side::SellShort:
+        case ouch::Side::SellShortExempt:
             side = Side::Sell;
             return true;
         default:
@@ -676,6 +676,11 @@ char Venue<Sink>::itchSide(Side s) noexcept {
 }
 
 template <class Sink>
+ouch::Side Venue<Sink>::ouchSide(Side s) noexcept {
+    return s == Side::Buy ? ouch::Side::Buy : ouch::Side::Sell;
+}
+
+template <class Sink>
 void Venue<Sink>::emitItchAdd(OrderId ref, Side side, Price tick, Quantity shares, std::uint64_t ts) {
     itch::AddOrder a{};
     a.messageType    = static_cast<char>(itch::MessageType::AddOrder);
@@ -742,9 +747,10 @@ void Venue<Sink>::emitItchReplace(OrderId origRef, OrderId newRef, Quantity shar
 }
 
 template <class Sink>
-void Venue<Sink>::emitAccepted(const ouch::EnterOrder& o, OrderId ref, char orderState, std::uint64_t ts) {
+void Venue<Sink>::emitAccepted(const ouch::EnterOrder& o, OrderId ref, ouch::OrderState orderState,
+                               std::uint64_t ts) {
     ouch::Accepted a{};
-    a.type                 = static_cast<char>(ouch::OutType::Accepted);
+    a.type                 = ouch::OutType::Accepted;
     a.timestamp            = ts;
     a.userRefNum           = o.userRefNum.value();
     a.side                 = o.side;
@@ -767,7 +773,7 @@ template <class Sink>
 void Venue<Sink>::emitExecuted(std::uint32_t user, Quantity shares, Price tick, char liq, std::uint64_t match,
                                std::uint64_t ts) {
     ouch::Executed e{};
-    e.type            = static_cast<char>(ouch::OutType::Executed);
+    e.type            = ouch::OutType::Executed;
     e.timestamp       = ts;
     e.userRefNum      = user;
     e.quantity        = shares;
@@ -782,11 +788,11 @@ template <class Sink>
 void Venue<Sink>::emitCanceled(std::uint32_t user, Quantity decremented, ouch::CancelReason r,
                                std::uint64_t ts) {
     ouch::Canceled c{};
-    c.type            = static_cast<char>(ouch::OutType::Canceled);
+    c.type            = ouch::OutType::Canceled;
     c.timestamp       = ts;
     c.userRefNum      = user;
     c.quantity        = decremented;
-    c.reason          = static_cast<char>(r);
+    c.reason          = r;
     c.appendageLength = 0;
     sendOe(c);
 }
@@ -794,21 +800,21 @@ void Venue<Sink>::emitCanceled(std::uint32_t user, Quantity decremented, ouch::C
 template <class Sink>
 void Venue<Sink>::emitReplaced(const ouch::ReplaceOrder& u, OrderId newRef, Side side, std::uint64_t ts) {
     ouch::Replaced r{};
-    r.type                 = static_cast<char>(ouch::OutType::Replaced);
+    r.type                 = ouch::OutType::Replaced;
     r.timestamp            = ts;
     r.origUserRefNum       = u.origUserRefNum.value();
     r.userRefNum           = u.userRefNum.value();
-    r.side                 = itchSide(side);
+    r.side                 = ouchSide(side);
     r.quantity             = u.quantity.value();
     r.symbol               = std::string_view{m_symbol};
     r.price                = u.price.value();
     r.timeInForce          = u.timeInForce;
     r.display              = u.display;
     r.orderReferenceNumber = newRef;
-    r.capacity             = static_cast<char>(ouch::Capacity::Agency);
+    r.capacity             = ouch::Capacity::Agency;
     r.imSweepEligibility   = u.imSweepEligibility;
-    r.crossType            = static_cast<char>(ouch::CrossType::Continuous);
-    r.orderState           = static_cast<char>(ouch::OrderState::Live);
+    r.crossType            = ouch::CrossType::Continuous;
+    r.orderState           = ouch::OrderState::Live;
     r.clOrdId              = u.clOrdId.view();
     r.appendageLength      = 0;
     sendOe(r);
@@ -818,7 +824,7 @@ template <class Sink>
 void Venue<Sink>::emitRejected(std::uint32_t user, ouch::RejectReason reason, std::string_view clOrdId,
                                std::uint64_t ts) {
     ouch::Rejected j{};
-    j.type            = static_cast<char>(ouch::OutType::Rejected);
+    j.type            = ouch::OutType::Rejected;
     j.timestamp       = ts;
     j.userRefNum      = user;
     j.reason          = static_cast<std::uint16_t>(reason);
@@ -830,7 +836,7 @@ void Venue<Sink>::emitRejected(std::uint32_t user, ouch::RejectReason reason, st
 template <class Sink>
 void Venue<Sink>::emitCancelReject(std::uint32_t user, std::uint64_t ts) {
     ouch::CancelReject i{};
-    i.type            = static_cast<char>(ouch::OutType::CancelReject);
+    i.type            = ouch::OutType::CancelReject;
     i.timestamp       = ts;
     i.userRefNum      = user;
     i.appendageLength = 0;

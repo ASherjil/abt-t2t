@@ -248,17 +248,17 @@ void test_client_order_survives_replay_and_reset_cancels_it() {
     CHECK(rp.pump(monotonicNs()));
 
     ouch::EnterOrder o{};
-    o.type               = static_cast<char>(ouch::InType::EnterOrder);
+    o.type               = ouch::InType::EnterOrder;
     o.userRefNum         = 1;
-    o.side               = 'B';
+    o.side               = ouch::Side::Buy;
     o.quantity           = 100;
     o.symbol             = std::string_view{"AAPL"};
     o.price              = 3'100'000;
-    o.timeInForce        = static_cast<char>(ouch::TimeInForce::Day);
-    o.display            = static_cast<char>(ouch::Display::Visible);
-    o.capacity           = static_cast<char>(ouch::Capacity::Agency);
-    o.imSweepEligibility = static_cast<char>(ouch::ImSweep::NotEligible);
-    o.crossType          = static_cast<char>(ouch::CrossType::Continuous);
+    o.timeInForce        = ouch::TimeInForce::Day;
+    o.display            = ouch::Display::Visible;
+    o.capacity           = ouch::Capacity::Agency;
+    o.imSweepEligibility = ouch::ImSweep::NotEligible;
+    o.crossType          = ouch::CrossType::Continuous;
     o.clOrdId            = std::string_view{"CID"};
     o.appendageLength    = 0;
     std::array<std::byte, 256> buf{};

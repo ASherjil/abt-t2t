@@ -44,9 +44,9 @@ dut::QuoteTargets both(Price bid, Price ask, Quantity qty = 100) {
     return t;
 }
 
-ouch::Accepted accepted(std::uint32_t ref, Quantity qty, char state = 'L') {
+ouch::Accepted accepted(std::uint32_t ref, Quantity qty, ouch::OrderState state = ouch::OrderState::Live) {
     ouch::Accepted a{};
-    a.type       = 'A';
+    a.type       = ouch::OutType::Accepted;
     a.userRefNum = ref;
     a.quantity   = qty;
     a.orderState = state;
@@ -55,18 +55,18 @@ ouch::Accepted accepted(std::uint32_t ref, Quantity qty, char state = 'L') {
 
 ouch::Replaced replaced(std::uint32_t orig, std::uint32_t ref, Quantity qty, Price price) {
     ouch::Replaced r{};
-    r.type           = 'U';
+    r.type           = ouch::OutType::Replaced;
     r.origUserRefNum = orig;
     r.userRefNum     = ref;
     r.quantity       = qty;
     r.price          = wirePrice(price);
-    r.orderState     = 'L';
+    r.orderState     = ouch::OrderState::Live;
     return r;
 }
 
 ouch::Executed executed(std::uint32_t ref, Quantity qty) {
     ouch::Executed e{};
-    e.type       = 'E';
+    e.type       = ouch::OutType::Executed;
     e.userRefNum = ref;
     e.quantity   = qty;
     return e;
@@ -74,23 +74,23 @@ ouch::Executed executed(std::uint32_t ref, Quantity qty) {
 
 ouch::Canceled canceled(std::uint32_t ref, Quantity qty) {
     ouch::Canceled c{};
-    c.type       = 'C';
+    c.type       = ouch::OutType::Canceled;
     c.userRefNum = ref;
     c.quantity   = qty;
-    c.reason     = 'U';
+    c.reason     = ouch::CancelReason::UserRequested;
     return c;
 }
 
 ouch::Rejected rejected(std::uint32_t ref) {
     ouch::Rejected j{};
-    j.type       = 'J';
+    j.type       = ouch::OutType::Rejected;
     j.userRefNum = ref;
     return j;
 }
 
 ouch::CancelReject cancelReject(std::uint32_t ref) {
     ouch::CancelReject i{};
-    i.type       = 'I';
+    i.type       = ouch::OutType::CancelReject;
     i.userRefNum = ref;
     return i;
 }
@@ -103,13 +103,13 @@ void test_enter_both_sides_then_idle_while_pending() {
     const auto b = decode<ouch::EnterOrder>(out[0]);
     const auto a = decode<ouch::EnterOrder>(out[1]);
     CHECK_EQ(out[0].len, sizeof(ouch::EnterOrder));
-    CHECK(b.side == 'B');
+    CHECK(b.side == ouch::Side::Buy);
     CHECK_EQ(b.userRefNum.value(), 1u);
     CHECK_EQ(b.price.value(), 99u);
     CHECK_EQ(b.quantity.value(), 100u);
     CHECK(b.symbol.view() == "ABT");
-    CHECK(b.capacity == 'P');
-    CHECK(a.side == 'S');
+    CHECK(b.capacity == ouch::Capacity::Principal);
+    CHECK(a.side == ouch::Side::Sell);
     CHECK_EQ(a.userRefNum.value(), 2u);
     CHECK_EQ(a.price.value(), 101u);
     CHECK(oms.slot(Side::Buy).state == QuoteState::PendingNew);
@@ -254,7 +254,7 @@ void test_ioc_dead_on_accept() {
     t.bidPrice = 101;
     t.bidQty   = 10;
     (void)oms.reconcile(t, out);
-    oms.onAck(bytesOf(accepted(1, 10, 'D')));
+    oms.onAck(bytesOf(accepted(1, 10, ouch::OrderState::Dead)));
     CHECK(oms.slot(Side::Buy).state == QuoteState::Idle);
 }
 

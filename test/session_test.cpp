@@ -76,17 +76,17 @@ void test_end_to_end() {
     ex.clearCaptured();
 
     ouch::EnterOrder o{};
-    o.type               = static_cast<char>(ouch::InType::EnterOrder);
+    o.type               = ouch::InType::EnterOrder;
     o.userRefNum         = 1000u;
-    o.side               = static_cast<char>(ouch::Side::Buy);
+    o.side               = ouch::Side::Buy;
     o.quantity           = 100u;
     o.symbol             = std::string_view{"AAPL"};
     o.price              = 520000u;
-    o.timeInForce        = static_cast<char>(ouch::TimeInForce::Day);
-    o.display            = static_cast<char>(ouch::Display::Visible);
-    o.capacity           = static_cast<char>(ouch::Capacity::Agency);
-    o.imSweepEligibility = static_cast<char>(ouch::ImSweep::NotEligible);
-    o.crossType          = static_cast<char>(ouch::CrossType::Continuous);
+    o.timeInForce        = ouch::TimeInForce::Day;
+    o.display            = ouch::Display::Visible;
+    o.capacity           = ouch::Capacity::Agency;
+    o.imSweepEligibility = ouch::ImSweep::NotEligible;
+    o.crossType          = ouch::CrossType::Continuous;
     o.clOrdId            = std::string_view{"CID1"};
     o.appendageLength    = 0;
     {
@@ -99,8 +99,8 @@ void test_end_to_end() {
     const auto exe = soupOf(ex.capturedOrderEntry()[1]);
     CHECK(acc.type == soup::Type::SequencedData);
     CHECK(exe.type == soup::Type::SequencedData);
-    CHECK(static_cast<char>(acc.payload[0]) == static_cast<char>(ouch::OutType::Accepted));
-    CHECK(static_cast<char>(exe.payload[0]) == static_cast<char>(ouch::OutType::Executed));
+    CHECK(static_cast<ouch::OutType>(acc.payload[0]) == ouch::OutType::Accepted);
+    CHECK(static_cast<ouch::OutType>(exe.payload[0]) == ouch::OutType::Executed);
     {
         ouch::Executed e{};
         std::memcpy(&e, exe.payload.data(), sizeof e);

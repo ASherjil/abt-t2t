@@ -62,17 +62,17 @@ std::size_t countMd(const RecSink& s, char type) {
 
 ouch::EnterOrder enter(std::uint32_t user, char side, std::uint32_t qty, std::uint64_t price) {
     ouch::EnterOrder o{};
-    o.type               = static_cast<char>(ouch::InType::EnterOrder);
+    o.type               = ouch::InType::EnterOrder;
     o.userRefNum         = user;
-    o.side               = side;
+    o.side               = static_cast<ouch::Side>(side);
     o.quantity           = qty;
     o.symbol             = std::string_view{"AAPL"};
     o.price              = price;
-    o.timeInForce        = static_cast<char>(ouch::TimeInForce::Day);
-    o.display            = static_cast<char>(ouch::Display::Visible);
-    o.capacity           = static_cast<char>(ouch::Capacity::Agency);
-    o.imSweepEligibility = static_cast<char>(ouch::ImSweep::NotEligible);
-    o.crossType          = static_cast<char>(ouch::CrossType::Continuous);
+    o.timeInForce        = ouch::TimeInForce::Day;
+    o.display            = ouch::Display::Visible;
+    o.capacity           = ouch::Capacity::Agency;
+    o.imSweepEligibility = ouch::ImSweep::NotEligible;
+    o.crossType          = ouch::CrossType::Continuous;
     o.clOrdId            = std::string_view{"CID"};
     o.appendageLength    = 0;
     return o;

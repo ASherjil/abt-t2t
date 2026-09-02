@@ -29,7 +29,7 @@
 #include <fmt/core.h>
 
 #include "third_party/abtrda3/RingConcepts.hpp"
-#include "t2t/util/UniqueFd.hpp"
+
 #include "t2t/protocol/MoldUdp64.hpp"
 #include "t2t/protocol/Ouch50.hpp"
 #include "t2t/protocol/SoupBinTcp.hpp"
@@ -37,6 +37,7 @@
 #include "t2t/sim/EngineConfig.hpp"
 #include "t2t/sim/Venue.hpp"
 #include "t2t/util/Clock.hpp"
+#include "t2t/util/UniqueFd.hpp"
 
 namespace abt {
 
@@ -64,13 +65,13 @@ struct SessionStats {
 template <IoMode Mode, class Tx = NoTransport>
 class ExchangeSession {
 public:
-// Rule of 5 needed here
+    // Rule of 5 needed here
     explicit ExchangeSession(const ExchangeConfig& cfg = {});
     ExchangeSession(const ExchangeSession&)            = delete;
     ExchangeSession& operator=(const ExchangeSession&) = delete;
     ExchangeSession(ExchangeSession&&)                 = delete;
     ExchangeSession& operator=(ExchangeSession&&)      = delete;
-    ~ExchangeSession() = default;
+    ~ExchangeSession()                                 = default;
 
     void onOrderEntryBytes(std::span<const std::byte> data, std::uint64_t ts);
 
@@ -163,7 +164,7 @@ private:
     void                      sendOrderEntry(std::span<const std::byte> ouch);
 
     [[noreturn]] static void die(const char* what);
-    static util::UniqueFd     makeUdpSender(const char* host, std::uint16_t port)
+    static util::UniqueFd    makeUdpSender(const char* host, std::uint16_t port)
         requires (Mode == IoMode::Socket);
     static util::UniqueFd acceptOrderEntry(std::uint16_t port)
         requires (Mode == IoMode::Socket);
@@ -374,7 +375,7 @@ bool ExchangeSession<Mode, Tx>::prepareSocketIo(std::uint16_t oePort, const char
 {
     m_sock.mdFd = makeUdpSender(mdHost, mdPort);
     m_sock.oeFd = acceptOrderEntry(oePort);
-    return static_cast<bool>(m_sock.oeFd); // this calls the overloaded bool operator()
+    return static_cast<bool>(m_sock.oeFd);   // this calls the overloaded bool operator()
 }
 
 template <IoMode Mode, class Tx>
@@ -569,24 +570,22 @@ void ExchangeSession<Mode, Tx>::dispatchOuch(std::span<const std::byte> payload,
     if (payload.empty()) {
         return;
     }
-    const char t = static_cast<char>(payload[0]);
-    if (t == static_cast<char>(ouch::InType::EnterOrder) && payload.size() >= sizeof(ouch::EnterOrder)) {
+    const auto t = static_cast<ouch::InType>(payload[0]);
+    if (t == ouch::InType::EnterOrder && payload.size() >= sizeof(ouch::EnterOrder)) {
         ouch::EnterOrder o{};
         std::memcpy(&o, payload.data(), sizeof o);
         ++m_stats.enters;
         withMarketData([&] {
             m_venue.onEnterOrder(o, ts);
         });
-    } else if (t == static_cast<char>(ouch::InType::CancelOrder) &&
-               payload.size() >= sizeof(ouch::CancelOrder)) {
+    } else if (t == ouch::InType::CancelOrder && payload.size() >= sizeof(ouch::CancelOrder)) {
         ouch::CancelOrder x{};
         std::memcpy(&x, payload.data(), sizeof x);
         ++m_stats.cancels;
         withMarketData([&] {
             m_venue.onCancelOrder(x, ts);
         });
-    } else if (t == static_cast<char>(ouch::InType::ReplaceOrder) &&
-               payload.size() >= sizeof(ouch::ReplaceOrder)) {
+    } else if (t == ouch::InType::ReplaceOrder && payload.size() >= sizeof(ouch::ReplaceOrder)) {
         ouch::ReplaceOrder u{};
         std::memcpy(&u, payload.data(), sizeof u);
         ++m_stats.replaces;
@@ -686,7 +685,7 @@ template <IoMode Mode, class Tx>
 util::UniqueFd ExchangeSession<Mode, Tx>::acceptOrderEntry(std::uint16_t port)
     requires (Mode == IoMode::Socket)
 {
-    util::UniqueFd lfd {::socket(AF_INET, SOCK_STREAM, 0)};
+    util::UniqueFd lfd{::socket(AF_INET, SOCK_STREAM, 0)};
     if (!lfd) {
         die("socket(tcp)");
     }

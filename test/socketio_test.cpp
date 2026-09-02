@@ -114,17 +114,17 @@ void test_socket_roundtrip() {
     }
 
     ouch::EnterOrder o{};
-    o.type               = static_cast<char>(ouch::InType::EnterOrder);
+    o.type               = ouch::InType::EnterOrder;
     o.userRefNum         = 1000u;
-    o.side               = static_cast<char>(ouch::Side::Buy);
+    o.side               = ouch::Side::Buy;
     o.quantity           = 100u;
     o.symbol             = std::string_view{"AAPL"};
     o.price              = 520000u;
-    o.timeInForce        = static_cast<char>(ouch::TimeInForce::Day);
-    o.display            = static_cast<char>(ouch::Display::Visible);
-    o.capacity           = static_cast<char>(ouch::Capacity::Agency);
-    o.imSweepEligibility = static_cast<char>(ouch::ImSweep::NotEligible);
-    o.crossType          = static_cast<char>(ouch::CrossType::Continuous);
+    o.timeInForce        = ouch::TimeInForce::Day;
+    o.display            = ouch::Display::Visible;
+    o.capacity           = ouch::Capacity::Agency;
+    o.imSweepEligibility = ouch::ImSweep::NotEligible;
+    o.crossType          = ouch::CrossType::Continuous;
     o.clOrdId            = std::string_view{"CID1"};
     o.appendageLength    = 0;
     {
@@ -136,8 +136,8 @@ void test_socket_roundtrip() {
         const auto buf  = recvUntilPackets(oe[1], 2);
         const auto pkts = soupPackets(buf);
         CHECK_EQ(pkts.size(), 2u);
-        CHECK(static_cast<char>(pkts[0].payload[0]) == static_cast<char>(ouch::OutType::Accepted));
-        CHECK(static_cast<char>(pkts[1].payload[0]) == static_cast<char>(ouch::OutType::Executed));
+        CHECK(static_cast<ouch::OutType>(pkts[0].payload[0]) == ouch::OutType::Accepted);
+        CHECK(static_cast<ouch::OutType>(pkts[1].payload[0]) == ouch::OutType::Executed);
         ouch::Executed e{};
         std::memcpy(&e, pkts[1].payload.data(), sizeof e);
         CHECK_EQ(e.quantity.value(), 100u);

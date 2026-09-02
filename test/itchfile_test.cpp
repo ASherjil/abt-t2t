@@ -62,17 +62,17 @@ std::vector<std::byte> systemEvent(char code, std::uint64_t ts) {
 
 ouch::EnterOrder aggressor(std::uint32_t user, char side, std::uint32_t qty, std::uint64_t px) {
     ouch::EnterOrder o{};
-    o.type               = 'O';
+    o.type               = ouch::InType::EnterOrder;
     o.userRefNum         = user;
-    o.side               = side;
+    o.side               = static_cast<ouch::Side>(side);
     o.quantity           = qty;
     o.symbol             = std::string_view{"AAPL"};
     o.price              = px;
-    o.timeInForce        = '0';
-    o.display            = 'Y';
-    o.capacity           = 'A';
-    o.imSweepEligibility = 'N';
-    o.crossType          = 'N';
+    o.timeInForce        = ouch::TimeInForce::Day;
+    o.display            = ouch::Display::Visible;
+    o.capacity           = ouch::Capacity::Agency;
+    o.imSweepEligibility = ouch::ImSweep::NotEligible;
+    o.crossType          = ouch::CrossType::Continuous;
     o.appendageLength    = 0;
     return o;
 }

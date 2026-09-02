@@ -159,40 +159,40 @@ enum class OptionTag : std::uint8_t {
 };
 
 struct EnterOrder {
-    char      type;
-    userref_t userRefNum;
-    char      side;
-    qty_t     quantity;
-    symbol_t  symbol;
-    price_t   price;
-    char      timeInForce;
-    char      display;
-    char      capacity;
-    char      imSweepEligibility;
-    char      crossType;
-    clordid_t clOrdId;
-    u16be     appendageLength;
+    InType      type;
+    userref_t   userRefNum;
+    Side        side;
+    qty_t       quantity;
+    symbol_t    symbol;
+    price_t     price;
+    TimeInForce timeInForce;
+    Display     display;
+    Capacity    capacity;
+    ImSweep     imSweepEligibility;
+    CrossType   crossType;
+    clordid_t   clOrdId;
+    u16be       appendageLength;
 };
 
 static_assert(sizeof(EnterOrder) == 47);
 
 struct ReplaceOrder {
-    char      type;
-    userref_t origUserRefNum;
-    userref_t userRefNum;
-    qty_t     quantity;
-    price_t   price;
-    char      timeInForce;
-    char      display;
-    char      imSweepEligibility;
-    clordid_t clOrdId;
-    u16be     appendageLength;
+    InType      type;
+    userref_t   origUserRefNum;
+    userref_t   userRefNum;
+    qty_t       quantity;
+    price_t     price;
+    TimeInForce timeInForce;
+    Display     display;
+    ImSweep     imSweepEligibility;
+    clordid_t   clOrdId;
+    u16be       appendageLength;
 };
 
 static_assert(sizeof(ReplaceOrder) == 40);
 
 struct CancelOrder {
-    char      type;
+    InType    type;
     userref_t userRefNum;
     qty_t     quantity;
     u16be     appendageLength;
@@ -201,28 +201,28 @@ struct CancelOrder {
 static_assert(sizeof(CancelOrder) == 11);
 
 struct SystemEvent {
-    char        type;
+    OutType     type;
     timestamp_t timestamp;
-    char        eventCode;
+    EventCode   eventCode;
 };
 
 static_assert(sizeof(SystemEvent) == 10);
 
 struct Accepted {
-    char        type;
+    OutType     type;
     timestamp_t timestamp;
     userref_t   userRefNum;
-    char        side;
+    Side        side;
     qty_t       quantity;
     symbol_t    symbol;
     price_t     price;
-    char        timeInForce;
-    char        display;
+    TimeInForce timeInForce;
+    Display     display;
     orderref_t  orderReferenceNumber;
-    char        capacity;
-    char        imSweepEligibility;
-    char        crossType;
-    char        orderState;
+    Capacity    capacity;
+    ImSweep     imSweepEligibility;
+    CrossType   crossType;
+    OrderState  orderState;
     clordid_t   clOrdId;
     u16be       appendageLength;
 };
@@ -230,21 +230,21 @@ struct Accepted {
 static_assert(sizeof(Accepted) == 64);
 
 struct Replaced {
-    char        type;
+    OutType     type;
     timestamp_t timestamp;
     userref_t   origUserRefNum;
     userref_t   userRefNum;
-    char        side;
+    Side        side;
     qty_t       quantity;
     symbol_t    symbol;
     price_t     price;
-    char        timeInForce;
-    char        display;
+    TimeInForce timeInForce;
+    Display     display;
     orderref_t  orderReferenceNumber;
-    char        capacity;
-    char        imSweepEligibility;
-    char        crossType;
-    char        orderState;
+    Capacity    capacity;
+    ImSweep     imSweepEligibility;
+    CrossType   crossType;
+    OrderState  orderState;
     clordid_t   clOrdId;
     u16be       appendageLength;
 };
@@ -252,18 +252,18 @@ struct Replaced {
 static_assert(sizeof(Replaced) == 68);
 
 struct Canceled {
-    char        type;
-    timestamp_t timestamp;
-    userref_t   userRefNum;
-    qty_t       quantity;
-    char        reason;
-    u16be       appendageLength;
+    OutType      type;
+    timestamp_t  timestamp;
+    userref_t    userRefNum;
+    qty_t        quantity;
+    CancelReason reason;
+    u16be        appendageLength;
 };
 
 static_assert(sizeof(Canceled) == 20);
 
 struct Executed {
-    char        type;
+    OutType     type;
     timestamp_t timestamp;
     userref_t   userRefNum;
     qty_t       quantity;
@@ -276,7 +276,7 @@ struct Executed {
 static_assert(sizeof(Executed) == 36);
 
 struct Rejected {
-    char        type;
+    OutType     type;
     timestamp_t timestamp;
     userref_t   userRefNum;
     reject_t    reason;
@@ -287,7 +287,7 @@ struct Rejected {
 static_assert(sizeof(Rejected) == 31);
 
 struct CancelReject {
-    char        type;
+    OutType     type;
     timestamp_t timestamp;
     userref_t   userRefNum;
     u16be       appendageLength;

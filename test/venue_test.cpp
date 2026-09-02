@@ -49,17 +49,17 @@ M decode(const std::vector<std::byte>& v) {
 ouch::EnterOrder makeEnter(std::uint32_t user, char side, std::uint32_t qty, std::string_view sym,
                            std::uint64_t price) {
     ouch::EnterOrder o{};
-    o.type               = static_cast<char>(ouch::InType::EnterOrder);
+    o.type               = ouch::InType::EnterOrder;
     o.userRefNum         = user;
-    o.side               = side;
+    o.side               = static_cast<ouch::Side>(side);
     o.quantity           = qty;
     o.symbol             = sym;
     o.price              = price;
-    o.timeInForce        = static_cast<char>(ouch::TimeInForce::Day);
-    o.display            = static_cast<char>(ouch::Display::Visible);
-    o.capacity           = static_cast<char>(ouch::Capacity::Agency);
-    o.imSweepEligibility = static_cast<char>(ouch::ImSweep::NotEligible);
-    o.crossType          = static_cast<char>(ouch::CrossType::Continuous);
+    o.timeInForce        = ouch::TimeInForce::Day;
+    o.display            = ouch::Display::Visible;
+    o.capacity           = ouch::Capacity::Agency;
+    o.imSweepEligibility = ouch::ImSweep::NotEligible;
+    o.crossType          = ouch::CrossType::Continuous;
     o.clOrdId            = std::string_view{"CID"};
     o.appendageLength    = 0;
     return o;
@@ -84,7 +84,7 @@ void test_enter_rests() {
     CHECK_EQ(acc.orderReferenceNumber.value(), 1u);
     CHECK_EQ(acc.quantity.value(), 100u);
     CHECK_EQ(acc.price.value(), kPx52);
-    CHECK(acc.orderState == static_cast<char>(ouch::OrderState::Live));
+    CHECK(acc.orderState == ouch::OrderState::Live);
 
     const auto add = decode<itch::AddOrder>(sink.md[0]);
     CHECK_EQ(add.orderRef.value(), 1u);
@@ -133,7 +133,7 @@ void test_full_cancel() {
     sink.clear();
 
     ouch::CancelOrder x{};
-    x.type            = static_cast<char>(ouch::InType::CancelOrder);
+    x.type            = ouch::InType::CancelOrder;
     x.userRefNum      = 1000u;
     x.quantity        = 0u;
     x.appendageLength = 0;
@@ -158,7 +158,7 @@ void test_partial_cancel() {
     sink.clear();
 
     ouch::CancelOrder x{};
-    x.type            = static_cast<char>(ouch::InType::CancelOrder);
+    x.type            = ouch::InType::CancelOrder;
     x.userRefNum      = 1000u;
     x.quantity        = 30u;
     x.appendageLength = 0;
@@ -179,14 +179,14 @@ void test_replace_noncrossing() {
     sink.clear();
 
     ouch::ReplaceOrder u{};
-    u.type               = static_cast<char>(ouch::InType::ReplaceOrder);
+    u.type               = ouch::InType::ReplaceOrder;
     u.origUserRefNum     = 1000u;
     u.userRefNum         = 1001u;
     u.quantity           = 150u;
     u.price              = kPx51;
-    u.timeInForce        = static_cast<char>(ouch::TimeInForce::Day);
-    u.display            = static_cast<char>(ouch::Display::Visible);
-    u.imSweepEligibility = static_cast<char>(ouch::ImSweep::NotEligible);
+    u.timeInForce        = ouch::TimeInForce::Day;
+    u.display            = ouch::Display::Visible;
+    u.imSweepEligibility = ouch::ImSweep::NotEligible;
     u.clOrdId            = std::string_view{"CID2"};
     u.appendageLength    = 0;
     v.onReplaceOrder(u, 2'000);
@@ -253,7 +253,7 @@ void test_cancel_reject() {
     sink.clear();
 
     ouch::CancelOrder x{};
-    x.type            = static_cast<char>(ouch::InType::CancelOrder);
+    x.type            = ouch::InType::CancelOrder;
     x.userRefNum      = 4242u;
     x.quantity        = 0u;
     x.appendageLength = 0;
@@ -277,7 +277,7 @@ void test_replace_unknown_rejected() {
     Venue<RecSink> v(sink, "AAPL", 1, 1, 100000, 100);
 
     ouch::ReplaceOrder u{};
-    u.type           = static_cast<char>(ouch::InType::ReplaceOrder);
+    u.type           = ouch::InType::ReplaceOrder;
     u.origUserRefNum = 77u;
     u.userRefNum     = 78u;
     u.quantity       = 10u;
@@ -298,18 +298,18 @@ void test_ioc_partial_fill_cancels_rest() {
     sink.clear();
 
     auto o        = makeEnter(1000, 'B', 100, "AAPL", kPx52);
-    o.timeInForce = static_cast<char>(ouch::TimeInForce::IOC);
+    o.timeInForce = ouch::TimeInForce::IOC;
     v.onEnterOrder(o, 2'000);
 
     CHECK_EQ(sink.oe.size(), 3u);
     CHECK(type_of(sink.oe[0]) == 'A');
-    CHECK(decode<ouch::Accepted>(sink.oe[0]).orderState == static_cast<char>(ouch::OrderState::Dead));
+    CHECK(decode<ouch::Accepted>(sink.oe[0]).orderState == ouch::OrderState::Dead);
     CHECK(type_of(sink.oe[1]) == 'E');
     CHECK_EQ(decode<ouch::Executed>(sink.oe[1]).quantity.value(), 40u);
     CHECK(type_of(sink.oe[2]) == 'C');
     const auto c = decode<ouch::Canceled>(sink.oe[2]);
     CHECK_EQ(c.quantity.value(), 60u);
-    CHECK(c.reason == static_cast<char>(ouch::CancelReason::Ioc));
+    CHECK(c.reason == ouch::CancelReason::Ioc);
 
     CHECK_EQ(sink.md.size(), 1u);
     CHECK(type_of(sink.md[0]) == 'E');
@@ -321,7 +321,7 @@ void test_ioc_no_liquidity() {
     Venue<RecSink> v(sink, "AAPL", 1, 1, 100000, 100);
 
     auto o        = makeEnter(1000, 'S', 100, "AAPL", kPx52);
-    o.timeInForce = static_cast<char>(ouch::TimeInForce::IOC);
+    o.timeInForce = ouch::TimeInForce::IOC;
     v.onEnterOrder(o, 2'000);
 
     CHECK_EQ(sink.oe.size(), 2u);

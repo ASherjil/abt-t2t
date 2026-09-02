@@ -97,10 +97,10 @@ dut::DutConfig baseCfg() {
 
 ouch::Accepted accepted(std::uint32_t ref, Quantity qty) {
     ouch::Accepted a{};
-    a.type       = 'A';
+    a.type       = ouch::OutType::Accepted;
     a.userRefNum = ref;
     a.quantity   = qty;
-    a.orderState = 'L';
+    a.orderState = ouch::OrderState::Live;
     return a;
 }
 
@@ -121,8 +121,8 @@ void test_quote_lifecycle_through_session() {
     CHECK_EQ(sess.capturedOrders().size(), 1u);
     ouch::EnterOrder o{};
     std::memcpy(&o, sess.capturedOrders()[0].data(), sizeof o);
-    CHECK_EQ(o.type, static_cast<char>(ouch::InType::EnterOrder));
-    CHECK_EQ(o.side, static_cast<char>(ouch::Side::Buy));
+    CHECK_EQ(o.type, ouch::InType::EnterOrder);
+    CHECK_EQ(o.side, ouch::Side::Buy);
     CHECK_EQ(o.userRefNum.value(), 7u);
     CHECK_EQ(o.quantity.value(), 10u);
     CHECK_EQ(o.price.value(), 100u);
@@ -144,7 +144,7 @@ void test_quote_lifecycle_through_session() {
     CHECK_EQ(sess.ordersSent(), 2u);
     ouch::ReplaceOrder u{};
     std::memcpy(&u, sess.capturedOrders()[1].data(), sizeof u);
-    CHECK_EQ(u.type, static_cast<char>(ouch::InType::ReplaceOrder));
+    CHECK_EQ(u.type, ouch::InType::ReplaceOrder);
     CHECK_EQ(u.origUserRefNum.value(), 7u);
     CHECK_EQ(u.userRefNum.value(), 8u);
     CHECK_EQ(u.price.value(), 101u);
@@ -176,7 +176,7 @@ void test_take_and_t2t() {
 
     ouch::EnterOrder o{};
     std::memcpy(&o, sess.capturedOrders()[0].data(), sizeof o);
-    CHECK_EQ(o.side, static_cast<char>(ouch::Side::Buy));
+    CHECK_EQ(o.side, ouch::Side::Buy);
     CHECK_EQ(o.price.value(), 101u);
     CHECK_EQ(o.quantity.value(), 5u);
 
@@ -285,7 +285,7 @@ void test_locate_filter_session_gating_and_reset() {
     CHECK_EQ(sess.ordersSent(), 2u);
     ouch::CancelOrder x{};
     std::memcpy(&x, sess.capturedOrders()[1].data(), sizeof x);
-    CHECK_EQ(x.type, static_cast<char>(ouch::InType::CancelOrder));
+    CHECK_EQ(x.type, ouch::InType::CancelOrder);
 
     packer.reset(buf.data(), buf.size());
     (void)packer.append(bytesOf(mkHalt(7, 'T')));

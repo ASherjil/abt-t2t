@@ -11,8 +11,8 @@ namespace {
     return side == Side::Buy ? 0u : 1u;
 }
 
-[[nodiscard]] char ouchSide(Side side) noexcept {
-    return side == Side::Buy ? static_cast<char>(ouch::Side::Buy) : static_cast<char>(ouch::Side::Sell);
+[[nodiscard]] ouch::Side ouchSide(Side side) noexcept {
+    return side == Side::Buy ? ouch::Side::Buy : ouch::Side::Sell;
 }
 
 template <class M>
@@ -201,17 +201,17 @@ QuoteSlot* OrderManager::slotByPending(std::uint32_t userRef) noexcept {
 void OrderManager::encodeEnter(Outbound& out, std::uint32_t userRef, Side side, Price price,
                                Quantity qty) const noexcept {
     ouch::EnterOrder o{};
-    o.type               = static_cast<char>(ouch::InType::EnterOrder);
+    o.type               = ouch::InType::EnterOrder;
     o.userRefNum         = userRef;
     o.side               = ouchSide(side);
     o.quantity           = qty;
     o.symbol             = std::string_view{m_cfg.symbol};
     o.price              = wirePrice(price);
-    o.timeInForce        = static_cast<char>(ouch::TimeInForce::Day);
-    o.display            = static_cast<char>(ouch::Display::Visible);
-    o.capacity           = static_cast<char>(ouch::Capacity::Principal);
-    o.imSweepEligibility = static_cast<char>(ouch::ImSweep::NotEligible);
-    o.crossType          = static_cast<char>(ouch::CrossType::Continuous);
+    o.timeInForce        = ouch::TimeInForce::Day;
+    o.display            = ouch::Display::Visible;
+    o.capacity           = ouch::Capacity::Principal;
+    o.imSweepEligibility = ouch::ImSweep::NotEligible;
+    o.crossType          = ouch::CrossType::Continuous;
     o.clOrdId            = std::string_view{};
     o.appendageLength    = 0;
     std::memcpy(out.buf.data(), &o, sizeof o);
@@ -222,14 +222,14 @@ void OrderManager::encodeEnter(Outbound& out, std::uint32_t userRef, Side side, 
 void OrderManager::encodeReplace(Outbound& out, std::uint32_t origRef, std::uint32_t userRef, Price price,
                                  Quantity qty) const noexcept {
     ouch::ReplaceOrder u{};
-    u.type               = static_cast<char>(ouch::InType::ReplaceOrder);
+    u.type               = ouch::InType::ReplaceOrder;
     u.origUserRefNum     = origRef;
     u.userRefNum         = userRef;
     u.quantity           = qty;
     u.price              = wirePrice(price);
-    u.timeInForce        = static_cast<char>(ouch::TimeInForce::Day);
-    u.display            = static_cast<char>(ouch::Display::Visible);
-    u.imSweepEligibility = static_cast<char>(ouch::ImSweep::NotEligible);
+    u.timeInForce        = ouch::TimeInForce::Day;
+    u.display            = ouch::Display::Visible;
+    u.imSweepEligibility = ouch::ImSweep::NotEligible;
     u.clOrdId            = std::string_view{};
     u.appendageLength    = 0;
     std::memcpy(out.buf.data(), &u, sizeof u);
@@ -239,7 +239,7 @@ void OrderManager::encodeReplace(Outbound& out, std::uint32_t origRef, std::uint
 
 void OrderManager::encodeCancel(Outbound& out, std::uint32_t userRef) const noexcept {
     ouch::CancelOrder x{};
-    x.type            = static_cast<char>(ouch::InType::CancelOrder);
+    x.type            = ouch::InType::CancelOrder;
     x.userRefNum      = userRef;
     x.quantity        = 0;
     x.appendageLength = 0;
@@ -257,7 +257,7 @@ void OrderManager::onAccepted(const ouch::Accepted& m) noexcept {
     ++m_stats.accepts;
     s->qty    = m.quantity.value();
     s->leaves = s->qty;
-    if (m.orderState == static_cast<char>(ouch::OrderState::Dead)) {
+    if (m.orderState == ouch::OrderState::Dead) {
         s->leaves = 0;
         settle(*s);
         return;
@@ -278,7 +278,7 @@ void OrderManager::onReplaced(const ouch::Replaced& m) noexcept {
     s->qty        = m.quantity.value();
     s->leaves     = s->qty;
     s->state      = QuoteState::Live;
-    if (m.orderState == static_cast<char>(ouch::OrderState::Dead)) {
+    if (m.orderState == ouch::OrderState::Dead) {
         s->leaves = 0;
         settle(*s);
     }
