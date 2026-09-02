@@ -812,6 +812,8 @@ util::UniqueFd ExchangeSession<Mode, Tx>::makeUdpSender(const char* host, std::u
     if (::inet_pton(AF_INET, host, &addr.sin_addr) != 1) {
         die("inet_pton");
     }
+    const int sndbuf = 64 << 20;
+    ::setsockopt(fd.get(), SOL_SOCKET, SO_SNDBUF, &sndbuf, sizeof sndbuf);
     if (::connect(fd.get(), reinterpret_cast<sockaddr*>(&addr), sizeof addr) < 0) {
         die("connect(udp)");
     }

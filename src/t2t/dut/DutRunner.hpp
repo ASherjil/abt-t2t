@@ -36,7 +36,9 @@ void logDut(const Session& sess, std::uint64_t elapsedNs) {
 
 template <class Session>
 void printDutReport(Session& sess, util::PageFaults faultsAtStart) {
-    const util::PageFaults faults = util::threadPageFaults();
+    const util::PageFaults    faults = util::threadPageFaults();
+    const util::ProcessMemory mem    = util::processMemory();
+    fmt::print("[mem] rss={} MB peak={} MB hugetlb={} MB\n", mem.rssMb, mem.peakRssMb, mem.hugetlbMb);
     fmt::print("[mem] hot-thread page faults during run: minor={} major={}\n",
                faults.minor - faultsAtStart.minor, faults.major - faultsAtStart.major);
     sess.t2t().summary();

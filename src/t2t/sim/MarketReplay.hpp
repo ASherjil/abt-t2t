@@ -17,13 +17,14 @@ namespace abt {
 struct ReplayConfig {
     bool          enabled = false;
     std::string   file;
-    double        speed        = 1.0;
-    std::uint32_t loops        = 0;
-    std::uint64_t skipToNs     = 0;
-    std::uint64_t stopAtNs     = 0;
-    std::size_t   preloadMaxMb = 1024;
-    std::size_t   maxBatch     = 64;
-    bool          waitForDut   = true;
+    double        speed         = 1.0;
+    std::uint32_t loops         = 0;
+    std::uint64_t skipToNs      = 0;
+    std::uint64_t stopAtNs      = 0;
+    std::size_t   preloadMaxMb  = 1024;
+    std::size_t   maxBatch      = 64;
+    bool          waitForDut    = true;
+    std::uint64_t afapMaxPerSec = 1'000'000;
 };
 
 struct ReplayProgress {
@@ -65,6 +66,8 @@ private:
     std::uint64_t                         m_anchorMono = 0;
     std::uint64_t                         m_anchorTs   = 0;
     double                                m_nsPerNs    = 1.0;
+    std::uint64_t                         m_afapStart  = 0;
+    std::uint64_t                         m_afapSent   = 0;
 };
 
 template <class Session>
@@ -108,9 +111,11 @@ bool MarketReplay<Session>::open() {
 
 template <class Session>
 bool MarketReplay<Session>::restart() {
-    m_cursor   = 0;
-    m_have     = false;
-    m_anchored = false;
+    m_cursor    = 0;
+    m_have      = false;
+    m_anchored  = false;
+    m_afapStart = 0;
+    m_afapSent  = 0;
     if (m_progress.preloaded) {
         return true;
     }
@@ -195,6 +200,21 @@ bool MarketReplay<Session>::pump(std::uint64_t nowMono) {
             m_anchored   = true;
             m_anchorMono = nowMono;
             m_anchorTs   = ts;
+        }
+        if (!m_anchored && m_cfg.afapMaxPerSec > 0) {
+            if (m_afapStart == 0) {
+                m_afapStart = nowMono;
+                m_afapSent  = 0;
+            }
+            const std::uint64_t due = m_afapStart + (m_afapSent * 1'000'000'000ull) / m_cfg.afapMaxPerSec;
+            if (due > nowMono) {
+                nowMono = monotonicNs();
+                if (due > nowMono) {
+                    m_session->flushMarketData();
+                    return true;
+                }
+            }
+            ++m_afapSent;
         }
         if (m_anchored) {
             const std::uint64_t due = ts > m_anchorTs

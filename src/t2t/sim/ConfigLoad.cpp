@@ -45,15 +45,16 @@ SimConfig loadConfig(const std::string& path) {
     c.venue.mdMaxPayload = t["venue"]["md_max_payload"].value_or(c.venue.mdMaxPayload);
     c.venue.liveReserve  = t["venue"]["order_reserve"].value_or(c.venue.liveReserve);
 
-    c.replay.enabled      = t["replay"]["enabled"].value_or(c.replay.enabled);
-    c.replay.file         = t["replay"]["file"].value_or(c.replay.file);
-    c.replay.speed        = t["replay"]["speed"].value_or(c.replay.speed);
-    c.replay.loops        = t["replay"]["loops"].value_or(c.replay.loops);
-    c.replay.preloadMaxMb = t["replay"]["preload_max_mb"].value_or(c.replay.preloadMaxMb);
-    c.replay.maxBatch     = t["replay"]["max_batch"].value_or(c.replay.maxBatch);
-    c.replay.waitForDut   = t["replay"]["wait_for_dut"].value_or(c.replay.waitForDut);
-    c.replay.skipToNs     = replay::parseTimeOfDay(t["replay"]["skip_to"].value_or(std::string{}));
-    c.replay.stopAtNs     = replay::parseTimeOfDay(t["replay"]["stop_at"].value_or(std::string{}));
+    c.replay.enabled       = t["replay"]["enabled"].value_or(c.replay.enabled);
+    c.replay.file          = t["replay"]["file"].value_or(c.replay.file);
+    c.replay.speed         = t["replay"]["speed"].value_or(c.replay.speed);
+    c.replay.loops         = t["replay"]["loops"].value_or(c.replay.loops);
+    c.replay.preloadMaxMb  = t["replay"]["preload_max_mb"].value_or(c.replay.preloadMaxMb);
+    c.replay.maxBatch      = t["replay"]["max_batch"].value_or(c.replay.maxBatch);
+    c.replay.waitForDut    = t["replay"]["wait_for_dut"].value_or(c.replay.waitForDut);
+    c.replay.afapMaxPerSec = t["replay"]["afap_max_msg_per_s"].value_or(c.replay.afapMaxPerSec);
+    c.replay.skipToNs      = replay::parseTimeOfDay(t["replay"]["skip_to"].value_or(std::string{}));
+    c.replay.stopAtNs      = replay::parseTimeOfDay(t["replay"]["stop_at"].value_or(std::string{}));
     const std::int64_t defaultFirstRef = c.replay.enabled ? (std::int64_t{1} << 62) : 1;
     c.venue.firstOrderRef = static_cast<OrderId>(t["venue"]["first_order_ref"].value_or(defaultFirstRef));
 

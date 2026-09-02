@@ -4,7 +4,7 @@
 # Rig loopback: sim on cx0 <-DAC-> DUT on cx1 (both ConnectX-4 Lx ports).
 
 [venue]
-symbols       = ["AAPL"]      # venues the DUT can trade (one matching book each; others pass through)
+symbols       = ["AAPL", "MSFT", "AMD", "INTC", "QQQ", "SPY", "TQQQ", "GOOGL"]   # venues the DUT can trade
 locates       = []            # stock-locate per symbol; empty = bind from the replayed stock directory
                               # (synthetic [flow] mode uses 1, 2, ... and publishes its own directory)
 order_reserve = 65536         # initial live-order map capacity (real AAPL day peaks ~30k resting)
@@ -20,7 +20,7 @@ md_max_payload = 400          # max MoldUDP64 payload per packet; verbs backend 
 # DUT's orders trade against real liquidity (fills are shadowed on top of the recorded history).
 [replay]
 enabled        = true
-file           = "data/itch/01302020.AAPL.itch"   # itch_replay --extract output (see data/README.md)
+file           = "data/itch/01302020.NASDAQ_ITCH50.itch"   # full day (gunzip -k of the NASDAQ file) or an extract
 speed          = 1.0          # 1.0 = real time-of-day pacing, 10.0 = 10x faster, 0 = as fast as possible
 loops          = 0            # replays of the file before exiting (0 = until stopped)
 skip_to        = "09:25:00"   # replayed AFAP up to here (builds the book), paced from here on ("" = none)
@@ -28,6 +28,8 @@ stop_at        = ""           # end the loop at this time-of-day ("" = end of fi
 preload_max_mb = 1024         # files up to this size are held in RAM; larger ones are streamed
 max_batch      = 64           # messages sent per pump before order entry is polled again
 wait_for_dut   = true         # hold the replay until the DUT's hello arrives on order entry
+afap_max_msg_per_s = 1000000  # cap for the AFAP phases (pre-open catch-up, speed = 0) so the DUT never gaps;
+                              # kernel-socket runs need ~200000, ring backends take 1000000
 
 [flow]
 mid_tick         = 5200                 # synthetic market centre (ticks)

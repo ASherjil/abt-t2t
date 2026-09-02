@@ -2,6 +2,8 @@
 
 #include <cerrno>
 #include <cstddef>
+#include <fstream>
+#include <string>
 
 #include <malloc.h>
 #include <sys/mman.h>
@@ -32,6 +34,27 @@ MemLockResult lockAndPrefaultMemory() noexcept {
         return {.locked = false, .error = errno};
     }
     return {.locked = true, .error = 0};
+}
+
+ProcessMemory processMemory() {
+    ProcessMemory m{};
+    std::ifstream status("/proc/self/status");
+    std::string   key;
+    while (status >> key) {
+        std::size_t kb = 0;
+        if (key == "VmRSS:") {
+            status >> kb;
+            m.rssMb = kb / 1024;
+        } else if (key == "VmHWM:") {
+            status >> kb;
+            m.peakRssMb = kb / 1024;
+        } else if (key == "HugetlbPages:") {
+            status >> kb;
+            m.hugetlbMb = kb / 1024;
+        }
+        status.ignore(4096, '\n');
+    }
+    return m;
 }
 
 PageFaults threadPageFaults() noexcept {

@@ -13,6 +13,7 @@
 #include "t2t/sim/SimConfig.hpp"
 #include "t2t/util/Affinity.hpp"
 #include "t2t/util/Clock.hpp"
+#include "t2t/util/MemLock.hpp"
 
 namespace abt {
 
@@ -83,6 +84,9 @@ int runReplay(Session& ex, const SimConfig& cfg, volatile std::sig_atomic_t& sto
     }
     ex.flushMarketData();
     logReplay(ex, rp.progress(), monotonicNs() - start);
+    const util::ProcessMemory mem = util::processMemory();
+    fmt::print(stderr, "[sim mem] rss={} MB peak={} MB hugetlb={} MB (mapped replay file counts in rss)\n",
+               mem.rssMb, mem.peakRssMb, mem.hugetlbMb);
     return 0;
 }
 

@@ -14,7 +14,14 @@ struct PageFaults {
     long major = 0;
 };
 
+struct ProcessMemory {
+    std::size_t rssMb     = 0;
+    std::size_t peakRssMb = 0;
+    std::size_t hugetlbMb = 0;
+};
+
 [[nodiscard]] MemLockResult lockAndPrefaultMemory() noexcept;
 [[nodiscard]] PageFaults    threadPageFaults() noexcept;
+[[nodiscard]] ProcessMemory processMemory();
 
 }   // namespace abt::util

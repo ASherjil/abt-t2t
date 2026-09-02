@@ -25,7 +25,9 @@ MappedFile::MappedFile(const std::string& path, bool populate) {
     if (!fd) {
         return;
     }
-    struct stat st{};
+
+    struct stat st {};
+
     if (::fstat(fd.get(), &st) != 0 || st.st_size <= 0) {
         return;
     }

@@ -298,6 +298,8 @@ bool DutSession<Mode, Strat, Io>::connectVenue(const char* oeHost, std::uint16_t
     }
     int reuse = 1;
     ::setsockopt(m_sock.mdFd.get(), SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof reuse);
+    const int rcvbuf = 64 << 20;
+    ::setsockopt(m_sock.mdFd.get(), SOL_SOCKET, SO_RCVBUF, &rcvbuf, sizeof rcvbuf);
     sockaddr_in md{};
     md.sin_family = AF_INET;
     md.sin_port   = htons(mdPort);
