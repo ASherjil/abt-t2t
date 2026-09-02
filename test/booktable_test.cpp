@@ -81,6 +81,9 @@ void test_directory_resolves_hot_symbols() {
     CHECK_EQ(table.hotCount(), 2u);
     CHECK(!table.hot(0).resolved);
 
+    CHECK_EQ(table.hotBook(1).bestBid(), kNoPrice);
+    CHECK_EQ(table.hotBook(1).liveOrders(), 0u);
+    CHECK(!table.hotBook(1).anchored());
     CHECK_EQ(table.apply(bytesOf(mkDir(13, "AAPL"))), 0);
     CHECK_EQ(table.apply(bytesOf(mkDir(500, "MSFT"))), 1);
     CHECK_EQ(table.apply(bytesOf(mkDir(7, "ZZZZ"))), dut::BookTable::kCold);

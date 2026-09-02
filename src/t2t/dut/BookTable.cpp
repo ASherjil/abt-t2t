@@ -7,7 +7,8 @@ namespace abt::dut {
 BookTable::BookTable(const BookTableConfig& cfg)
     : m_cfg(cfg),
       m_storage(cfg.memory == nullptr ? std::pmr::get_default_resource() : cfg.memory),
-      m_books(kLocates) {
+      m_books(kLocates),
+      m_empty(BookConfig{.tickWire = cfg.tickWire, .bandTicks = 1, .maxOrders = 16}) {
     m_hot.reserve(cfg.hotSymbols.size());
     for (const std::string& name : cfg.hotSymbols) {
         m_hot.push_back(HotSymbol{.name = name});
@@ -94,7 +95,8 @@ const BookBuilder* BookTable::book(std::uint16_t locate) const noexcept {
 }
 
 const BookBuilder& BookTable::hotBook(std::size_t idx) const noexcept {
-    return *m_hot[idx].book;
+    const BookBuilder* b = m_hot[idx].book;
+    return b == nullptr ? m_empty : *b;
 }
 
 const HotSymbol& BookTable::hot(std::size_t idx) const noexcept {

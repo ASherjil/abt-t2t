@@ -85,6 +85,7 @@ private:
 
     std::pmr::deque<BookBuilder> m_storage;
     std::vector<Entry>           m_books;
+    BookBuilder                  m_empty;
     std::vector<HotSymbol>       m_hot;
     std::uint64_t                m_undirected = 0;
     std::uint64_t                m_rehashes   = 0;
