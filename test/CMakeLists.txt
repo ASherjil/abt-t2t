@@ -25,6 +25,11 @@ target_include_directories(quoter_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(quoter_test PRIVATE abt::dut abt::flags fmt::fmt)
 add_test(NAME quoter_test COMMAND quoter_test)
 
+add_executable(arena_test arena_test.cpp)
+target_include_directories(arena_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(arena_test PRIVATE abt::util abt::flags fmt::fmt)
+add_test(NAME arena_test COMMAND arena_test)
+
 add_executable(uniquefd_test uniquefd_test.cpp)
 target_include_directories(uniquefd_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(uniquefd_test PRIVATE abt::util abt::flags fmt::fmt)

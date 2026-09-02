@@ -5,6 +5,7 @@
 #include "t2t/dut/BookBuilder.hpp"
 
 #include <algorithm>
+#include <cmath>
 
 namespace abt::dut {
 
@@ -18,6 +19,56 @@ BookBuilder::BookBuilder(Price minPrice, Price maxPrice, Price tickWire, std::si
       m_bidSize(static_cast<std::size_t>((maxPrice - minPrice) / tickWire) + 1, 0),
       m_askSize(static_cast<std::size_t>((maxPrice - minPrice) / tickWire) + 1, 0),
       m_orders(maxOrders) {
+}
+
+BookBuilder::BookBuilder(const BookConfig& cfg)
+    : m_minPrice(0),
+      m_maxPrice(-1),
+      m_tickWire(cfg.tickWire),
+      m_ownRefMin(cfg.ownRefMin),
+      m_tickDiv(static_cast<std::uint32_t>(cfg.tickWire)),
+      m_bandTicks(cfg.bandTicks),
+      m_bandFraction(cfg.bandFraction),
+      m_anchored(false),
+      m_bidSize(cfg.memory == nullptr ? std::pmr::get_default_resource() : cfg.memory),
+      m_askSize(cfg.memory == nullptr ? std::pmr::get_default_resource() : cfg.memory),
+      m_orders(cfg.maxOrders, cfg.memory) {
+}
+
+void BookBuilder::anchor(Price price) {
+    std::size_t band = m_bandTicks;
+    if (m_bandFraction > 0.0) {
+        const double byPrice = std::floor(static_cast<double>(price) * m_bandFraction /
+                                          static_cast<double>(m_tickWire));
+        if (byPrice > static_cast<double>(band)) {
+            band = static_cast<std::size_t>(byPrice);
+        }
+    }
+    const Price span = static_cast<Price>(band) * m_tickWire;
+    m_minPrice       = price - span;
+    if (m_minPrice < 0) {
+        m_minPrice = price % m_tickWire;
+    }
+    m_maxPrice = m_minPrice + 2 * span;
+    m_bidSize.assign(2 * band + 1, 0);
+    m_askSize.assign(2 * band + 1, 0);
+    m_anchored = true;
+}
+
+bool BookBuilder::anchored() const noexcept {
+    return m_anchored;
+}
+
+Price BookBuilder::bandLow() const noexcept {
+    return m_minPrice;
+}
+
+Price BookBuilder::bandHigh() const noexcept {
+    return m_maxPrice;
+}
+
+std::uint64_t BookBuilder::outOfBandAdds() const noexcept {
+    return m_oob;
 }
 
 void BookBuilder::apply(std::span<const std::byte> itchMessage) {
@@ -130,6 +181,9 @@ void BookBuilder::onAddOrder(const itch::AddOrder& msg) {
     const Side    side  = (msg.side == itch::Side::Buy) ? Side::Buy : Side::Sell;
     const Price   price = static_cast<Price>(msg.price.value());
     const bool    own   = m_ownRefMin != 0 && ref >= m_ownRefMin;
+    if (!m_anchored) [[unlikely]] {
+        anchor(price);
+    }
     m_orders.insertOrAssign(ref, Resting{.price = price, .shares = shares, .side = side, .own = own});
     if (own) [[unlikely]] {
         ++m_own;
@@ -194,7 +248,8 @@ void BookBuilder::removeOrder(OrderId ref) {
 }
 
 void BookBuilder::addShares(Side side, Price price, Quantity shares) noexcept {
-    if (!inBand(price)) {
+    if (!inBand(price)) [[unlikely]] {
+        ++m_oob;
         return;
     }
     const std::size_t i = index(price);

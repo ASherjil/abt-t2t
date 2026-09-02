@@ -7,6 +7,7 @@ set(T2T_INCLUDE_ROOT ${PROJECT_SOURCE_DIR}/src ${PROJECT_BINARY_DIR}/generated)
 # ---------------------------------------------------------------------------
 add_library(abt_util STATIC
     util/Histogram.cpp
+    util/HugePageArena.cpp
     util/MemLock.cpp
     util/UniqueFd.cpp)
 add_library(abt::util ALIAS abt_util)

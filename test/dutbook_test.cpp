@@ -135,7 +135,57 @@ void test_own_orders_excluded_from_view() {
     CHECK(b.bestBid() == kNoPrice);
 }
 
+void test_dynamic_band_anchors_on_first_add() {
+    dut::BookConfig cfg{};
+    cfg.tickWire     = 100;
+    cfg.bandTicks    = 16;
+    cfg.bandFraction = 0.0;
+    dut::BookBuilder book(cfg);
+    CHECK(!book.anchored());
+    CHECK_EQ(book.bestBid(), kNoPrice);
+
+    book.apply(bytesOf(mkAdd(1u, 'B', 100u, 320000)));
+    CHECK(book.anchored());
+    CHECK_EQ(book.bandLow(), 320000 - 1600);
+    CHECK_EQ(book.bandHigh(), 320000 + 1600);
+    CHECK_EQ(book.bestBid(), 320000);
+    CHECK_EQ(book.sizeAt(Side::Buy, 320000), 100u);
+
+    book.apply(bytesOf(mkAdd(2u, 'S', 50u, 321600)));
+    CHECK_EQ(book.bestAsk(), 321600);
+    book.apply(bytesOf(mkAdd(3u, 'S', 70u, 400000)));
+    CHECK_EQ(book.outOfBandAdds(), 1u);
+    CHECK_EQ(book.liveOrders(), 3u);
+    CHECK_EQ(book.bestAsk(), 321600);
+    book.apply(bytesOf(mkDelete(3u)));
+    CHECK_EQ(book.liveOrders(), 2u);
+
+    book.clear();
+    CHECK(book.anchored());
+    CHECK_EQ(book.liveOrders(), 0u);
+    CHECK_EQ(book.bestBid(), kNoPrice);
+}
+
+void test_dynamic_band_scales_with_price_and_clamps_at_zero() {
+    dut::BookConfig cfg{};
+    cfg.tickWire     = 100;
+    cfg.bandTicks    = 10;
+    cfg.bandFraction = 0.10;
+    dut::BookBuilder pricey(cfg);
+    pricey.apply(bytesOf(mkAdd(1u, 'B', 1u, 3'400'000'000 / 2)));
+    CHECK_EQ(pricey.bandLow(), 1'700'000'000 - 170'000'000);
+    CHECK_EQ(pricey.bandHigh(), 1'700'000'000 + 170'000'000);
+
+    dut::BookBuilder penny(cfg);
+    penny.apply(bytesOf(mkAdd(1u, 'B', 1u, 350)));
+    CHECK_EQ(penny.bandLow(), 50);
+    CHECK_EQ(penny.bandHigh(), 50 + 2000);
+    CHECK_EQ(penny.sizeAt(Side::Buy, 350), 1u);
+}
+
 int main() {
+    test_dynamic_band_anchors_on_first_add();
+    test_dynamic_band_scales_with_price_and_clamps_at_zero();
     test_book();
     test_own_orders_excluded_from_view();
     return abt::test::summary("dutbook");

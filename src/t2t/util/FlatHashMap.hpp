@@ -12,6 +12,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <memory_resource>
 #include <type_traits>
 #include <vector>
 
@@ -22,7 +23,7 @@ class FlatHashMap {
     static_assert(std::is_integral_v<Key>, "FlatHashMap key must be an integral type");
 
 public:
-    explicit FlatHashMap(std::size_t capacityHint = 16);
+    explicit FlatHashMap(std::size_t capacityHint = 16, std::pmr::memory_resource* mr = nullptr);
 
     // Returns a pointer to the stored value (mutable), or nullptr if the key is absent. The pointer
     // is invalidated by any insertOrAssign that grows the table or by erase.
@@ -55,13 +56,14 @@ private:
     void                               eraseAtHole(std::size_t hole) noexcept;
     void                               grow();
 
-    std::vector<Slot> m_slots;
-    std::size_t       m_mask = 0;
-    std::size_t       m_size = 0;
+    std::pmr::vector<Slot> m_slots;
+    std::size_t            m_mask = 0;
+    std::size_t            m_size = 0;
 };
 
 template <class Key, class Value, Key Empty>
-FlatHashMap<Key, Value, Empty>::FlatHashMap(std::size_t capacityHint) {
+FlatHashMap<Key, Value, Empty>::FlatHashMap(std::size_t capacityHint, std::pmr::memory_resource* mr)
+    : m_slots(mr == nullptr ? std::pmr::get_default_resource() : mr) {
     const std::size_t cap = nextPow2(capacityHint < 16 ? 16 : capacityHint);
     m_slots.assign(cap, Slot{Empty, Value{}});
     m_mask = cap - 1;
@@ -231,8 +233,8 @@ std::size_t FlatHashMap<Key, Value, Empty>::slotFor(Key key) const noexcept {
 
 template <class Key, class Value, Key Empty>
 void FlatHashMap<Key, Value, Empty>::grow() {
-    const std::size_t       newCap = (m_mask + 1) * 2;
-    const std::vector<Slot> old    = std::move(m_slots);
+    const std::size_t            newCap = (m_mask + 1) * 2;
+    const std::pmr::vector<Slot> old    = std::move(m_slots);
     m_slots.assign(newCap, Slot{Empty, Value{}});
     m_mask = newCap - 1;
     m_size = 0;
