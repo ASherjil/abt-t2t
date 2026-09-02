@@ -27,6 +27,7 @@ struct BookConfig {
     std::size_t                maxOrders    = 1u << 10;
     OrderId                    ownRefMin    = 0;
     std::pmr::memory_resource* memory       = nullptr;
+    std::uint64_t*             rehashes     = nullptr;
 };
 
 class BookBuilder {

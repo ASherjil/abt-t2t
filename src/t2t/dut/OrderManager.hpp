@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <span>
 #include <string>
+#include <vector>
 
 #include "t2t/dut/Quote.hpp"
 #include "t2t/lob/Types.hpp"
@@ -13,8 +14,8 @@
 namespace abt::dut {
 
 struct OmsConfig {
-    std::string   symbol;
-    std::uint32_t firstUserRef = 1;
+    std::vector<std::string> symbols;
+    std::uint32_t            firstUserRef = 1;
 };
 
 enum class QuoteState : std::uint8_t {
@@ -57,30 +58,37 @@ public:
 
     explicit OrderManager(const OmsConfig& cfg);
 
-    std::size_t reconcile(const QuoteTargets& t, std::span<Outbound, kMaxOutbound> out) noexcept;
+    std::size_t reconcile(std::size_t sym, const QuoteTargets& t,
+                          std::span<Outbound, kMaxOutbound> out) noexcept;
     void        onAck(std::span<const std::byte> ouch) noexcept;
 
-    [[nodiscard]] const Account&   account() const noexcept;
+    [[nodiscard]] std::size_t      symbolCount() const noexcept;
+    [[nodiscard]] const Account&   account(std::size_t sym = 0) const noexcept;
+    [[nodiscard]] std::int64_t     netPosition() const noexcept;
+    [[nodiscard]] const QuoteSlot& slot(std::size_t sym, Side side) const noexcept;
     [[nodiscard]] const QuoteSlot& slot(Side side) const noexcept;
     [[nodiscard]] const OmsStats&  stats() const noexcept;
     [[nodiscard]] std::uint32_t    nextUserRef() const noexcept;
 
 private:
-    static constexpr std::size_t kRefRing = 1024;
+    static constexpr std::size_t kRefRing = 4096;
 
     struct RefSide {
         std::uint32_t userRef = 0;
+        std::uint16_t sym     = 0;
         Side          side    = Side::Buy;
     };
 
-    [[nodiscard]] std::size_t   reconcileSide(Side side, bool want, Price price, Quantity qty,
-                                              Outbound& out) noexcept;
-    [[nodiscard]] std::uint32_t allocRef(Side side) noexcept;
-    [[nodiscard]] bool          sideOf(std::uint32_t userRef, Side& side) const noexcept;
-    [[nodiscard]] QuoteSlot*    slotByRef(std::uint32_t userRef) noexcept;
+    using Pair = std::array<QuoteSlot, 2>;
+
+    [[nodiscard]] std::size_t reconcileSide(std::size_t sym, Side side, bool want, Price price, Quantity qty,
+                                            Outbound& out) noexcept;
+    [[nodiscard]] std::uint32_t allocRef(std::size_t sym, Side side) noexcept;
+    [[nodiscard]] bool          lookupRef(std::uint32_t userRef, std::size_t& sym, Side& side) const noexcept;
+    [[nodiscard]] QuoteSlot*    slotByRef(std::uint32_t userRef, std::size_t& sym) noexcept;
     [[nodiscard]] QuoteSlot*    slotByPending(std::uint32_t userRef) noexcept;
 
-    void        encodeEnter(Outbound& out, std::uint32_t userRef, Side side, Price price,
+    void        encodeEnter(Outbound& out, std::size_t sym, std::uint32_t userRef, Side side, Price price,
                             Quantity qty) const noexcept;
     static void encodeReplace(Outbound& out, std::uint32_t origRef, std::uint32_t userRef, Price price,
                               Quantity qty) noexcept;
@@ -95,10 +103,10 @@ private:
     static void settle(QuoteSlot& s) noexcept;
 
     OmsConfig                     m_cfg;
-    Account                       m_acct{};
     OmsStats                      m_stats{};
     std::uint32_t                 m_nextUserRef;
-    std::array<QuoteSlot, 2>      m_slots{};
+    std::vector<Pair>             m_slots;
+    std::vector<Account>          m_acct;
     std::array<RefSide, kRefRing> m_refs{};
 };
 

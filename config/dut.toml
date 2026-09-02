@@ -3,14 +3,17 @@
 # the ring datapath (dut_verbs / dut_dpdk, later ef_vi). Rig loopback: DUT on cx1 <-DAC-> sim on cx0.
 
 [venue]
-symbol         = "AAPL"     # must match the exchange sim's symbol
-stock_locate   = 13         # only this locate reaches the book (0 = accept every symbol)
+symbols        = ["AAPL"]   # quoted (hot) symbols; every other symbol in the feed is booked but not quoted
+locates        = []         # optional stock-locate per symbol; empty = resolve from the ITCH stock directory
 market_hours_only = true    # quote only between system events Q..M while trading state is 'T'
-min_price      = 0          # book band in wire prices (4-decimal dollars)
-max_price      = 20000000   # $2000, same band as the sim
 tick_wire      = 100        # wire units per tick (100 = $0.01 with 4-decimal wire prices)
+cold_band_ticks = 2048      # price levels each side of the first seen price, unquoted symbols (+-$20.48)
+hot_band_ticks  = 8192      # same for quoted symbols (+-$81.92); band_fraction widens expensive names
+band_fraction   = 0.10      # band >= 10% of the anchor price on each side
+cold_map_slots  = 1024      # initial order-ref map slots per unquoted symbol (grows by rehash)
+hot_map_slots   = 65536     # per quoted symbol (real AAPL day peaks ~30k resting)
+arena_mb        = 0         # hugepage arena for all books (0 = heap); full feed needs ~1024
 first_user_ref = 1
-max_orders     = 65536      # initial order-ref map capacity (real AAPL day peaks ~30k resting)
 own_ref_min    = 4611686018427387904   # ITCH refs >= 2^62 are this DUT's own orders (sim's first_order_ref):
                                        # tracked but excluded from the book the strategy sees (0 = off)
 

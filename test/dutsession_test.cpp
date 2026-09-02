@@ -89,11 +89,13 @@ static_assert(dut::TxStampSource<FakeStampSource>);
 
 dut::DutConfig baseCfg() {
     dut::DutConfig cfg{};
-    cfg.minPrice     = 1;
-    cfg.maxPrice     = 1000;
-    cfg.tickWire     = 1;
-    cfg.symbol       = "ABT";
-    cfg.firstUserRef = 7;
+    cfg.symbols       = {"ABT"};
+    cfg.locates       = {0};
+    cfg.tickWire      = 1;
+    cfg.hotBandTicks  = 500;
+    cfg.coldBandTicks = 500;
+    cfg.bandFraction  = 0.0;
+    cfg.firstUserRef  = 7;
     return cfg;
 }
 
@@ -301,7 +303,7 @@ void test_locate_filter_session_gating_and_reset() {
     mold::Packer                packer("SESSION01", 1);
     std::array<std::byte, 2048> buf{};
     dut::DutConfig              cfg = baseCfg();
-    cfg.stockLocate                 = 13;
+    cfg.locates                     = {13};
     cfg.marketHoursOnly             = true;
     dut::DutSession<dut::IoMode::Loopback, JoinBid> sess(cfg, JoinBid{10u});
 
@@ -353,6 +355,86 @@ void test_locate_filter_session_gating_and_reset() {
     CHECK(sess.book().bestBid() == kNoPrice);
     CHECK_EQ(sess.book().liveOrders(), 0u);
     CHECK_EQ(sess.sessionResets(), 2u);
+}
+
+itch::StockDirectory mkDir(std::uint16_t locate, std::string_view name) {
+    itch::StockDirectory r{};
+    r.messageType = itch::MessageType::StockDirectory;
+    r.stockLocate = locate;
+    r.stock       = name;
+    return r;
+}
+
+ouch::Executed executed(std::uint32_t ref, Quantity qty) {
+    ouch::Executed e{};
+    e.type       = ouch::OutType::Executed;
+    e.userRefNum = ref;
+    e.quantity   = qty;
+    return e;
+}
+
+void test_two_hot_symbols_resolved_from_directory() {
+    mold::Packer                packer("SESSION01", 1);
+    std::array<std::byte, 2048> buf{};
+    dut::DutConfig              cfg = baseCfg();
+    cfg.symbols                     = {"ABT", "XYZ"};
+    cfg.locates                     = {};
+    dut::DutSession<dut::IoMode::Loopback, JoinBid> sess(cfg, JoinBid{10u});
+
+    packer.reset(buf.data(), buf.size());
+    (void)packer.append(bytesOf(mkDir(13, "ABT")));
+    (void)packer.append(bytesOf(mkDir(21, "XYZ")));
+    (void)packer.append(bytesOf(mkDir(99, "COLD")));
+    (void)packer.append(bytesOf(mkAddAt(13, 1u, 'B', 500u, 100)));
+    (void)packer.append(bytesOf(mkAddAt(13, 2u, 'S', 500u, 102)));
+    (void)packer.append(bytesOf(mkAddAt(21, 3u, 'B', 500u, 200)));
+    (void)packer.append(bytesOf(mkAddAt(21, 4u, 'S', 500u, 204)));
+    (void)packer.append(bytesOf(mkAddAt(99, 5u, 'B', 500u, 300)));
+    sess.onMarketData(packer.finalize(), 1u);
+
+    CHECK_EQ(sess.books().symbols(), 3u);
+    CHECK_EQ(sess.books().hot(0).locate, 13u);
+    CHECK_EQ(sess.books().hot(1).locate, 21u);
+    CHECK_EQ(sess.book(0).bestBid(), 100);
+    CHECK_EQ(sess.book(1).bestBid(), 200);
+    CHECK_EQ(sess.books().book(99)->bestBid(), 300);
+    CHECK_EQ(sess.foreignMessages(), 0u);
+    CHECK_EQ(sess.ordersSent(), 2u);
+
+    ouch::EnterOrder a{};
+    ouch::EnterOrder b{};
+    std::memcpy(&a, sess.capturedOrders()[0].data(), sizeof a);
+    std::memcpy(&b, sess.capturedOrders()[1].data(), sizeof b);
+    CHECK(a.symbol.view() == std::string_view{"ABT"});
+    CHECK(b.symbol.view() == std::string_view{"XYZ"});
+    CHECK_EQ(a.price.value(), 100u);
+    CHECK_EQ(b.price.value(), 200u);
+    CHECK_EQ(a.userRefNum.value(), 7u);
+    CHECK_EQ(b.userRefNum.value(), 8u);
+
+    sess.onAck(bytesOf(accepted(7u, 10u)));
+    sess.onAck(bytesOf(accepted(8u, 10u)));
+    CHECK(sess.oms().slot(0, Side::Buy).state == dut::QuoteState::Live);
+    CHECK(sess.oms().slot(1, Side::Buy).state == dut::QuoteState::Live);
+    sess.onAck(bytesOf(executed(8u, 4u)));
+    CHECK_EQ(sess.oms().account(0).position, 0);
+    CHECK_EQ(sess.oms().account(1).position, 4);
+    CHECK_EQ(sess.oms().netPosition(), 4);
+
+    packer.reset(buf.data(), buf.size());
+    (void)packer.append(bytesOf(mkAddAt(99, 6u, 'B', 500u, 301)));
+    sess.onMarketData(packer.finalize(), 2u);
+    CHECK_EQ(sess.ordersSent(), 2u);
+
+    packer.reset(buf.data(), buf.size());
+    (void)packer.append(bytesOf(mkAddAt(21, 7u, 'B', 500u, 201)));
+    sess.onMarketData(packer.finalize(), 3u);
+    CHECK_EQ(sess.ordersSent(), 3u);
+    ouch::ReplaceOrder u{};
+    std::memcpy(&u, sess.capturedOrders()[2].data(), sizeof u);
+    CHECK_EQ(u.type, ouch::InType::ReplaceOrder);
+    CHECK_EQ(u.origUserRefNum.value(), 8u);
+    CHECK_EQ(u.price.value(), 201u);
 }
 
 struct MockIo {
@@ -435,5 +517,6 @@ int main() {
     test_take_and_t2t();
     test_sequence_gap_and_stale();
     test_gap_pulls_live_quote();
+    test_two_hot_symbols_resolved_from_directory();
     return abt::test::summary("dutsession");
 }

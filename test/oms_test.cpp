@@ -28,7 +28,7 @@ M decode(const dut::Outbound& o) {
 
 dut::OrderManager makeOms() {
     dut::OmsConfig cfg{};
-    cfg.symbol       = "ABT";
+    cfg.symbols      = {"ABT"};
     cfg.firstUserRef = 1;
     return dut::OrderManager(cfg);
 }
@@ -99,7 +99,7 @@ void test_enter_both_sides_then_idle_while_pending() {
     auto                         oms = makeOms();
     std::array<dut::Outbound, 2> out{};
 
-    CHECK_EQ(oms.reconcile(both(99, 101), out), 2u);
+    CHECK_EQ(oms.reconcile(0, both(99, 101), out), 2u);
     const auto b = decode<ouch::EnterOrder>(out[0]);
     const auto a = decode<ouch::EnterOrder>(out[1]);
     CHECK_EQ(out[0].len, sizeof(ouch::EnterOrder));
@@ -115,7 +115,7 @@ void test_enter_both_sides_then_idle_while_pending() {
     CHECK(oms.slot(Side::Buy).state == QuoteState::PendingNew);
     CHECK(oms.slot(Side::Sell).state == QuoteState::PendingNew);
 
-    CHECK_EQ(oms.reconcile(both(98, 102), out), 0u);
+    CHECK_EQ(oms.reconcile(0, both(98, 102), out), 0u);
 
     oms.onAck(bytesOf(accepted(1, 100)));
     oms.onAck(bytesOf(accepted(2, 100)));
@@ -124,17 +124,17 @@ void test_enter_both_sides_then_idle_while_pending() {
     CHECK_EQ(oms.slot(Side::Buy).leaves, 100u);
     CHECK_EQ(oms.stats().accepts, 2u);
 
-    CHECK_EQ(oms.reconcile(both(99, 101), out), 0u);
+    CHECK_EQ(oms.reconcile(0, both(99, 101), out), 0u);
 }
 
 void test_replace_on_price_move() {
     auto                         oms = makeOms();
     std::array<dut::Outbound, 2> out{};
-    (void)oms.reconcile(both(99, 101), out);
+    (void)oms.reconcile(0, both(99, 101), out);
     oms.onAck(bytesOf(accepted(1, 100)));
     oms.onAck(bytesOf(accepted(2, 100)));
 
-    CHECK_EQ(oms.reconcile(both(98, 101), out), 1u);
+    CHECK_EQ(oms.reconcile(0, both(98, 101), out), 1u);
     const auto u = decode<ouch::ReplaceOrder>(out[0]);
     CHECK_EQ(out[0].len, sizeof(ouch::ReplaceOrder));
     CHECK_EQ(u.origUserRefNum.value(), 1u);
@@ -143,7 +143,7 @@ void test_replace_on_price_move() {
     CHECK(oms.slot(Side::Buy).state == QuoteState::PendingReplace);
     CHECK_EQ(oms.slot(Side::Buy).pendingRef, 3u);
 
-    CHECK_EQ(oms.reconcile(both(97, 101), out), 0u);
+    CHECK_EQ(oms.reconcile(0, both(97, 101), out), 0u);
 
     oms.onAck(bytesOf(replaced(1, 3, 100, 98)));
     CHECK(oms.slot(Side::Buy).state == QuoteState::Live);
@@ -155,13 +155,13 @@ void test_replace_on_price_move() {
 void test_pull_side_cancels() {
     auto                         oms = makeOms();
     std::array<dut::Outbound, 2> out{};
-    (void)oms.reconcile(both(99, 101), out);
+    (void)oms.reconcile(0, both(99, 101), out);
     oms.onAck(bytesOf(accepted(1, 100)));
     oms.onAck(bytesOf(accepted(2, 100)));
 
     dut::QuoteTargets t = both(99, 101);
     t.quoteAsk          = false;
-    CHECK_EQ(oms.reconcile(t, out), 1u);
+    CHECK_EQ(oms.reconcile(0, t, out), 1u);
     const auto x = decode<ouch::CancelOrder>(out[0]);
     CHECK_EQ(out[0].len, sizeof(ouch::CancelOrder));
     CHECK_EQ(x.userRefNum.value(), 2u);
@@ -171,14 +171,14 @@ void test_pull_side_cancels() {
     oms.onAck(bytesOf(canceled(2, 100)));
     CHECK(oms.slot(Side::Sell).state == QuoteState::Idle);
 
-    CHECK_EQ(oms.reconcile(both(99, 101), out), 1u);
+    CHECK_EQ(oms.reconcile(0, both(99, 101), out), 1u);
     CHECK_EQ(decode<ouch::EnterOrder>(out[0]).userRefNum.value(), 3u);
 }
 
 void test_fills_drive_position_and_requote() {
     auto                         oms = makeOms();
     std::array<dut::Outbound, 2> out{};
-    (void)oms.reconcile(both(99, 101), out);
+    (void)oms.reconcile(0, both(99, 101), out);
     oms.onAck(bytesOf(accepted(1, 100)));
     oms.onAck(bytesOf(accepted(2, 100)));
 
@@ -187,7 +187,7 @@ void test_fills_drive_position_and_requote() {
     CHECK_EQ(oms.slot(Side::Buy).leaves, 60u);
     CHECK(oms.slot(Side::Buy).state == QuoteState::Live);
 
-    CHECK_EQ(oms.reconcile(both(99, 101), out), 1u);
+    CHECK_EQ(oms.reconcile(0, both(99, 101), out), 1u);
     const auto u = decode<ouch::ReplaceOrder>(out[0]);
     CHECK_EQ(u.origUserRefNum.value(), 1u);
     CHECK_EQ(u.quantity.value(), 100u);
@@ -206,10 +206,10 @@ void test_fills_drive_position_and_requote() {
 void test_fill_during_pending_replace() {
     auto                         oms = makeOms();
     std::array<dut::Outbound, 2> out{};
-    (void)oms.reconcile(both(99, 101), out);
+    (void)oms.reconcile(0, both(99, 101), out);
     oms.onAck(bytesOf(accepted(1, 100)));
     oms.onAck(bytesOf(accepted(2, 100)));
-    (void)oms.reconcile(both(98, 101), out);
+    (void)oms.reconcile(0, both(98, 101), out);
     CHECK(oms.slot(Side::Buy).state == QuoteState::PendingReplace);
 
     oms.onAck(bytesOf(executed(1, 100)));
@@ -223,13 +223,13 @@ void test_fill_during_pending_replace() {
 void test_rejects() {
     auto                         oms = makeOms();
     std::array<dut::Outbound, 2> out{};
-    (void)oms.reconcile(both(99, 101), out);
+    (void)oms.reconcile(0, both(99, 101), out);
     oms.onAck(bytesOf(rejected(1)));
     CHECK(oms.slot(Side::Buy).state == QuoteState::Idle);
     CHECK_EQ(oms.stats().rejects, 1u);
     oms.onAck(bytesOf(accepted(2, 100)));
 
-    (void)oms.reconcile(both(99, 102), out);
+    (void)oms.reconcile(0, both(99, 102), out);
     CHECK(oms.slot(Side::Sell).state == QuoteState::PendingReplace);
     oms.onAck(bytesOf(rejected(4)));
     CHECK(oms.slot(Side::Sell).state == QuoteState::Live);
@@ -237,7 +237,7 @@ void test_rejects() {
     CHECK_EQ(oms.slot(Side::Sell).price, 101);
 
     const dut::QuoteTargets t{};
-    (void)oms.reconcile(t, out);
+    (void)oms.reconcile(0, t, out);
     CHECK(oms.slot(Side::Sell).state == QuoteState::PendingCancel);
     oms.onAck(bytesOf(cancelReject(2)));
     CHECK(oms.slot(Side::Sell).state == QuoteState::Live);
@@ -253,7 +253,7 @@ void test_ioc_dead_on_accept() {
     t.quoteBid = true;
     t.bidPrice = 101;
     t.bidQty   = 10;
-    (void)oms.reconcile(t, out);
+    (void)oms.reconcile(0, t, out);
     oms.onAck(bytesOf(accepted(1, 10, ouch::OrderState::Dead)));
     CHECK(oms.slot(Side::Buy).state == QuoteState::Idle);
 }
@@ -263,11 +263,11 @@ void test_ioc_dead_on_accept() {
 void test_rising_quote_moves_ask_before_bid() {
     auto                         oms = makeOms();
     std::array<dut::Outbound, 2> out{};
-    (void)oms.reconcile(both(99, 101), out);
+    (void)oms.reconcile(0, both(99, 101), out);
     oms.onAck(bytesOf(accepted(1, 100)));
     oms.onAck(bytesOf(accepted(2, 100)));
 
-    CHECK_EQ(oms.reconcile(both(101, 103), out), 2u);
+    CHECK_EQ(oms.reconcile(0, both(101, 103), out), 2u);
     const auto first  = decode<ouch::ReplaceOrder>(out[0]);
     const auto second = decode<ouch::ReplaceOrder>(out[1]);
     CHECK_EQ(first.origUserRefNum.value(), 2u);
@@ -277,7 +277,7 @@ void test_rising_quote_moves_ask_before_bid() {
     oms.onAck(bytesOf(replaced(2, 3, 100, 103)));
     oms.onAck(bytesOf(replaced(1, 4, 100, 101)));
 
-    CHECK_EQ(oms.reconcile(both(97, 99), out), 2u);
+    CHECK_EQ(oms.reconcile(0, both(97, 99), out), 2u);
     const auto b = decode<ouch::ReplaceOrder>(out[0]);
     const auto a = decode<ouch::ReplaceOrder>(out[1]);
     CHECK_EQ(b.origUserRefNum.value(), 4u);

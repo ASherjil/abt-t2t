@@ -13,12 +13,16 @@ namespace {
 
 const char* kToml = R"(
 [venue]
-symbol = "MSFT"
-min_price = 100
-max_price = 900000
+symbols = ["MSFT", "AAPL"]
+locates = [500]
 tick_wire = 50
+cold_band_ticks = 100
+hot_band_ticks = 300
+band_fraction = 0.25
+cold_map_slots = 128
+hot_map_slots = 8192
+arena_mb = 64
 first_user_ref = 77
-max_orders = 8192
 
 [quoter]
 half_spread_ticks = 3
@@ -74,18 +78,22 @@ void test_load() {
     const dut::DutAppConfig c    = dut::loadDutConfig(path);
     std::remove(path.c_str());
 
-    CHECK(c.session.symbol == "MSFT");
-    CHECK_EQ(c.session.minPrice, 100);
-    CHECK_EQ(c.session.maxPrice, 900000);
+    CHECK_EQ(c.session.symbols.size(), 2u);
+    CHECK(c.session.symbols[0] == "MSFT" && c.session.symbols[1] == "AAPL");
+    CHECK_EQ(c.session.locates.size(), 1u);
+    CHECK_EQ(c.session.locates[0], 500u);
     CHECK_EQ(c.session.tickWire, 50);
+    CHECK_EQ(c.session.coldBandTicks, 100u);
+    CHECK_EQ(c.session.hotBandTicks, 300u);
+    CHECK(c.session.bandFraction > 0.24 && c.session.bandFraction < 0.26);
+    CHECK_EQ(c.session.coldMapSlots, 128u);
+    CHECK_EQ(c.session.hotMapSlots, 8192u);
+    CHECK_EQ(c.session.arenaMb, 64u);
     CHECK_EQ(c.session.firstUserRef, 77u);
-    CHECK_EQ(c.session.maxOrders, 8192u);
     CHECK_EQ(c.session.queueCapacity, 1024u);
     CHECK_EQ(c.session.sigFigs, 4);
 
     CHECK_EQ(c.quoter.tickWire, 50);
-    CHECK_EQ(c.quoter.minPrice, 100);
-    CHECK_EQ(c.quoter.maxPrice, 900000);
     CHECK_EQ(c.quoter.halfSpreadTicks, 3);
     CHECK_EQ(c.quoter.quoteQty, 250u);
     CHECK(c.quoter.skewTicksPerUnit > 0.0019 && c.quoter.skewTicksPerUnit < 0.0021);
@@ -121,6 +129,8 @@ void test_defaults() {
     const dut::DutAppConfig c = dut::loadDutConfig(path);
     std::remove(path.c_str());
     CHECK_EQ(c.session.tickWire, 1);
+    CHECK(c.session.symbols.empty());
+    CHECK_EQ(c.session.arenaMb, 0u);
     CHECK_EQ(c.session.firstUserRef, 1u);
     CHECK_EQ(c.measure.histogramCore, -1);
 }

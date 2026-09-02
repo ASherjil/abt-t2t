@@ -22,11 +22,15 @@ struct BookTableConfig {
     std::size_t                hotMapSlots   = 1u << 16;
     OrderId                    ownRefMin     = 0;
     std::vector<std::string>   hotSymbols;
+    std::vector<std::uint16_t> hotLocates;
     std::pmr::memory_resource* memory = nullptr;
 };
 
+class BookBuilder;
+
 struct HotSymbol {
     std::string   name;
+    BookBuilder*  book     = nullptr;
     std::uint16_t locate   = 0;
     bool          resolved = false;
     bool          trading  = true;
@@ -34,8 +38,8 @@ struct HotSymbol {
 
 class BookTable {
 public:
-    static constexpr int         kCold      = -1;
-    static constexpr std::size_t kLocates   = 1u << 16;
+    static constexpr int         kCold    = -1;
+    static constexpr std::size_t kLocates = 1u << 16;
 
     explicit BookTable(const BookTableConfig& cfg);
 
@@ -48,6 +52,7 @@ public:
     [[nodiscard]] int                hotIndexOf(std::uint16_t locate) const noexcept;
     [[nodiscard]] std::size_t        symbols() const noexcept;
     [[nodiscard]] std::uint64_t      undirected() const noexcept;
+    [[nodiscard]] std::uint64_t      rehashes() const noexcept;
     [[nodiscard]] std::size_t        liveOrders() const noexcept;
     [[nodiscard]] std::size_t        bookCapacity(std::uint16_t locate) const noexcept;
 
@@ -56,8 +61,8 @@ public:
     template <class Fn>
     void forEachBook(Fn fn) const {
         for (std::size_t l = 0; l < kLocates; ++l) {
-            if (m_books[l] != nullptr) {
-                fn(static_cast<std::uint16_t>(l), *m_books[l]);
+            if (m_books[l].book != nullptr) {
+                fn(static_cast<std::uint16_t>(l), *m_books[l].book);
             }
         }
     }
@@ -68,16 +73,23 @@ private:
     BookBuilder* create(std::uint16_t locate, bool hot);
     void         onDirectory(std::span<const std::byte> msg, std::uint16_t locate);
 
-    BookTableConfig              m_cfg;
+    BookTableConfig m_cfg;
+
+    struct Entry {
+        BookBuilder* book = nullptr;
+        std::int16_t hot  = static_cast<std::int16_t>(kCold);
+    };
+
     std::pmr::deque<BookBuilder> m_storage;
-    std::vector<BookBuilder*>    m_books;
-    std::vector<std::int16_t>    m_hotIndex;
+    std::vector<Entry>           m_books;
     std::vector<HotSymbol>       m_hot;
     std::uint64_t                m_undirected = 0;
+    std::uint64_t                m_rehashes   = 0;
 };
 
 inline std::uint16_t BookTable::locateOf(std::span<const std::byte> msg) noexcept {
-    return static_cast<std::uint16_t>((std::to_integer<unsigned>(msg[1]) << 8) | std::to_integer<unsigned>(msg[2]));
+    return static_cast<std::uint16_t>((std::to_integer<unsigned>(msg[1]) << 8) |
+                                      std::to_integer<unsigned>(msg[2]));
 }
 
 }   // namespace abt::dut

@@ -30,8 +30,8 @@ void logDut(const Session& sess, std::uint64_t elapsedNs) {
                "fill={} reject={} pos={} bid={} ask={} live={}\n",
                elapsedNs / 1'000'000'000ull, sess.packetsReceived(), f.expected(), f.gaps(),
                sess.feedValid() ? "ok" : "INVALID", sess.ordersSent(), s.enters, s.replaces, s.cancels,
-               s.accepts, s.fills, s.rejects, sess.oms().account().position, sess.book().bestBid(),
-               sess.book().bestAsk(), sess.book().liveOrders());
+               s.accepts, s.fills, s.rejects, sess.oms().netPosition(), sess.book().bestBid(),
+               sess.book().bestAsk(), sess.books().liveOrders());
 }
 
 template <class Session>
@@ -48,12 +48,20 @@ void printDutReport(Session& sess, util::PageFaults faultsAtStart) {
     fmt::print("[oms] orders sent={} enters={} replaces={} cancels={} accepts={} fills={} rejects={} "
                "unknown={} position={}\n",
                sess.ordersSent(), s.enters, s.replaces, s.cancels, s.accepts, s.fills, s.rejects, s.unknown,
-               sess.oms().account().position);
+               sess.oms().netPosition());
+    for (std::size_t h = 0; h < sess.books().hotCount(); ++h) {
+        const HotSymbol& hs = sess.books().hot(h);
+        fmt::print("[oms] {:<8} locate={} resolved={} position={} bid={} ask={} live={}\n", hs.name,
+                   hs.locate, hs.resolved, sess.oms().account(h).position, sess.book(h).bestBid(),
+                   sess.book(h).bestAsk(), sess.book(h).liveOrders());
+    }
     const SequenceTracker& f = sess.feed();
     fmt::print("[feed] packets={} next seq={} gaps={} missed={} stale={} foreign msgs={} resets={} "
                "live orders={}\n",
                sess.packetsReceived(), f.expected(), f.gaps(), f.missed(), f.stale(), sess.foreignMessages(),
-               sess.sessionResets(), sess.book().liveOrders());
+               sess.sessionResets(), sess.books().liveOrders());
+    fmt::print("[feed] symbols booked={} undirected msgs={} rehashes={} arena={}\n", sess.books().symbols(),
+               sess.books().undirected(), sess.books().rehashes(), sess.arenaInfo());
     if (sess.feedFaults() > 0) {
         fmt::print("[feed] FAULTS={} last at seq={} state={}: book invalidated and quoting stopped until the "
                    "next StartOfMessages\n",

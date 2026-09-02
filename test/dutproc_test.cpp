@@ -75,10 +75,9 @@ struct BidOnce {
 
 void test_sw_recorders() {
     dut::DutConfig cfg{};
-    cfg.minPrice = 0;
-    cfg.maxPrice = 100000;
+    cfg.symbols  = {"ABT"};
+    cfg.locates  = {0};
     cfg.tickWire = 100;
-    cfg.symbol   = "ABT";
     dut::DutSession<dut::IoMode::Loopback, BidOnce> sess(cfg, BidOnce{});
 
     std::array<std::byte, 512> buf{};
@@ -100,10 +99,10 @@ void test_sw_recorders() {
 
 void bench_proc() {
     dut::DutConfig cfg{};
-    cfg.minPrice      = 0;
-    cfg.maxPrice      = 100000;
+    cfg.symbols       = {"ABT"};
+    cfg.locates       = {0};
     cfg.tickWire      = 100;
-    cfg.symbol        = "ABT";
+    cfg.hotMapSlots   = 1u << 12;
     cfg.queueCapacity = 1u << 17;
     dut::DutSession<dut::IoMode::Loopback, NeverSend> sess(cfg, NeverSend{});
 

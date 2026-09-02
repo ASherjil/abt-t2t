@@ -33,6 +33,7 @@ BookBuilder::BookBuilder(const BookConfig& cfg)
       m_bidSize(cfg.memory == nullptr ? std::pmr::get_default_resource() : cfg.memory),
       m_askSize(cfg.memory == nullptr ? std::pmr::get_default_resource() : cfg.memory),
       m_orders(cfg.maxOrders, cfg.memory) {
+    m_orders.countGrowsIn(cfg.rehashes);
 }
 
 void BookBuilder::anchor(Price price) {

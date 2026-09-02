@@ -38,8 +38,6 @@ dut::QuoterConfig baseCfg() {
     cfg.halfSpreadTicks  = 5;
     cfg.quoteQty         = 100;
     cfg.skewTicksPerUnit = 0.0;
-    cfg.minPrice         = 0;
-    cfg.maxPrice         = 100000;
     return cfg;
 }
 

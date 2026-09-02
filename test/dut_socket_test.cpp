@@ -97,10 +97,10 @@ void test_socket_integration() {
     sim.attachSockets(util::UniqueFd{oe[0]}, util::UniqueFd{md[0]});
 
     dut::DutConfig dutCfg{};
-    dutCfg.minPrice     = 0;
-    dutCfg.maxPrice     = 100000;
+    dutCfg.symbols      = {"AAPL"};
+    dutCfg.locates      = {simCfg.stockLocate};
     dutCfg.tickWire     = 100;
-    dutCfg.symbol       = "AAPL";
+    dutCfg.bandFraction = 0.0;
     dutCfg.firstUserRef = 1;
     dut::DutSession<dut::IoMode::Socket, TakeOnce> dutSess(dutCfg, TakeOnce{.trigger = 5200, .qty = 5u});
     dutSess.attachSockets(util::UniqueFd{oe[1]}, util::UniqueFd{md[1]});

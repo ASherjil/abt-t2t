@@ -20,8 +20,6 @@ struct QuoterConfig {
     Price    halfSpreadTicks  = 1;     // half of the quoted spread, in ticks
     Quantity quoteQty         = 100;   // size per side
     double   skewTicksPerUnit = 0.0;   // quote shift (in ticks) per share of inventory
-    Price    minPrice         = 0;     // band clamp
-    Price    maxPrice         = 0;
 };
 
 class QuoterStrategy {
@@ -31,9 +29,9 @@ public:
     [[nodiscard]] QuoteTargets onBook(const BookBuilder& book, const Account& acct) noexcept;
 
 private:
-    [[nodiscard]] Price roundDownToTick(double price) const noexcept;
-    [[nodiscard]] Price roundUpToTick(double price) const noexcept;
-    [[nodiscard]] Price clampToBand(Price price) const noexcept;
+    [[nodiscard]] Price        roundDownToTick(double price, Price origin) const noexcept;
+    [[nodiscard]] Price        roundUpToTick(double price, Price origin) const noexcept;
+    [[nodiscard]] static Price clampToBand(Price price, const BookBuilder& book) noexcept;
 
     QuoterConfig m_cfg;
 };

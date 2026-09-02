@@ -25,6 +25,10 @@ class FlatHashMap {
 public:
     explicit FlatHashMap(std::size_t capacityHint = 16, std::pmr::memory_resource* mr = nullptr);
 
+    void countGrowsIn(std::uint64_t* counter) noexcept {
+        m_grows = counter;
+    }
+
     // Returns a pointer to the stored value (mutable), or nullptr if the key is absent. The pointer
     // is invalidated by any insertOrAssign that grows the table or by erase.
     [[nodiscard]] Value*       find(Key key) noexcept;
@@ -57,8 +61,9 @@ private:
     void                               grow();
 
     std::pmr::vector<Slot> m_slots;
-    std::size_t            m_mask = 0;
-    std::size_t            m_size = 0;
+    std::size_t            m_mask  = 0;
+    std::size_t            m_size  = 0;
+    std::uint64_t*         m_grows = nullptr;
 };
 
 template <class Key, class Value, Key Empty>
@@ -238,6 +243,9 @@ void FlatHashMap<Key, Value, Empty>::grow() {
     m_slots.assign(newCap, Slot{Empty, Value{}});
     m_mask = newCap - 1;
     m_size = 0;
+    if (m_grows != nullptr) {
+        ++*m_grows;
+    }
     for (const Slot& s : old) {
         if (s.key != Empty) {
             insertOrAssign(s.key, s.value);

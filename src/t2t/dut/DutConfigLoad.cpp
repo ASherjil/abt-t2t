@@ -21,19 +21,32 @@ DutAppConfig loadDutConfig(const std::string& path) {
         std::exit(1);
     }
 
-    c.session.symbol          = t["venue"]["symbol"].value_or(c.session.symbol);
-    c.session.minPrice        = t["venue"]["min_price"].value_or(c.session.minPrice);
-    c.session.maxPrice        = t["venue"]["max_price"].value_or(c.session.maxPrice);
+    if (const toml::array* syms = t["venue"]["symbols"].as_array(); syms != nullptr) {
+        for (const toml::node& n : *syms) {
+            if (const auto v = n.value<std::string>(); v.has_value()) {
+                c.session.symbols.push_back(*v);
+            }
+        }
+    }
+    if (const toml::array* locs = t["venue"]["locates"].as_array(); locs != nullptr) {
+        for (const toml::node& n : *locs) {
+            if (const auto v = n.value<std::int64_t>(); v.has_value()) {
+                c.session.locates.push_back(static_cast<std::uint16_t>(*v));
+            }
+        }
+    }
     c.session.tickWire        = t["venue"]["tick_wire"].value_or(c.session.tickWire);
+    c.session.coldBandTicks   = t["venue"]["cold_band_ticks"].value_or(c.session.coldBandTicks);
+    c.session.hotBandTicks    = t["venue"]["hot_band_ticks"].value_or(c.session.hotBandTicks);
+    c.session.bandFraction    = t["venue"]["band_fraction"].value_or(c.session.bandFraction);
+    c.session.coldMapSlots    = t["venue"]["cold_map_slots"].value_or(c.session.coldMapSlots);
+    c.session.hotMapSlots     = t["venue"]["hot_map_slots"].value_or(c.session.hotMapSlots);
+    c.session.arenaMb         = t["venue"]["arena_mb"].value_or(c.session.arenaMb);
     c.session.firstUserRef    = t["venue"]["first_user_ref"].value_or(c.session.firstUserRef);
-    c.session.maxOrders       = t["venue"]["max_orders"].value_or(c.session.maxOrders);
-    c.session.stockLocate     = t["venue"]["stock_locate"].value_or(c.session.stockLocate);
     c.session.marketHoursOnly = t["venue"]["market_hours_only"].value_or(c.session.marketHoursOnly);
     c.session.ownRefMin       = static_cast<OrderId>(t["venue"]["own_ref_min"].value_or(std::int64_t{0}));
 
     c.quoter.tickWire         = c.session.tickWire;
-    c.quoter.minPrice         = c.session.minPrice;
-    c.quoter.maxPrice         = c.session.maxPrice;
     c.quoter.halfSpreadTicks  = t["quoter"]["half_spread_ticks"].value_or(c.quoter.halfSpreadTicks);
     c.quoter.quoteQty         = t["quoter"]["quote_qty"].value_or(c.quoter.quoteQty);
     c.quoter.skewTicksPerUnit = t["quoter"]["skew_ticks_per_unit"].value_or(c.quoter.skewTicksPerUnit);

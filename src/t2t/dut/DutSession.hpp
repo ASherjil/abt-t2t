@@ -22,12 +22,13 @@
 #include <sys/socket.h>
 #include <unistd.h>
 
-#include <fmt/core.h>
+#include <fmt/format.h>
 
 #include "third_party/abtrda3/RingConcepts.hpp"
 
 #include "t2t/BuildConfig.hpp"
 #include "t2t/dut/BookBuilder.hpp"
+#include "t2t/dut/BookTable.hpp"
 #include "t2t/dut/LatencyRecorder.hpp"
 #include "t2t/dut/OrderManager.hpp"
 #include "t2t/dut/SampleContext.hpp"
@@ -41,6 +42,7 @@
 #include "t2t/protocol/SoupBinTcp.hpp"
 #include "t2t/protocol/UdpFramer.hpp"
 #include "t2t/util/Clock.hpp"
+#include "t2t/util/HugePageArena.hpp"
 #include "t2t/util/Tsc.hpp"
 #include "t2t/util/UniqueFd.hpp"
 
@@ -60,17 +62,20 @@ struct NoRecorder {
 };
 
 struct DutConfig {
-    Price         minPrice = 0;
-    Price         maxPrice = 0;
-    Price         tickWire = 1;
-    std::string   symbol;
-    std::uint16_t stockLocate     = 0;
-    bool          marketHoursOnly = false;
-    OrderId       ownRefMin       = 0;
-    std::uint32_t firstUserRef    = 1;
-    std::size_t   maxOrders       = 1u << 12;
-    std::size_t   queueCapacity   = 1u << 16;
-    int           sigFigs         = 3;
+    std::vector<std::string>   symbols;
+    std::vector<std::uint16_t> locates;
+    Price                      tickWire        = 1;
+    std::size_t                coldBandTicks   = 2048;
+    std::size_t                hotBandTicks    = 8192;
+    double                     bandFraction    = 0.10;
+    std::size_t                coldMapSlots    = 1024;
+    std::size_t                hotMapSlots     = 1u << 16;
+    std::size_t                arenaMb         = 0;
+    bool                       marketHoursOnly = false;
+    OrderId                    ownRefMin       = 0;
+    std::uint32_t              firstUserRef    = 1;
+    std::size_t                queueCapacity   = 1u << 16;
+    int                        sigFigs         = 3;
 };
 
 template <IoMode Mode, Strategy Strat, class Io = NoTransport>
@@ -113,7 +118,9 @@ public:
     void pollTxCompletions(Src& src);
     void completeTx(std::uint32_t userRef, std::uint64_t txHwts) noexcept;
 
-    [[nodiscard]] const BookBuilder&     book() const noexcept;
+    [[nodiscard]] const BookBuilder&     book(std::size_t hot = 0) const noexcept;
+    [[nodiscard]] const BookTable&       books() const noexcept;
+    [[nodiscard]] std::string            arenaInfo() const;
     [[nodiscard]] const OrderManager&    oms() const noexcept;
     [[nodiscard]] const SequenceTracker& feed() const noexcept;
     [[nodiscard]] LatencyRecorder&       t2t() noexcept;
@@ -125,7 +132,7 @@ public:
     [[nodiscard]] std::uint64_t packetsReceived() const noexcept;
     [[nodiscard]] std::uint64_t foreignMessages() const noexcept;
     [[nodiscard]] std::uint32_t sessionResets() const noexcept;
-    [[nodiscard]] bool          tradingAllowed() const noexcept;
+    [[nodiscard]] bool          tradingAllowed(std::size_t hot = 0) const noexcept;
     [[nodiscard]] bool          feedValid() const noexcept;
     [[nodiscard]] std::uint32_t feedFaults() const noexcept;
     [[nodiscard]] std::uint64_t lastFaultSeq() const noexcept;
@@ -170,30 +177,36 @@ private:
     void invalidateFeed(std::uint64_t seq) noexcept;
     [[nodiscard]] bool sendOrder(std::span<const std::byte> ouch);
     void               recordSend(std::uint32_t userRef, std::uint64_t rxHwts, std::uint64_t ctx) noexcept;
-    [[nodiscard]] static std::uint16_t udpDstPort(const std::uint8_t* frame) noexcept;
-    [[nodiscard]] static std::uint64_t swNow() noexcept;
-    [[nodiscard]] static SwRecorder    makeSwRecorder(const char* name, const DutConfig& cfg);
+    [[nodiscard]] static std::uint16_t   udpDstPort(const std::uint8_t* frame) noexcept;
+    [[nodiscard]] static std::uint64_t   swNow() noexcept;
+    [[nodiscard]] static SwRecorder      makeSwRecorder(const char* name, const DutConfig& cfg);
+    [[nodiscard]] static BookTableConfig tableConfigOf(const DutConfig& cfg, std::pmr::memory_resource* mr);
+    void                                 touch(int hot) noexcept;
 
-    DutConfig       m_cfg;
-    Strat           m_strat;
-    BookBuilder     m_book;
-    OrderManager    m_oms;
-    SequenceTracker m_seq;
-    LatencyRecorder m_t2t;
-    SwRecorder      m_t2tSw;
-    SwRecorder      m_proc;
-    std::uint32_t   m_ordersSent = 0;
-    std::uint64_t   m_packets    = 0;
-    std::uint64_t   m_foreign    = 0;
-    std::uint32_t   m_resets     = 0;
-    std::uint32_t   m_feedFaults = 0;
-    std::uint64_t   m_lastFault  = 0;
-    bool            m_marketOpen = false;
-    bool            m_trading    = true;
-    bool            m_feedValid  = true;
+    DutConfig           m_cfg;
+    util::HugePageArena m_arena;
+    BookTable           m_books;
+    std::vector<Strat>  m_strats;
+    OrderManager        m_oms;
+    SequenceTracker     m_seq;
+    LatencyRecorder     m_t2t;
+    SwRecorder          m_t2tSw;
+    SwRecorder          m_proc;
+    std::uint32_t       m_ordersSent   = 0;
+    std::uint64_t       m_packets      = 0;
+    std::uint32_t       m_resets       = 0;
+    std::uint32_t       m_feedFaults   = 0;
+    std::uint64_t       m_lastFault    = 0;
+    bool                m_marketOpen   = false;
+    bool                m_feedValid    = true;
+    bool                m_reconcileAll = false;
+    std::uint32_t       m_gen          = 0;
+    std::size_t         m_touchedCount = 0;
 
-    std::array<Outbound, OrderManager::kMaxOutbound> m_out{};
-    std::array<InFlight, kInFlight>                  m_inflight{};
+    std::vector<Outbound>           m_out;
+    std::vector<std::uint16_t>      m_touched;
+    std::vector<std::uint32_t>      m_touchGen;
+    std::array<InFlight, kInFlight> m_inflight{};
 
     [[no_unique_address]] std::conditional_t<Mode == IoMode::Loopback, Capture, Empty>         m_cap{};
     [[no_unique_address]] std::conditional_t<Mode == IoMode::Socket, SocketState, Empty>       m_sock{};
@@ -203,12 +216,42 @@ private:
 template <IoMode Mode, Strategy Strat, class Io>
 DutSession<Mode, Strat, Io>::DutSession(const DutConfig& cfg, Strat strat)
     : m_cfg(cfg),
-      m_strat(std::move(strat)),
-      m_book(cfg.minPrice, cfg.maxPrice, cfg.tickWire, cfg.maxOrders, cfg.ownRefMin),
-      m_oms(OmsConfig{.symbol = cfg.symbol, .firstUserRef = cfg.firstUserRef}),
+      m_arena(cfg.arenaMb << 20),
+      m_books(tableConfigOf(cfg, cfg.arenaMb != 0 ? m_arena.resource() : nullptr)),
+      m_strats(m_books.hotCount(), strat),
+      m_oms(OmsConfig{.symbols = cfg.symbols, .firstUserRef = cfg.firstUserRef}),
       m_t2t("t2t_hw", cfg.queueCapacity, 1.0, cfg.sigFigs),
       m_t2tSw(makeSwRecorder("t2t_sw", cfg)),
-      m_proc(makeSwRecorder("proc", cfg)) {
+      m_proc(makeSwRecorder("proc", cfg)),
+      m_out(OrderManager::kMaxOutbound * (m_books.hotCount() == 0 ? 1 : m_books.hotCount())),
+      m_touched(m_books.hotCount()),
+      m_touchGen(m_books.hotCount(), 0) {
+}
+
+template <IoMode Mode, Strategy Strat, class Io>
+BookTableConfig DutSession<Mode, Strat, Io>::tableConfigOf(const DutConfig&           cfg,
+                                                           std::pmr::memory_resource* mr) {
+    BookTableConfig t{};
+    t.tickWire      = cfg.tickWire;
+    t.coldBandTicks = cfg.coldBandTicks;
+    t.hotBandTicks  = cfg.hotBandTicks;
+    t.bandFraction  = cfg.bandFraction;
+    t.coldMapSlots  = cfg.coldMapSlots;
+    t.hotMapSlots   = cfg.hotMapSlots;
+    t.ownRefMin     = cfg.ownRefMin;
+    t.hotSymbols    = cfg.symbols;
+    t.hotLocates    = cfg.locates;
+    t.memory        = mr;
+    return t;
+}
+
+template <IoMode Mode, Strategy Strat, class Io>
+void DutSession<Mode, Strat, Io>::touch(int hot) noexcept {
+    const auto h = static_cast<std::size_t>(hot);
+    if (m_touchGen[h] != m_gen) {
+        m_touchGen[h]               = m_gen;
+        m_touched[m_touchedCount++] = static_cast<std::uint16_t>(h);
+    }
 }
 
 template <IoMode Mode, Strategy Strat, class Io>
@@ -445,8 +488,21 @@ void DutSession<Mode, Strat, Io>::completeTx(std::uint32_t userRef, std::uint64_
 }
 
 template <IoMode Mode, Strategy Strat, class Io>
-const BookBuilder& DutSession<Mode, Strat, Io>::book() const noexcept {
-    return m_book;
+const BookBuilder& DutSession<Mode, Strat, Io>::book(std::size_t hot) const noexcept {
+    return m_books.hotBook(hot);
+}
+
+template <IoMode Mode, Strategy Strat, class Io>
+const BookTable& DutSession<Mode, Strat, Io>::books() const noexcept {
+    return m_books;
+}
+
+template <IoMode Mode, Strategy Strat, class Io>
+std::string DutSession<Mode, Strat, Io>::arenaInfo() const {
+    if (m_arena.capacity() == 0) {
+        return "heap";
+    }
+    return fmt::format("{} MB {}", m_arena.capacity() >> 20, m_arena.huge() ? "hugetlb" : "4K-page fallback");
 }
 
 template <IoMode Mode, Strategy Strat, class Io>
@@ -512,17 +568,33 @@ void DutSession<Mode, Strat, Io>::applyPacket(std::span<const std::byte> moldPac
     if (r == SequenceTracker::Result::Gap) [[unlikely]] {
         invalidateFeed(seq);
     }
-    const std::size_t capBefore = m_book.orderCapacity();
+    const std::uint64_t rehashBefore = m_books.rehashes();
+    ++m_gen;
+    m_touchedCount = 0;
     mold::forEachMessage(moldPacket, [this](std::uint64_t, std::span<const std::byte> msg) {
         applyMessage(msg);
     });
-    const QuoteTargets targets = tradingAllowed() ? m_strat.onBook(m_book, m_oms.account()) : QuoteTargets{};
-    const std::size_t  n = m_oms.reconcile(targets, std::span<Outbound, OrderManager::kMaxOutbound>{m_out});
-    std::uint8_t       flags = 0;
+    if (m_reconcileAll) [[unlikely]] {
+        m_reconcileAll = false;
+        for (std::size_t h = 0; h < m_books.hotCount(); ++h) {
+            touch(static_cast<int>(h));
+        }
+    }
+    std::size_t n = 0;
+    for (std::size_t k = 0; k < m_touchedCount; ++k) {
+        const std::size_t  h       = m_touched[k];
+        const QuoteTargets targets = tradingAllowed(h)
+                                         ? m_strats[h].onBook(m_books.hotBook(h), m_oms.account(h))
+                                         : QuoteTargets{};
+        n += m_oms.reconcile(h, targets,
+                             std::span<Outbound, OrderManager::kMaxOutbound>{&m_out[n],
+                                                                             OrderManager::kMaxOutbound});
+    }
+    std::uint8_t flags = 0;
     if (n > 0) {
         flags |= SampleContext::kSent;
     }
-    if (m_book.orderCapacity() != capBefore) {
+    if (m_books.rehashes() != rehashBefore) {
         flags |= SampleContext::kRehash;
     }
     if (r == SequenceTracker::Result::Gap) {
@@ -556,22 +628,10 @@ void DutSession<Mode, Strat, Io>::applyMessage(std::span<const std::byte> msg) {
     if (!m_feedValid) [[unlikely]] {
         return;
     }
-    if (m_cfg.stockLocate != 0) {
-        const auto locate = static_cast<std::uint16_t>((std::to_integer<unsigned>(msg[1]) << 8) |
-                                                       std::to_integer<unsigned>(msg[2]));
-        if (locate != m_cfg.stockLocate) {
-            ++m_foreign;
-            return;
-        }
+    const int hot = m_books.apply(msg);
+    if (hot != BookTable::kCold) {
+        touch(hot);
     }
-    if (type == 'H') [[unlikely]] {
-        if (msg.size() >= sizeof(itch::StockTradingAction)) {
-            const auto* h = reinterpret_cast<const itch::StockTradingAction*>(msg.data());
-            m_trading     = h->tradingState == itch::TradingState::Trading;
-        }
-        return;
-    }
-    m_book.apply(msg);
 }
 
 template <IoMode Mode, Strategy Strat, class Io>
@@ -582,17 +642,19 @@ void DutSession<Mode, Strat, Io>::onSystemEvent(std::span<const std::byte> msg) 
     const auto* s = reinterpret_cast<const itch::SystemEvent*>(msg.data());
     switch (static_cast<itch::SystemEventCode>(s->eventCode)) {
         case itch::SystemEventCode::StartOfMessages:
-            m_book.clear();
-            m_marketOpen = false;
-            m_trading    = true;
-            m_feedValid  = true;
+            m_books.clearAll();
+            m_marketOpen   = false;
+            m_feedValid    = true;
+            m_reconcileAll = true;
             ++m_resets;
             break;
         case itch::SystemEventCode::StartOfMarketHours:
-            m_marketOpen = true;
+            m_marketOpen   = true;
+            m_reconcileAll = true;
             break;
         case itch::SystemEventCode::EndOfMarketHours:
-            m_marketOpen = false;
+            m_marketOpen   = false;
+            m_reconcileAll = true;
             break;
         default:
             break;
@@ -600,16 +662,17 @@ void DutSession<Mode, Strat, Io>::onSystemEvent(std::span<const std::byte> msg) 
 }
 
 template <IoMode Mode, Strategy Strat, class Io>
-bool DutSession<Mode, Strat, Io>::tradingAllowed() const noexcept {
-    return m_feedValid && (!m_cfg.marketHoursOnly || (m_marketOpen && m_trading));
+bool DutSession<Mode, Strat, Io>::tradingAllowed(std::size_t hot) const noexcept {
+    return m_feedValid && (!m_cfg.marketHoursOnly || (m_marketOpen && m_books.hot(hot).trading));
 }
 
 template <IoMode Mode, Strategy Strat, class Io>
 void DutSession<Mode, Strat, Io>::invalidateFeed(std::uint64_t seq) noexcept {
-    m_feedValid = false;
-    m_lastFault = seq;
+    m_feedValid    = false;
+    m_lastFault    = seq;
+    m_reconcileAll = true;
     ++m_feedFaults;
-    m_book.clear();
+    m_books.clearAll();
 }
 
 template <IoMode Mode, Strategy Strat, class Io>
@@ -629,7 +692,7 @@ std::uint64_t DutSession<Mode, Strat, Io>::lastFaultSeq() const noexcept {
 
 template <IoMode Mode, Strategy Strat, class Io>
 std::uint64_t DutSession<Mode, Strat, Io>::foreignMessages() const noexcept {
-    return m_foreign;
+    return m_books.undirected();
 }
 
 template <IoMode Mode, Strategy Strat, class Io>

@@ -28,26 +28,32 @@ template <class M>
 
 OrderManager::OrderManager(const OmsConfig& cfg)
     : m_cfg(cfg),
-      m_nextUserRef(cfg.firstUserRef == 0 ? 1u : cfg.firstUserRef) {
+      m_nextUserRef(cfg.firstUserRef == 0 ? 1u : cfg.firstUserRef),
+      m_slots(cfg.symbols.empty() ? 1 : cfg.symbols.size()),
+      m_acct(cfg.symbols.empty() ? 1 : cfg.symbols.size()) {
+    if (m_cfg.symbols.empty()) {
+        m_cfg.symbols.emplace_back();
+    }
 }
 
-std::size_t OrderManager::reconcile(const QuoteTargets& t, std::span<Outbound, kMaxOutbound> out) noexcept {
+std::size_t OrderManager::reconcile(std::size_t sym, const QuoteTargets& t,
+                                    std::span<Outbound, kMaxOutbound> out) noexcept {
     std::size_t      n         = 0;
-    const QuoteSlot& ask       = m_slots[idx(Side::Sell)];
+    const QuoteSlot& ask       = m_slots[sym][idx(Side::Sell)];
     const bool       sellFirst = t.quoteBid && ask.state != QuoteState::Idle && t.bidPrice >= ask.price;
     if (sellFirst) {
-        n += reconcileSide(Side::Sell, t.quoteAsk, t.askPrice, t.askQty, out[n]);
-        n += reconcileSide(Side::Buy, t.quoteBid, t.bidPrice, t.bidQty, out[n]);
+        n += reconcileSide(sym, Side::Sell, t.quoteAsk, t.askPrice, t.askQty, out[n]);
+        n += reconcileSide(sym, Side::Buy, t.quoteBid, t.bidPrice, t.bidQty, out[n]);
     } else {
-        n += reconcileSide(Side::Buy, t.quoteBid, t.bidPrice, t.bidQty, out[n]);
-        n += reconcileSide(Side::Sell, t.quoteAsk, t.askPrice, t.askQty, out[n]);
+        n += reconcileSide(sym, Side::Buy, t.quoteBid, t.bidPrice, t.bidQty, out[n]);
+        n += reconcileSide(sym, Side::Sell, t.quoteAsk, t.askPrice, t.askQty, out[n]);
     }
     return n;
 }
 
-std::size_t OrderManager::reconcileSide(Side side, bool want, Price price, Quantity qty,
+std::size_t OrderManager::reconcileSide(std::size_t sym, Side side, bool want, Price price, Quantity qty,
                                         Outbound& out) noexcept {
-    QuoteSlot& s = m_slots[idx(side)];
+    QuoteSlot& s = m_slots[sym][idx(side)];
     if (want && qty == 0) {
         want = false;
     }
@@ -56,8 +62,8 @@ std::size_t OrderManager::reconcileSide(Side side, bool want, Price price, Quant
             if (!want) {
                 return 0;
             }
-            const std::uint32_t ref = allocRef(side);
-            encodeEnter(out, ref, side, price, qty);
+            const std::uint32_t ref = allocRef(sym, side);
+            encodeEnter(out, sym, ref, side, price, qty);
             s.state      = QuoteState::PendingNew;
             s.userRef    = ref;
             s.pendingRef = 0;
@@ -77,7 +83,7 @@ std::size_t OrderManager::reconcileSide(Side side, bool want, Price price, Quant
             if (price == s.price && qty == s.leaves) {
                 return 0;
             }
-            const std::uint32_t ref = allocRef(side);
+            const std::uint32_t ref = allocRef(sym, side);
             encodeReplace(out, s.userRef, ref, price, qty);
             s.state      = QuoteState::PendingReplace;
             s.pendingRef = ref;
@@ -146,12 +152,28 @@ void OrderManager::onAck(std::span<const std::byte> ouch) noexcept {
     }
 }
 
-const Account& OrderManager::account() const noexcept {
-    return m_acct;
+std::size_t OrderManager::symbolCount() const noexcept {
+    return m_slots.size();
+}
+
+const Account& OrderManager::account(std::size_t sym) const noexcept {
+    return m_acct[sym];
+}
+
+std::int64_t OrderManager::netPosition() const noexcept {
+    std::int64_t p = 0;
+    for (const Account& a : m_acct) {
+        p += a.position;
+    }
+    return p;
+}
+
+const QuoteSlot& OrderManager::slot(std::size_t sym, Side side) const noexcept {
+    return m_slots[sym][idx(side)];
 }
 
 const QuoteSlot& OrderManager::slot(Side side) const noexcept {
-    return m_slots[idx(side)];
+    return m_slots[0][idx(side)];
 }
 
 const OmsStats& OrderManager::stats() const noexcept {
@@ -162,50 +184,64 @@ std::uint32_t OrderManager::nextUserRef() const noexcept {
     return m_nextUserRef;
 }
 
-std::uint32_t OrderManager::allocRef(Side side) noexcept {
+std::uint32_t OrderManager::allocRef(std::size_t sym, Side side) noexcept {
     const std::uint32_t ref = m_nextUserRef++;
     if (m_nextUserRef == 0) {
         m_nextUserRef = 1;
     }
-    m_refs[ref % kRefRing] = RefSide{.userRef = ref, .side = side};
+    m_refs[ref % kRefRing] = RefSide{.userRef = ref, .sym = static_cast<std::uint16_t>(sym), .side = side};
     return ref;
 }
 
-bool OrderManager::sideOf(std::uint32_t userRef, Side& side) const noexcept {
+bool OrderManager::lookupRef(std::uint32_t userRef, std::size_t& sym, Side& side) const noexcept {
     const RefSide& r = m_refs[userRef % kRefRing];
     if (r.userRef != userRef) {
         return false;
     }
+    sym  = r.sym;
     side = r.side;
     return true;
 }
 
-QuoteSlot* OrderManager::slotByRef(std::uint32_t userRef) noexcept {
-    for (QuoteSlot& s : m_slots) {
+QuoteSlot* OrderManager::slotByRef(std::uint32_t userRef, std::size_t& sym) noexcept {
+    Side side = Side::Buy;
+    if (std::size_t hint = 0; lookupRef(userRef, hint, side)) {
+        QuoteSlot& s = m_slots[hint][idx(side)];
         if (s.state != QuoteState::Idle && s.userRef == userRef) {
+            sym = hint;
             return &s;
+        }
+    }
+    for (std::size_t i = 0; i < m_slots.size(); ++i) {
+        for (QuoteSlot& s : m_slots[i]) {
+            if (s.state != QuoteState::Idle && s.userRef == userRef) {
+                sym = i;
+                return &s;
+            }
         }
     }
     return nullptr;
 }
 
 QuoteSlot* OrderManager::slotByPending(std::uint32_t userRef) noexcept {
-    for (QuoteSlot& s : m_slots) {
-        if (s.state == QuoteState::PendingReplace && s.pendingRef == userRef) {
-            return &s;
+    for (Pair& pair : m_slots) {
+        for (QuoteSlot& s : pair) {
+            if (s.state == QuoteState::PendingReplace && s.pendingRef == userRef) {
+                return &s;
+            }
         }
     }
     return nullptr;
 }
 
-void OrderManager::encodeEnter(Outbound& out, std::uint32_t userRef, Side side, Price price,
+void OrderManager::encodeEnter(Outbound& out, std::size_t sym, std::uint32_t userRef, Side side, Price price,
                                Quantity qty) const noexcept {
     ouch::EnterOrder o{};
     o.type               = ouch::InType::EnterOrder;
     o.userRefNum         = userRef;
     o.side               = ouchSide(side);
     o.quantity           = qty;
-    o.symbol             = std::string_view{m_cfg.symbol};
+    o.symbol             = std::string_view{m_cfg.symbols[sym]};
     o.price              = wirePrice(price);
     o.timeInForce        = ouch::TimeInForce::Day;
     o.display            = ouch::Display::Visible;
@@ -249,7 +285,8 @@ void OrderManager::encodeCancel(Outbound& out, std::uint32_t userRef) noexcept {
 }
 
 void OrderManager::onAccepted(const ouch::Accepted& m) noexcept {
-    QuoteSlot* s = slotByRef(m.userRefNum.value());
+    std::size_t sym = 0;
+    QuoteSlot*  s   = slotByRef(m.userRefNum.value(), sym);
     if (s == nullptr || s->state != QuoteState::PendingNew) {
         ++m_stats.unknown;
         return;
@@ -288,17 +325,18 @@ void OrderManager::onExecuted(const ouch::Executed& m) noexcept {
     const std::uint32_t ref  = m.userRefNum.value();
     const Quantity      qty  = m.quantity.value();
     Side                side = Side::Buy;
-    if (!sideOf(ref, side)) {
+    std::size_t         sym  = 0;
+    if (!lookupRef(ref, sym, side)) {
         ++m_stats.unknown;
         return;
     }
     ++m_stats.fills;
     if (side == Side::Buy) {
-        m_acct.position += static_cast<std::int64_t>(qty);
+        m_acct[sym].position += static_cast<std::int64_t>(qty);
     } else {
-        m_acct.position -= static_cast<std::int64_t>(qty);
+        m_acct[sym].position -= static_cast<std::int64_t>(qty);
     }
-    QuoteSlot* s = slotByRef(ref);
+    QuoteSlot* s = slotByRef(ref, sym);
     if (s == nullptr) {
         return;
     }
@@ -309,7 +347,8 @@ void OrderManager::onExecuted(const ouch::Executed& m) noexcept {
 }
 
 void OrderManager::onCanceled(const ouch::Canceled& m) noexcept {
-    QuoteSlot* s = slotByRef(m.userRefNum.value());
+    std::size_t sym = 0;
+    QuoteSlot*  s   = slotByRef(m.userRefNum.value(), sym);
     if (s == nullptr) {
         ++m_stats.unknown;
         return;
@@ -338,7 +377,8 @@ void OrderManager::onRejected(const ouch::Rejected& m) noexcept {
         }
         return;
     }
-    QuoteSlot* s = slotByRef(ref);
+    std::size_t sym = 0;
+    QuoteSlot*  s   = slotByRef(ref, sym);
     if (s == nullptr) {
         ++m_stats.unknown;
         return;
@@ -348,7 +388,8 @@ void OrderManager::onRejected(const ouch::Rejected& m) noexcept {
 }
 
 void OrderManager::onCancelReject(const ouch::CancelReject& m) noexcept {
-    QuoteSlot* s = slotByRef(m.userRefNum.value());
+    std::size_t sym = 0;
+    QuoteSlot*  s   = slotByRef(m.userRefNum.value(), sym);
     if (s == nullptr || s->state != QuoteState::PendingCancel) {
         ++m_stats.unknown;
         return;

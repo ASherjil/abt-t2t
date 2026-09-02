@@ -25,7 +25,8 @@ void FeedValidator::onMessage(std::span<const std::byte> msg) {
     const char type = static_cast<char>(msg[0]);
     if (type == 'S') {
         const auto* s = as<itch::SystemEvent>(msg);
-        if (s != nullptr && static_cast<itch::SystemEventCode>(s->eventCode) == itch::SystemEventCode::StartOfMessages) {
+        if (s != nullptr &&
+            static_cast<itch::SystemEventCode>(s->eventCode) == itch::SystemEventCode::StartOfMessages) {
             m_books.clearAll();
         }
         return;
@@ -79,7 +80,8 @@ void FeedValidator::onMessage(std::span<const std::byte> msg) {
 
     (void)m_books.apply(msg);
 
-    if (type == 'A' || type == 'F' || type == 'U' || type == 'D' || type == 'E' || type == 'C' || type == 'X') {
+    if (type == 'A' || type == 'F' || type == 'U' || type == 'D' || type == 'E' || type == 'C' ||
+        type == 'X') {
         const dut::BookBuilder* b = m_books.book(locate);
         if (b != nullptr) {
             const Price bb = b->bestBid();
