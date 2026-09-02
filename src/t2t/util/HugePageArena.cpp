@@ -41,7 +41,7 @@ HugePageArena::HugePageArena(std::size_t bytes) {
             return;
         }
     }
-    m_map = std::unique_ptr<void, Unmap>(p, Unmap{size});
+    m_map  = std::unique_ptr<void, Unmap>(p, Unmap{size});
     m_pool = std::make_unique<std::pmr::monotonic_buffer_resource>(p, size, std::pmr::new_delete_resource());
 }
 

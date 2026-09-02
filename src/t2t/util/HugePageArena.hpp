@@ -24,9 +24,9 @@ private:
         std::size_t bytes;
     };
 
-    std::unique_ptr<void, Unmap>                          m_map;
+    std::unique_ptr<void, Unmap>                         m_map;
     std::unique_ptr<std::pmr::monotonic_buffer_resource> m_pool;
-    bool                                                  m_huge = false;
+    bool                                                 m_huge = false;
 };
 
 }   // namespace abt::util

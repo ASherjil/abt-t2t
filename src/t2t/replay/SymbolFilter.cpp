@@ -2,13 +2,20 @@
 
 #include <cstdio>
 #include <string>
+#include <utility>
 
 #include "t2t/protocol/Itch50.hpp"
 
 namespace abt::replay {
 
 SymbolFilter::SymbolFilter(std::string_view symbol)
-    : m_symbol(symbol) {
+    : SymbolFilter(std::vector<std::string>{std::string(symbol)}) {
+}
+
+SymbolFilter::SymbolFilter(std::vector<std::string> symbols)
+    : m_symbols(std::move(symbols)),
+      m_locates(m_symbols.size(), 0),
+      m_mine(1u << 16, false) {
 }
 
 bool SymbolFilter::accept(std::span<const std::byte> msg) noexcept {
@@ -23,27 +30,42 @@ bool SymbolFilter::accept(std::span<const std::byte> msg) noexcept {
         if (msg.size() < sizeof(itch::StockDirectory)) {
             return false;
         }
-        const auto* r = reinterpret_cast<const itch::StockDirectory*>(msg.data());
-        if (r->stock.view() == m_symbol) {
-            m_locate   = locateOf(msg);
-            m_resolved = true;
-            return true;
+        const auto*            r      = reinterpret_cast<const itch::StockDirectory*>(msg.data());
+        const std::string_view name   = r->stock.view();
+        const std::uint16_t    locate = locateOf(msg);
+        for (std::size_t i = 0; i < m_symbols.size(); ++i) {
+            if (m_symbols[i] == name) {
+                if (!m_mine[locate]) {
+                    ++m_resolved;
+                }
+                m_locates[i]   = locate;
+                m_mine[locate] = true;
+                return true;
+            }
         }
         return false;
     }
-    return m_resolved && locateOf(msg) == m_locate;
+    return m_mine[locateOf(msg)];
 }
 
 bool SymbolFilter::resolved() const noexcept {
+    return m_resolved == m_symbols.size();
+}
+
+std::size_t SymbolFilter::resolvedCount() const noexcept {
     return m_resolved;
 }
 
 std::uint16_t SymbolFilter::stockLocate() const noexcept {
-    return m_locate;
+    return m_locates.empty() ? 0 : m_locates[0];
 }
 
 const std::string& SymbolFilter::symbol() const noexcept {
-    return m_symbol;
+    return m_symbols[0];
+}
+
+const std::vector<std::string>& SymbolFilter::symbols() const noexcept {
+    return m_symbols;
 }
 
 std::uint16_t SymbolFilter::locateOf(std::span<const std::byte> msg) noexcept {

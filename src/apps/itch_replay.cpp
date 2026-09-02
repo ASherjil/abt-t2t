@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
@@ -5,12 +6,15 @@
 #include <span>
 #include <string>
 #include <string_view>
+#include <vector>
 
 #include <fmt/core.h>
 
 #include "t2t/replay/BookReplay.hpp"
+#include "t2t/replay/FeedValidator.hpp"
 #include "t2t/replay/ItchFile.hpp"
 #include "t2t/replay/SymbolFilter.hpp"
+#include "t2t/util/HugePageArena.hpp"
 
 using namespace abt;
 
@@ -18,25 +22,51 @@ namespace {
 
 struct Args {
     std::string                file;
-    std::string                symbol;
+    std::vector<std::string>   symbols;
+    bool                       all = false;
     std::optional<std::string> extractTo;
     Price                      minPrice      = 0;
     Price                      maxPrice      = 20'000'000;
     Price                      tickWire      = 100;
+    std::size_t                bandTicks     = 2048;
+    std::size_t                arenaMb       = 0;
     std::uint64_t              progressEvery = 50'000'000;
 };
 
 void usage() {
-    fmt::print(stderr, "usage: itch_replay <file.itch|.gz> <SYMBOL> [--extract <out.itch>] "
-                       "[--max-price <wire>] [--tick <wire>]\n");
+    fmt::print(stderr, "usage: itch_replay <file.itch|.gz> <SYMBOL[,SYMBOL...]|--all> [--extract <out.itch>] "
+                       "[--max-price <wire>] [--tick <wire>] [--band <ticks>] [--arena-mb <MB>]\n");
+}
+
+std::vector<std::string> splitSymbols(std::string_view list) {
+    std::vector<std::string> out;
+    while (!list.empty()) {
+        const std::size_t comma = list.find(',');
+        const auto        part  = list.substr(0, comma);
+        if (!part.empty()) {
+            out.emplace_back(part);
+        }
+        if (comma == std::string_view::npos) {
+            break;
+        }
+        list.remove_prefix(comma + 1);
+    }
+    return out;
 }
 
 bool parseArgs(int argc, char** argv, Args& a) {
     if (argc < 3) {
         return false;
     }
-    a.file   = argv[1];
-    a.symbol = argv[2];
+    a.file = argv[1];
+    if (std::string_view{argv[2]} == "--all") {
+        a.all = true;
+    } else {
+        a.symbols = splitSymbols(argv[2]);
+        if (a.symbols.empty()) {
+            return false;
+        }
+    }
     for (int i = 3; i < argc; ++i) {
         const std::string_view opt      = argv[i];
         const bool             hasValue = i + 1 < argc;
@@ -46,11 +76,92 @@ bool parseArgs(int argc, char** argv, Args& a) {
             a.maxPrice = static_cast<Price>(std::atol(argv[++i]));
         } else if (opt == "--tick" && hasValue) {
             a.tickWire = static_cast<Price>(std::atol(argv[++i]));
+        } else if (opt == "--band" && hasValue) {
+            a.bandTicks = static_cast<std::size_t>(std::atol(argv[++i]));
+        } else if (opt == "--arena-mb" && hasValue) {
+            a.arenaMb = static_cast<std::size_t>(std::atol(argv[++i]));
         } else {
             return false;
         }
     }
     return true;
+}
+
+int runValidator(const Args& a, replay::ItchFileReader& reader,
+                 std::optional<replay::ItchFileWriter>& writer) {
+    util::HugePageArena  arena(a.arenaMb << 20);
+    dut::BookTableConfig cfg{};
+    cfg.tickWire      = a.tickWire;
+    cfg.coldBandTicks = a.bandTicks;
+    cfg.hotBandTicks  = a.bandTicks;
+    cfg.bandFraction  = 0.10;
+    cfg.coldMapSlots  = 1024;
+    cfg.memory        = a.arenaMb != 0 ? arena.resource() : nullptr;
+    replay::FeedValidator               validator(cfg);
+    std::optional<replay::SymbolFilter> filter;
+    if (!a.all) {
+        filter.emplace(a.symbols);
+    }
+    std::span<const std::byte> msg;
+    std::uint64_t              kept = 0;
+    while (reader.next(msg)) {
+        if (reader.messages() % a.progressEvery == 0) {
+            fmt::print(stderr, "  ... {} messages read, {} kept, {} books\n", reader.messages(), kept,
+                       validator.books().symbols());
+        }
+        if (filter && !filter->accept(msg)) {
+            continue;
+        }
+        ++kept;
+        if (writer) {
+            writer->write(msg);
+        }
+        validator.onMessage(msg);
+    }
+    if (reader.truncated()) {
+        fmt::print(stderr, "itch_replay: warning: input ended mid-message (truncated file)\n");
+    }
+    if (filter && !filter->resolved()) {
+        fmt::print(stderr, "itch_replay: only {} of {} symbols found in the stock directory\n",
+                   filter->resolvedCount(), a.symbols.size());
+    }
+
+    const replay::FeedTotals t = validator.totals();
+    fmt::print("file           {}\n", a.file);
+    fmt::print("scope          {}{}\n", a.all ? "all symbols" : fmt::format("{} symbols", a.symbols.size()),
+               writer ? fmt::format(", extracted {} msgs to {}", writer->messages(), *a.extractTo) : "");
+    fmt::print("read           {} messages, {} bytes; validated {} across {} books ({} arena)\n",
+               reader.messages(), reader.bytes(), t.messages, t.symbols,
+               a.arenaMb != 0 ? (arena.huge() ? "hugetlb" : "4K-page fallback") : "heap");
+    fmt::print("invariants     unknown ref {}  over-reduce {}  crossed {}  out-of-band adds {}\n",
+               t.unknownRef, t.overReduce, t.crossed, t.outOfBand);
+    fmt::print("book           band {} ticks/side (min), max live orders {} (sampled every 64k msgs)\n",
+               a.bandTicks, t.maxLive);
+
+    std::vector<std::size_t> order;
+    const auto&              per = validator.perSymbol();
+    for (std::size_t l = 0; l < per.size(); ++l) {
+        if (per[l].messages > 0) {
+            order.push_back(l);
+        }
+    }
+    std::sort(order.begin(), order.end(), [&](std::size_t x, std::size_t y) {
+        return per[x].messages > per[y].messages;
+    });
+    fmt::print("{:<10}{:>7}{:>12}{:>9}{:>9}{:>9}{:>9}\n", "symbol", "locate", "msgs", "unknown", "over",
+               "crossed", "maxlive");
+    std::size_t shown = 0;
+    for (const std::size_t l : order) {
+        const replay::SymbolStats& s     = per[l];
+        const bool                 fault = s.unknownRef + s.overReduce + s.crossed > 0;
+        if (shown < 20 || fault) {
+            fmt::print("{:<10}{:>7}{:>12}{:>9}{:>9}{:>9}{:>9}{}\n", s.name.empty() ? "?" : s.name, l,
+                       s.messages, s.unknownRef, s.overReduce, s.crossed, s.maxLive,
+                       fault ? "  <-- FAULT" : "");
+        }
+        ++shown;
+    }
+    return (t.unknownRef + t.overReduce + t.crossed) == 0 ? 0 : 3;
 }
 
 }   // namespace
@@ -76,7 +187,11 @@ int main(int argc, char** argv) {
         }
     }
 
-    replay::SymbolFilter              filter(a.symbol);
+    if (a.all || a.symbols.size() > 1) {
+        return runValidator(a, reader, writer);
+    }
+
+    replay::SymbolFilter              filter(a.symbols[0]);
     std::optional<replay::BookReplay> book;
     std::span<const std::byte>        msg;
     std::uint64_t                     kept = 0;
@@ -102,7 +217,7 @@ int main(int argc, char** argv) {
         fmt::print(stderr, "itch_replay: warning: input ended mid-message (truncated file)\n");
     }
     if (!filter.resolved()) {
-        fmt::print(stderr, "itch_replay: symbol {} not found in stock directory\n", a.symbol);
+        fmt::print(stderr, "itch_replay: symbol {} not found in stock directory\n", a.symbols[0]);
         return 1;
     }
     book->finish();
@@ -110,7 +225,7 @@ int main(int argc, char** argv) {
     const replay::ReplayStats& s   = book->stats();
     const util::Histogram&     gap = book->interArrivalNs();
     fmt::print("file           {}\n", a.file);
-    fmt::print("symbol         {} (locate {})\n", a.symbol, filter.stockLocate());
+    fmt::print("symbol         {} (locate {})\n", a.symbols[0], filter.stockLocate());
     fmt::print("read           {} messages, {} bytes{}\n", reader.messages(), reader.bytes(),
                writer ? fmt::format(", extracted {} to {}", writer->messages(), *a.extractTo) : "");
     fmt::print("symbol msgs    {}  (A/F {}  E/C {}  X {}  D {}  U {}  P/Q {})\n", s.messages, s.adds,

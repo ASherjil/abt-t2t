@@ -47,6 +47,11 @@ target_include_directories(dutbook_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(dutbook_test PRIVATE abt::dut abt::flags fmt::fmt)
 add_test(NAME dutbook_test COMMAND dutbook_test)
 
+add_executable(booktable_test booktable_test.cpp)
+target_include_directories(booktable_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(booktable_test PRIVATE abt::replay abt::dut abt::flags fmt::fmt)
+add_test(NAME booktable_test COMMAND booktable_test)
+
 add_executable(dutsession_test dutsession_test.cpp)
 target_include_directories(dutsession_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(dutsession_test PRIVATE abt::dut abt::flags fmt::fmt)

@@ -41,6 +41,7 @@ target_compile_features(abt_lob INTERFACE cxx_std_20)
 # ---------------------------------------------------------------------------
 add_library(abt_dut STATIC
     dut/BookBuilder.cpp
+    dut/BookTable.cpp
     dut/LatencyRecorder.cpp
     dut/OrderManager.cpp
     dut/QuoterStrategy.cpp
@@ -55,6 +56,7 @@ target_link_libraries(abt_dut
 # ---------------------------------------------------------------------------
 add_library(abt_replay STATIC
     replay/BookReplay.cpp
+    replay/FeedValidator.cpp
     replay/ItchFile.cpp
     replay/SymbolFilter.cpp)
 add_library(abt::replay ALIAS abt_replay)

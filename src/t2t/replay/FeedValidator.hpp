@@ -1,0 +1,52 @@
+#pragma once
+
+#include <cstddef>
+#include <cstdint>
+#include <span>
+#include <string>
+#include <vector>
+
+#include "t2t/dut/BookTable.hpp"
+
+namespace abt::replay {
+
+struct SymbolStats {
+    std::string   name;
+    std::uint64_t messages   = 0;
+    std::uint64_t unknownRef = 0;
+    std::uint64_t overReduce = 0;
+    std::uint64_t crossed    = 0;
+    std::uint64_t maxLive    = 0;
+};
+
+struct FeedTotals {
+    std::uint64_t messages   = 0;
+    std::uint64_t unknownRef = 0;
+    std::uint64_t overReduce = 0;
+    std::uint64_t crossed    = 0;
+    std::uint64_t outOfBand  = 0;
+    std::uint64_t maxLive    = 0;
+    std::size_t   symbols    = 0;
+};
+
+class FeedValidator {
+public:
+    explicit FeedValidator(const dut::BookTableConfig& cfg);
+
+    void onMessage(std::span<const std::byte> msg);
+
+    [[nodiscard]] FeedTotals                      totals() const noexcept;
+    [[nodiscard]] const std::vector<SymbolStats>& perSymbol() const noexcept;
+    [[nodiscard]] const dut::BookTable&           books() const noexcept;
+
+private:
+    void checkReference(std::uint16_t locate, OrderId ref, Quantity reduceBy) noexcept;
+
+    dut::BookTable           m_books;
+    std::vector<SymbolStats> m_sym;
+    std::uint64_t            m_messages = 0;
+    std::uint64_t            m_liveNow  = 0;
+    std::uint64_t            m_maxLive  = 0;
+};
+
+}   // namespace abt::replay
