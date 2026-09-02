@@ -17,8 +17,8 @@ namespace {
 
 const char* kToml = R"(
 [venue]
-symbol = "MSFT"
-stock_locate = 7
+symbols = ["MSFT", "AAPL"]
+locates = [7, 13]
 session = "TST0000042"
 min_tick = 5
 max_tick = 90000
@@ -73,8 +73,11 @@ void test_load() {
     const SimConfig   c    = loadConfig(path);
     std::remove(path.c_str());
 
-    CHECK(c.venue.symbol == "MSFT");
-    CHECK_EQ(c.venue.stockLocate, 7u);
+    CHECK_EQ(c.venue.symbols.size(), 2u);
+    CHECK(c.venue.symbols[0] == "MSFT" && c.venue.symbols[1] == "AAPL");
+    CHECK_EQ(c.venue.locates.size(), 2u);
+    CHECK_EQ(c.venue.locates[0], 7u);
+    CHECK_EQ(c.venue.locates[1], 13u);
     CHECK(c.venue.session == "TST0000042");
     CHECK_EQ(c.venue.minTick, 5);
     CHECK_EQ(c.venue.maxTick, 90000);

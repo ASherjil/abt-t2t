@@ -98,7 +98,7 @@ void test_socket_integration() {
 
     dut::DutConfig dutCfg{};
     dutCfg.symbols      = {"AAPL"};
-    dutCfg.locates      = {simCfg.stockLocate};
+    dutCfg.locates      = {simCfg.locates[0]};
     dutCfg.tickWire     = 100;
     dutCfg.bandFraction = 0.0;
     dutCfg.firstUserRef = 1;

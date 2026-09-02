@@ -124,8 +124,8 @@ std::vector<std::vector<std::byte>> unpack(const std::vector<std::vector<std::by
 
 ExchangeConfig venueCfg() {
     ExchangeConfig c;
-    c.symbol        = "AAPL";
-    c.stockLocate   = 13;
+    c.symbols       = {"AAPL"};
+    c.locates       = {13};
     c.firstOrderRef = 1ull << 62;
     c.mdMaxPayload  = 400;
     return c;

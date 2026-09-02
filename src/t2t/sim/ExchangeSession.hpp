@@ -66,6 +66,8 @@ template <IoMode Mode, class Tx = NoTransport>
 class ExchangeSession {
 public:
     // Rule of 5 needed here
+    struct VenueSink;
+
     explicit ExchangeSession(const ExchangeConfig& cfg = {});
     ExchangeSession(const ExchangeSession&)            = delete;
     ExchangeSession& operator=(const ExchangeSession&) = delete;
@@ -79,12 +81,15 @@ public:
     void    cancelSynthetic(OrderId ref, std::uint64_t ts);
     void    sessionEvent(itch::SystemEventCode code, std::uint64_t ts);
 
-    void                             replayMessage(std::span<const std::byte> msg, std::uint64_t ts);
-    void                             flushMarketData();
-    void                             resetDay(std::uint64_t ts);
-    [[nodiscard]] const MirrorStats& mirrorStats() const noexcept;
-    [[nodiscard]] std::size_t        clientOrders() const noexcept;
-    [[nodiscard]] bool               clientSeen() const noexcept;
+    void                                  replayMessage(std::span<const std::byte> msg, std::uint64_t ts);
+    void                                  flushMarketData();
+    void                                  resetDay(std::uint64_t ts);
+    void                                  publishDirectory(std::uint64_t ts);
+    [[nodiscard]] MirrorStats             mirrorStats() const noexcept;
+    [[nodiscard]] std::size_t             clientOrders() const noexcept;
+    [[nodiscard]] std::size_t             venueCount() const noexcept;
+    [[nodiscard]] const Venue<VenueSink>& venue(std::size_t i) const noexcept;
+    [[nodiscard]] bool                    clientSeen() const noexcept;
 
     [[nodiscard]] Price               bestBid() const noexcept;
     [[nodiscard]] Price               bestAsk() const noexcept;
@@ -159,7 +164,11 @@ private:
     template <class Fn>
     void                      withMarketData(Fn&& fn);
     void                      appendMarketData(std::span<const std::byte> itch);
-    void                      mirror(std::span<const std::byte> msg, std::uint64_t ts);
+    void                      mirror(std::size_t venue, std::span<const std::byte> msg, std::uint64_t ts);
+    void                      bindDirectory(std::span<const std::byte> msg, std::uint16_t locate);
+    [[nodiscard]] std::size_t venueForSymbol(std::string_view symbol) const noexcept;
+    [[nodiscard]] std::size_t venueForUserRef(std::uint32_t userRef) const noexcept;
+    void                      rememberUserRef(std::uint32_t userRef, std::size_t venue) noexcept;
     [[nodiscard]] std::size_t mdCapacity() const noexcept;
     void                      sendOrderEntry(std::span<const std::byte> ouch);
 
@@ -169,11 +178,20 @@ private:
     static util::UniqueFd acceptOrderEntry(std::uint16_t port)
         requires (Mode == IoMode::Socket);
 
-    ExchangeConfig   m_cfg;
-    VenueSink        m_sink;
-    mold::Packer     m_packer;
-    Venue<VenueSink> m_venue;
-    SessionStats     m_stats{};
+    static constexpr std::size_t kRefRing = 4096;
+
+    struct RefVenue {
+        std::uint32_t userRef = 0;
+        std::uint16_t venue   = 0;
+    };
+
+    ExchangeConfig                 m_cfg;
+    VenueSink                      m_sink;
+    mold::Packer                   m_packer;
+    std::vector<Venue<VenueSink>>  m_venues;
+    std::vector<std::int16_t>      m_venueOfLocate;
+    std::array<RefVenue, kRefRing> m_refVenue{};
+    SessionStats                   m_stats{};
 
     std::vector<std::byte>      m_rxBuf;
     std::array<std::byte, 2048> m_mdBuf{};
@@ -191,8 +209,86 @@ ExchangeSession<Mode, Tx>::ExchangeSession(const ExchangeConfig& cfg)
     : m_cfg(cfg),
       m_sink{this},
       m_packer(cfg.session, 1),
-      m_venue(m_sink, cfg.symbol, cfg.stockLocate, cfg.minTick, cfg.maxTick, cfg.wirePerTick,
-              cfg.firstOrderRef, cfg.liveReserve) {
+      m_venueOfLocate(1u << 16, -1) {
+    if (m_cfg.symbols.empty()) {
+        m_cfg.symbols.emplace_back("AAPL");
+    }
+    const std::size_t n = m_cfg.symbols.size();
+    m_venues.reserve(n);
+    OrderId nextRef = cfg.firstOrderRef == 0 ? 1 : cfg.firstOrderRef;
+    for (std::size_t i = 0; i < n; ++i) {
+        const std::uint16_t locate = i < m_cfg.locates.size() && m_cfg.locates[i] != 0
+                                         ? m_cfg.locates[i]
+                                         : static_cast<std::uint16_t>(i + 1);
+        m_venues.emplace_back(m_sink, m_cfg.symbols[i], locate, cfg.minTick, cfg.maxTick, cfg.wirePerTick,
+                              nextRef, cfg.liveReserve);
+        m_venueOfLocate[locate] = static_cast<std::int16_t>(i);
+        nextRef += OrderId{1} << 40;
+    }
+}
+
+template <IoMode Mode, class Tx>
+std::size_t ExchangeSession<Mode, Tx>::venueCount() const noexcept {
+    return m_venues.size();
+}
+
+template <IoMode Mode, class Tx>
+const Venue<typename ExchangeSession<Mode, Tx>::VenueSink>& ExchangeSession<Mode, Tx>::venue(
+    std::size_t i) const noexcept {
+    return m_venues[i];
+}
+
+template <IoMode Mode, class Tx>
+void ExchangeSession<Mode, Tx>::publishDirectory(std::uint64_t ts) {
+    withMarketData([&] {
+        for (Venue<VenueSink>& v : m_venues) {
+            v.emitStockDirectory(ts);
+        }
+    });
+}
+
+template <IoMode Mode, class Tx>
+std::size_t ExchangeSession<Mode, Tx>::venueForSymbol(std::string_view symbol) const noexcept {
+    for (std::size_t i = 0; i < m_venues.size(); ++i) {
+        if (m_venues[i].symbol() == symbol) {
+            return i;
+        }
+    }
+    return 0;
+}
+
+template <IoMode Mode, class Tx>
+std::size_t ExchangeSession<Mode, Tx>::venueForUserRef(std::uint32_t userRef) const noexcept {
+    const RefVenue& r = m_refVenue[userRef % kRefRing];
+    return r.userRef == userRef ? r.venue : 0;
+}
+
+template <IoMode Mode, class Tx>
+void ExchangeSession<Mode, Tx>::rememberUserRef(std::uint32_t userRef, std::size_t venue) noexcept {
+    m_refVenue[userRef % kRefRing] = RefVenue{.userRef = userRef, .venue = static_cast<std::uint16_t>(venue)};
+}
+
+template <IoMode Mode, class Tx>
+void ExchangeSession<Mode, Tx>::bindDirectory(std::span<const std::byte> msg, std::uint16_t locate) {
+    if (msg.size() < sizeof(itch::StockDirectory)) {
+        return;
+    }
+    const auto*            r    = reinterpret_cast<const itch::StockDirectory*>(msg.data());
+    const std::string_view name = r->stock.view();
+    for (std::size_t i = 0; i < m_venues.size(); ++i) {
+        if (m_venues[i].symbol() != name) {
+            continue;
+        }
+        const std::uint16_t old = m_venues[i].stockLocate();
+        if (old != locate) {
+            if (m_venueOfLocate[old] == static_cast<std::int16_t>(i)) {
+                m_venueOfLocate[old] = -1;
+            }
+            m_venues[i].bindLocate(locate);
+            m_venueOfLocate[locate] = static_cast<std::int16_t>(i);
+        }
+        return;
+    }
 }
 
 template <IoMode Mode, class Tx>
@@ -218,7 +314,7 @@ template <IoMode Mode, class Tx>
 OrderId ExchangeSession<Mode, Tx>::injectSynthetic(Side side, Price tick, Quantity qty, std::uint64_t ts) {
     OrderId ref = 0;
     withMarketData([&] {
-        ref = m_venue.injectSynthetic(side, tick, qty, ts);
+        ref = m_venues[0].injectSynthetic(side, tick, qty, ts);
     });
     return ref;
 }
@@ -226,14 +322,14 @@ OrderId ExchangeSession<Mode, Tx>::injectSynthetic(Side side, Price tick, Quanti
 template <IoMode Mode, class Tx>
 void ExchangeSession<Mode, Tx>::cancelSynthetic(OrderId ref, std::uint64_t ts) {
     withMarketData([&] {
-        m_venue.cancelSynthetic(ref, ts);
+        m_venues[0].cancelSynthetic(ref, ts);
     });
 }
 
 template <IoMode Mode, class Tx>
 void ExchangeSession<Mode, Tx>::sessionEvent(itch::SystemEventCode code, std::uint64_t ts) {
     withMarketData([&] {
-        m_venue.sessionEvent(code, ts);
+        m_venues[0].sessionEvent(code, ts);
     });
 }
 
@@ -246,14 +342,20 @@ void ExchangeSession<Mode, Tx>::replayMessage(std::span<const std::byte> msg, st
     appendMarketData(msg);
     const auto locate = static_cast<std::uint16_t>((std::to_integer<unsigned>(msg[1]) << 8) |
                                                    std::to_integer<unsigned>(msg[2]));
-    if (locate == m_cfg.stockLocate) {
-        mirror(msg, ts);
+    if (static_cast<char>(msg[0]) == 'R') [[unlikely]] {
+        bindDirectory(msg, locate);
+        return;
+    }
+    const std::int16_t vi = m_venueOfLocate[locate];
+    if (vi >= 0) {
+        mirror(static_cast<std::size_t>(vi), msg, ts);
     }
 }
 
 template <IoMode Mode, class Tx>
-void ExchangeSession<Mode, Tx>::mirror(std::span<const std::byte> msg, std::uint64_t ts) {
-    const std::byte* d = msg.data();
+void ExchangeSession<Mode, Tx>::mirror(std::size_t venue, std::span<const std::byte> msg, std::uint64_t ts) {
+    Venue<VenueSink>& v = m_venues[venue];
+    const std::byte*  d = msg.data();
     switch (static_cast<char>(msg[0])) {
         case 'A':
         case 'F': {
@@ -262,7 +364,7 @@ void ExchangeSession<Mode, Tx>::mirror(std::span<const std::byte> msg, std::uint
             }
             const auto* a    = reinterpret_cast<const itch::AddOrder*>(d);
             const Side  side = a->side == itch::Side::Buy ? Side::Buy : Side::Sell;
-            m_venue.mirrorAdd(a->orderRef.value(), side, a->price.value(), a->shares.value(), ts);
+            v.mirrorAdd(a->orderRef.value(), side, a->price.value(), a->shares.value(), ts);
             break;
         }
         case 'E': {
@@ -270,7 +372,7 @@ void ExchangeSession<Mode, Tx>::mirror(std::span<const std::byte> msg, std::uint
                 return;
             }
             const auto* e = reinterpret_cast<const itch::OrderExecuted*>(d);
-            m_venue.mirrorExecute(e->orderRef.value(), e->executedShares.value(), ts);
+            v.mirrorExecute(e->orderRef.value(), e->executedShares.value(), ts);
             break;
         }
         case 'C': {
@@ -278,7 +380,7 @@ void ExchangeSession<Mode, Tx>::mirror(std::span<const std::byte> msg, std::uint
                 return;
             }
             const auto* c = reinterpret_cast<const itch::OrderExecutedWithPrice*>(d);
-            m_venue.mirrorExecute(c->orderRef.value(), c->executedShares.value(), ts);
+            v.mirrorExecute(c->orderRef.value(), c->executedShares.value(), ts);
             break;
         }
         case 'X': {
@@ -286,7 +388,7 @@ void ExchangeSession<Mode, Tx>::mirror(std::span<const std::byte> msg, std::uint
                 return;
             }
             const auto* x = reinterpret_cast<const itch::OrderCancel*>(d);
-            m_venue.mirrorCancel(x->orderRef.value(), x->cancelledShares.value(), ts);
+            v.mirrorCancel(x->orderRef.value(), x->cancelledShares.value(), ts);
             break;
         }
         case 'D': {
@@ -294,7 +396,7 @@ void ExchangeSession<Mode, Tx>::mirror(std::span<const std::byte> msg, std::uint
                 return;
             }
             const auto* x = reinterpret_cast<const itch::OrderDelete*>(d);
-            m_venue.mirrorDelete(x->orderRef.value(), ts);
+            v.mirrorDelete(x->orderRef.value(), ts);
             break;
         }
         case 'U': {
@@ -302,8 +404,8 @@ void ExchangeSession<Mode, Tx>::mirror(std::span<const std::byte> msg, std::uint
                 return;
             }
             const auto* u = reinterpret_cast<const itch::OrderReplace*>(d);
-            m_venue.mirrorReplace(u->origOrderRef.value(), u->newOrderRef.value(), u->shares.value(),
-                                  u->price.value(), ts);
+            v.mirrorReplace(u->origOrderRef.value(), u->newOrderRef.value(), u->shares.value(),
+                            u->price.value(), ts);
             break;
         }
         default:
@@ -315,18 +417,41 @@ void ExchangeSession<Mode, Tx>::mirror(std::span<const std::byte> msg, std::uint
 template <IoMode Mode, class Tx>
 void ExchangeSession<Mode, Tx>::resetDay(std::uint64_t ts) {
     withMarketData([&] {
-        m_venue.resetDay(ts);
+        for (Venue<VenueSink>& v : m_venues) {
+            v.resetDay(ts);
+        }
     });
 }
 
 template <IoMode Mode, class Tx>
-const MirrorStats& ExchangeSession<Mode, Tx>::mirrorStats() const noexcept {
-    return m_venue.mirrorStats();
+MirrorStats ExchangeSession<Mode, Tx>::mirrorStats() const noexcept {
+    MirrorStats total{};
+    for (const Venue<VenueSink>& v : m_venues) {
+        const MirrorStats& m = v.mirrorStats();
+        total.adds += m.adds;
+        total.executes += m.executes;
+        total.cancels += m.cancels;
+        total.deletes += m.deletes;
+        total.replaces += m.replaces;
+        total.unknownRef += m.unknownRef;
+        total.overReduce += m.overReduce;
+        total.outOfBand += m.outOfBand;
+        total.shadowFills += m.shadowFills;
+        total.shadowShares += m.shadowShares;
+        total.crossFills += m.crossFills;
+        total.impactFills += m.impactFills;
+        total.selfTrades += m.selfTrades;
+    }
+    return total;
 }
 
 template <IoMode Mode, class Tx>
 std::size_t ExchangeSession<Mode, Tx>::clientOrders() const noexcept {
-    return m_venue.clientOrders();
+    std::size_t n = 0;
+    for (const Venue<VenueSink>& v : m_venues) {
+        n += v.clientOrders();
+    }
+    return n;
 }
 
 template <IoMode Mode, class Tx>
@@ -340,17 +465,17 @@ bool ExchangeSession<Mode, Tx>::clientSeen() const noexcept {
 
 template <IoMode Mode, class Tx>
 Price ExchangeSession<Mode, Tx>::bestBid() const noexcept {
-    return m_venue.bestBid();
+    return m_venues[0].bestBid();
 }
 
 template <IoMode Mode, class Tx>
 Price ExchangeSession<Mode, Tx>::bestAsk() const noexcept {
-    return m_venue.bestAsk();
+    return m_venues[0].bestAsk();
 }
 
 template <IoMode Mode, class Tx>
 const OrderBook& ExchangeSession<Mode, Tx>::book() const noexcept {
-    return m_venue.book();
+    return m_venues[0].book();
 }
 
 template <IoMode Mode, class Tx>
@@ -360,12 +485,20 @@ const SessionStats& ExchangeSession<Mode, Tx>::stats() const noexcept {
 
 template <IoMode Mode, class Tx>
 std::uint64_t ExchangeSession<Mode, Tx>::trades() const noexcept {
-    return m_venue.trades();
+    std::uint64_t n = 0;
+    for (const Venue<VenueSink>& v : m_venues) {
+        n += v.trades();
+    }
+    return n;
 }
 
 template <IoMode Mode, class Tx>
 std::size_t ExchangeSession<Mode, Tx>::liveOrders() const noexcept {
-    return m_venue.liveOrders();
+    std::size_t n = 0;
+    for (const Venue<VenueSink>& v : m_venues) {
+        n += v.liveOrders();
+    }
+    return n;
 }
 
 template <IoMode Mode, class Tx>
@@ -575,22 +708,26 @@ void ExchangeSession<Mode, Tx>::dispatchOuch(std::span<const std::byte> payload,
         ouch::EnterOrder o{};
         std::memcpy(&o, payload.data(), sizeof o);
         ++m_stats.enters;
+        const std::size_t vi = venueForSymbol(o.symbol.view());
+        rememberUserRef(o.userRefNum.value(), vi);
         withMarketData([&] {
-            m_venue.onEnterOrder(o, ts);
+            m_venues[vi].onEnterOrder(o, ts);
         });
     } else if (t == ouch::InType::CancelOrder && payload.size() >= sizeof(ouch::CancelOrder)) {
         ouch::CancelOrder x{};
         std::memcpy(&x, payload.data(), sizeof x);
         ++m_stats.cancels;
         withMarketData([&] {
-            m_venue.onCancelOrder(x, ts);
+            m_venues[venueForUserRef(x.userRefNum.value())].onCancelOrder(x, ts);
         });
     } else if (t == ouch::InType::ReplaceOrder && payload.size() >= sizeof(ouch::ReplaceOrder)) {
         ouch::ReplaceOrder u{};
         std::memcpy(&u, payload.data(), sizeof u);
         ++m_stats.replaces;
+        const std::size_t vi = venueForUserRef(u.origUserRefNum.value());
+        rememberUserRef(u.userRefNum.value(), vi);
         withMarketData([&] {
-            m_venue.onReplaceOrder(u, ts);
+            m_venues[vi].onReplaceOrder(u, ts);
         });
     } else {
         ++m_stats.unknown;

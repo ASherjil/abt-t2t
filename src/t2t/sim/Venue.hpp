@@ -51,6 +51,10 @@ public:
     void mirrorReplace(OrderId origRef, OrderId newRef, Quantity shares, std::uint32_t wirePrice,
                        std::uint64_t ts);
     void resetDay(std::uint64_t ts);
+    void bindLocate(std::uint16_t locate) noexcept;
+    void emitStockDirectory(std::uint64_t ts);
+    [[nodiscard]] const std::string& symbol() const noexcept;
+    [[nodiscard]] std::uint16_t      stockLocate() const noexcept;
     [[nodiscard]] const MirrorStats& mirrorStats() const noexcept;
     [[nodiscard]] std::size_t        clientOrders() const noexcept;
 
@@ -151,6 +155,34 @@ Venue<Sink>::Venue(Sink& sink, std::string_view symbol, std::uint16_t stockLocat
       m_live(liveReserve),
       m_byUserRef(1u << 12) {
     m_clientRefs.reserve(16);
+}
+
+template <class Sink>
+void Venue<Sink>::bindLocate(std::uint16_t locate) noexcept {
+    m_stockLocate = locate;
+}
+
+template <class Sink>
+const std::string& Venue<Sink>::symbol() const noexcept {
+    return m_symbol;
+}
+
+template <class Sink>
+std::uint16_t Venue<Sink>::stockLocate() const noexcept {
+    return m_stockLocate;
+}
+
+template <class Sink>
+void Venue<Sink>::emitStockDirectory(std::uint64_t ts) {
+    itch::StockDirectory r{};
+    r.messageType    = itch::MessageType::StockDirectory;
+    r.stockLocate    = m_stockLocate;
+    r.trackingNumber = 0;
+    r.timestamp      = ts;
+    r.stock          = std::string_view{m_symbol};
+    r.marketCategory = 'Q';
+    r.roundLotSize   = 100;
+    sendMd(r);
 }
 
 template <class Sink>

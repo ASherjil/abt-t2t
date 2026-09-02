@@ -32,7 +32,7 @@ void logSim(const Session& ex, std::uint64_t elapsedNs) {
 template <class Session>
 void logReplay(const Session& ex, const ReplayProgress& p, std::uint64_t elapsedNs) {
     const SessionStats& s = ex.stats();
-    const MirrorStats&  m = ex.mirrorStats();
+    const MirrorStats   m = ex.mirrorStats();
     fmt::print(stderr,
                "[sim +{:>5}s] loop={} t={} sent={} mir={} late_max={}us late>1ms={} md_pkts={} oe_pkts={} "
                "tx_drop={} "
@@ -91,6 +91,8 @@ int runVenue(Session& ex, const SimConfig& cfg, volatile std::sig_atomic_t& stop
         return runReplay(ex, cfg, stop);
     }
     FlowGenerator<Session> gen(ex, cfg.flow);
+    ex.sessionEvent(itch::SystemEventCode::StartOfMessages, nsSinceMidnightUtc());
+    ex.publishDirectory(nsSinceMidnightUtc());
     ex.sessionEvent(itch::SystemEventCode::StartOfMarketHours, nsSinceMidnightUtc());
     gen.run(cfg.warmupSteps, nsSinceMidnightUtc(), 0);
     const std::uint64_t start   = monotonicNs();

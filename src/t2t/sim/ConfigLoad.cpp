@@ -22,8 +22,22 @@ SimConfig loadConfig(const std::string& path) {
         std::exit(1);
     }
 
-    c.venue.symbol       = t["venue"]["symbol"].value_or(c.venue.symbol);
-    c.venue.stockLocate  = t["venue"]["stock_locate"].value_or(c.venue.stockLocate);
+    if (const toml::array* syms = t["venue"]["symbols"].as_array(); syms != nullptr) {
+        c.venue.symbols.clear();
+        for (const toml::node& n : *syms) {
+            if (const auto v = n.value<std::string>(); v.has_value()) {
+                c.venue.symbols.push_back(*v);
+            }
+        }
+    }
+    if (const toml::array* locs = t["venue"]["locates"].as_array(); locs != nullptr) {
+        c.venue.locates.clear();
+        for (const toml::node& n : *locs) {
+            if (const auto v = n.value<std::int64_t>(); v.has_value()) {
+                c.venue.locates.push_back(static_cast<std::uint16_t>(*v));
+            }
+        }
+    }
     c.venue.session      = t["venue"]["session"].value_or(c.venue.session);
     c.venue.minTick      = t["venue"]["min_tick"].value_or(c.venue.minTick);
     c.venue.maxTick      = t["venue"]["max_tick"].value_or(c.venue.maxTick);

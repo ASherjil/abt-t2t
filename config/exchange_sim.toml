@@ -4,8 +4,9 @@
 # Rig loopback: sim on cx0 <-DAC-> DUT on cx1 (both ConnectX-4 Lx ports).
 
 [venue]
-symbol        = "AAPL"        # ITCH stock symbol (<= 8 chars)
-stock_locate  = 13            # ITCH stock-locate code (AAPL is 13 in the 01302020 NASDAQ file)
+symbols       = ["AAPL"]      # venues the DUT can trade (one matching book each; others pass through)
+locates       = []            # stock-locate per symbol; empty = bind from the replayed stock directory
+                              # (synthetic [flow] mode uses 1, 2, ... and publishes its own directory)
 order_reserve = 65536         # initial live-order map capacity (real AAPL day peaks ~30k resting)
 session       = "SIM0000001"  # SoupBinTCP session id (10 chars)
 min_tick      = 1             # lowest tradable tick (sizes the book arrays)
