@@ -12,6 +12,7 @@
 
 #include <fmt/core.h>
 
+#include "t2t/dut/SymbolProfile.hpp"
 #include "t2t/replay/BookReplay.hpp"
 #include "t2t/replay/FeedValidator.hpp"
 #include "t2t/replay/ItchFile.hpp"
@@ -28,6 +29,8 @@ struct Args {
     std::vector<std::string>   symbols;
     bool                       all = false;
     std::optional<std::string> extractTo;
+    std::optional<std::string> writeProfile;
+    std::optional<std::string> profile;
     Price                      minPrice      = 0;
     Price                      maxPrice      = 20'000'000;
     Price                      tickWire      = 100;
@@ -38,7 +41,8 @@ struct Args {
 
 void usage() {
     fmt::print(stderr, "usage: itch_replay <file.itch|.gz> <SYMBOL[,SYMBOL...]|--all> [--extract <out.itch>] "
-                       "[--max-price <wire>] [--tick <wire>] [--band <ticks>] [--arena-mb <MB>]\n");
+                       "[--max-price <wire>] [--tick <wire>] [--band <ticks>] [--arena-mb <MB>] "
+                       "[--profile <in>] [--write-profile <out>]\n");
 }
 
 std::vector<std::string> splitSymbols(std::string_view list) {
@@ -83,6 +87,10 @@ bool parseArgs(int argc, char** argv, Args& a) {
             a.bandTicks = static_cast<std::size_t>(std::atol(argv[++i]));
         } else if (opt == "--arena-mb" && hasValue) {
             a.arenaMb = static_cast<std::size_t>(std::atol(argv[++i]));
+        } else if (opt == "--profile" && hasValue) {
+            a.profile = argv[++i];
+        } else if (opt == "--write-profile" && hasValue) {
+            a.writeProfile = argv[++i];
         } else {
             return false;
         }
@@ -102,6 +110,13 @@ int runValidator(const Args& a, replay::ItchFileReader& reader,
     cfg.coldMapSlots  = 1024;
     cfg.subDollarTick = 1;
     cfg.memory        = a.arenaMb != 0 ? arena.resource() : nullptr;
+    if (a.profile) {
+        cfg.profiles = dut::readSymbolProfile(*a.profile);
+        if (cfg.profiles.empty()) {
+            fmt::print(stderr, "itch_replay: profile {} missing or empty\n", *a.profile);
+            return 1;
+        }
+    }
     replay::FeedValidator               validator(cfg);
     std::optional<replay::SymbolFilter> filter;
     if (!a.all) {
@@ -142,8 +157,18 @@ int runValidator(const Args& a, replay::ItchFileReader& reader,
                t.unknownRef, t.overReduce, t.crossed, t.locked, t.outOfBand);
     fmt::print("halts          crossed adds within {} ms of a halt/IPO resumption (excluded above): {}\n",
                replay::FeedValidator::kResumeGraceNs / 1'000'000, t.resumeXing);
-    fmt::print("anchoring      re-anchors on out-of-band trades {}  sub-dollar tick books {}\n", t.reanchors,
-               t.subDollar);
+    fmt::print(
+        "anchoring      re-anchors on out-of-band trades {}  sub-dollar tick books {}  profiled books {}\n",
+        t.reanchors, t.subDollar, validator.books().profiled());
+    if (a.writeProfile) {
+        const auto rows = validator.profiles();
+        if (dut::writeSymbolProfile(*a.writeProfile, rows)) {
+            fmt::print("profile        wrote {} symbols (last trade, peak live orders) to {}\n", rows.size(),
+                       *a.writeProfile);
+        } else {
+            fmt::print(stderr, "itch_replay: cannot write {}\n", *a.writeProfile);
+        }
+    }
     fmt::print("book           band {} ticks/side (min), max live orders {} (sampled every 64k msgs)\n",
                a.bandTicks, t.maxLive);
     rusage ru{};
@@ -175,6 +200,28 @@ int runValidator(const Args& a, replay::ItchFileReader& reader,
                        fault ? "  <-- FAULT" : "");
         }
         ++shown;
+    }
+    std::vector<std::size_t> byReanchor  = order;
+    const auto&              books       = validator.books();
+    const auto               reanchorsOf = [&](std::size_t l) {
+        const dut::BookBuilder* b = books.book(static_cast<std::uint16_t>(l));
+        return b == nullptr ? 0u : b->reanchors();
+    };
+    std::sort(byReanchor.begin(), byReanchor.end(), [&](std::size_t x, std::size_t y) {
+        return reanchorsOf(x) > reanchorsOf(y);
+    });
+    fmt::print("{:<10}{:>7}{:>12}{:>10}{:>10}{:>6}{:>12}{:>12}\n", "symbol", "locate", "msgs", "reanchors",
+               "oob-adds", "tick", "band-low", "band-high");
+    for (std::size_t i = 0; i < byReanchor.size() && i < 15; ++i) {
+        const std::size_t          l = byReanchor[i];
+        const dut::BookBuilder*    b = books.book(static_cast<std::uint16_t>(l));
+        const replay::SymbolStats& s = per[l];
+        if (b == nullptr || b->reanchors() == 0) {
+            break;
+        }
+        fmt::print("{:<10}{:>7}{:>12}{:>10}{:>10}{:>6}{:>12}{:>12}\n", s.name.empty() ? "?" : s.name, l,
+                   s.messages, b->reanchors(), b->outOfBandAdds(), b->tickWire(), b->bandLow(),
+                   b->bandHigh());
     }
     return (t.unknownRef + t.overReduce + t.crossed) == 0 ? 0 : 3;
 }

@@ -46,7 +46,8 @@ add_library(abt_dut STATIC
     dut/LatencyRecorder.cpp
     dut/OrderManager.cpp
     dut/QuoterStrategy.cpp
-    dut/SequenceTracker.cpp)
+    dut/SequenceTracker.cpp
+    dut/SymbolProfile.cpp)
 add_library(abt::dut ALIAS abt_dut)
 target_link_libraries(abt_dut
     PUBLIC abt_protocol abt_lob abt_util SPSCQueue::SPSCQueue Threads::Threads

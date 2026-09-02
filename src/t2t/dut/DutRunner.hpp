@@ -65,9 +65,11 @@ void printDutReport(Session& sess, util::ThreadCounters atStart) {
                "live orders={}\n",
                sess.packetsReceived(), f.expected(), f.gaps(), f.missed(), f.stale(), sess.foreignMessages(),
                sess.sessionResets(), sess.books().liveOrders());
-    fmt::print("[feed] symbols booked={} undirected msgs={} rehashes={} books={} MB arena={}\n",
-               sess.books().symbols(), sess.books().undirected(), sess.books().rehashes(),
-               sess.books().footprintBytes() >> 20, sess.arenaInfo());
+    fmt::print("[feed] symbols booked={} profiled={} undirected msgs={} rehashes={} reanchors={} books={} MB "
+               "arena={}\n",
+               sess.books().symbols(), sess.books().profiled(), sess.books().undirected(),
+               sess.books().rehashes(), sess.books().reanchors(), sess.books().footprintBytes() >> 20,
+               sess.arenaInfo());
     if (sess.feedFaults() > 0) {
         fmt::print("[feed] FAULTS={} last at seq={} state={}: book invalidated and quoting stopped until the "
                    "next StartOfMessages\n",

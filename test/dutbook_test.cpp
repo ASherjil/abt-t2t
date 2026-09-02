@@ -197,7 +197,9 @@ void test_dynamic_band_scales_with_price_and_clamps_at_zero() {
     penny.apply(bytesOf(mkAdd(1u, 'B', 1u, 350)));
     CHECK_EQ(penny.bandLow(), 0);
     CHECK_EQ(penny.bandHigh(), 2000);
-    CHECK_EQ(penny.sizeAt(Side::Buy, 350), 1u);
+    CHECK_EQ(penny.sizeAt(Side::Buy, 350), 0u);
+    CHECK_EQ(penny.outOfBandAdds(), 1u);
+    CHECK_EQ(penny.bestBid(), kNoPrice);
 
     cfg.subDollarTickWire = 1;
     dut::BookBuilder subDollar(cfg);
@@ -212,9 +214,20 @@ void test_dynamic_band_scales_with_price_and_clamps_at_zero() {
     junkFirst.apply(bytesOf(mkAdd(1u, 'S', 5u, 50000)));
     CHECK_EQ(junkFirst.tickWire(), 100);
     junkFirst.apply(bytesOf(mkAdd(2u, 'B', 100u, 5384)));
+    CHECK_EQ(junkFirst.tickWire(), 100);
+    CHECK_EQ(junkFirst.reanchors(), 0u);
+    CHECK_EQ(junkFirst.bestBid(), kNoPrice);
+    CHECK_EQ(junkFirst.outOfBandAdds(), 1u);
+    CHECK_EQ(junkFirst.parkedShares(), 100u);
+    itch::TradeNonCross flip{};
+    flip.messageType = itch::MessageType::TradeNonCross;
+    flip.shares      = 1;
+    flip.price       = 5384;
+    junkFirst.apply(bytesOf(flip));
     CHECK_EQ(junkFirst.tickWire(), 1);
     CHECK_EQ(junkFirst.reanchors(), 1u);
     CHECK_EQ(junkFirst.bestBid(), 5384);
+    CHECK_EQ(junkFirst.restingShares(1u), 5u);
     junkFirst.apply(bytesOf(mkAdd(3u, 'S', 100u, 5385)));
     junkFirst.apply(bytesOf(mkAdd(4u, 'B', 100u, 5380)));
     CHECK_EQ(junkFirst.bestAsk(), 5385);
@@ -261,7 +274,81 @@ void test_out_of_band_trade_reanchors_and_rebuilds() {
     CHECK_EQ(book.liveOrders(), 3u);
 }
 
+void test_band_shift_keeps_levels_and_parks_the_rest() {
+    dut::BookConfig cfg{};
+    cfg.tickWire     = 100;
+    cfg.bandTicks    = 16;
+    cfg.bandFraction = 0.0;
+    dut::BookBuilder book(cfg);
+    book.apply(bytesOf(mkAdd(1u, 'B', 100u, 320'000)));
+    book.apply(bytesOf(mkAdd(2u, 'S', 100u, 320'100)));
+    book.apply(bytesOf(mkAdd(3u, 'B', 50u, 319'000)));
+    CHECK_EQ(book.bandLow(), 320'000 - 1600);
+    CHECK_EQ(book.bandHigh(), 320'000 + 1600);
+    CHECK_EQ(book.parkedShares(), 0u);
+
+    itch::TradeNonCross p{};
+    p.messageType = itch::MessageType::TradeNonCross;
+    p.shares      = 5;
+    p.price       = 321'700;
+    book.apply(bytesOf(p));
+    CHECK_EQ(book.reanchors(), 1u);
+    CHECK_EQ(book.bandLow(), 321'700 - 1600);
+    CHECK_EQ(book.bandHigh(), 321'700 + 1600);
+    CHECK_EQ(book.bestAsk(), 320'100);
+    CHECK_EQ(book.sizeAt(Side::Sell, 320'100), 100u);
+    CHECK_EQ(book.bestBid(), kNoPrice);
+    CHECK_EQ(book.parkedShares(), 150u);
+    CHECK_EQ(book.liveOrders(), 3u);
+
+    book.apply(bytesOf(mkDelete(3u)));
+    CHECK_EQ(book.parkedShares(), 100u);
+    CHECK_EQ(book.liveOrders(), 2u);
+
+    book.apply(bytesOf(mkAdd(4u, 'B', 70u, 321'000)));
+    CHECK_EQ(book.bestBid(), 321'000);
+    CHECK_EQ(book.sizeAt(Side::Buy, 321'000), 70u);
+
+    p.price = 319'500;
+    book.apply(bytesOf(p));
+    CHECK_EQ(book.reanchors(), 2u);
+    CHECK_EQ(book.bestBid(), 321'000);
+    CHECK_EQ(book.sizeAt(Side::Buy, 320'000), 100u);
+    CHECK_EQ(book.sizeAt(Side::Buy, 321'000), 70u);
+    CHECK_EQ(book.bestAsk(), 320'100);
+    CHECK_EQ(book.sizeAt(Side::Sell, 320'100), 100u);
+    CHECK_EQ(book.parkedShares(), 0u);
+
+    p.price = 400'000;
+    book.apply(bytesOf(p));
+    CHECK_EQ(book.reanchors(), 3u);
+    CHECK_EQ(book.bestBid(), kNoPrice);
+    CHECK_EQ(book.bestAsk(), kNoPrice);
+    CHECK_EQ(book.parkedShares(), 270u);
+    book.apply(bytesOf(mkAdd(5u, 'S', 10u, 400'100)));
+    CHECK_EQ(book.bestAsk(), 400'100);
+}
+
+void test_profile_anchor_builds_band_before_any_message() {
+    dut::BookConfig cfg{};
+    cfg.tickWire     = 100;
+    cfg.bandTicks    = 16;
+    cfg.bandFraction = 0.10;
+    cfg.anchorPrice  = 3'200'000;
+    dut::BookBuilder book(cfg);
+    CHECK(book.anchored());
+    CHECK_EQ(book.reanchors(), 0u);
+    CHECK_EQ(book.bandLow(), 3'200'000 - 320'000);
+    CHECK_EQ(book.bandHigh(), 3'200'000 + 320'000);
+    book.apply(bytesOf(mkAdd(1u, 'B', 100u, 2'900'000)));
+    CHECK_EQ(book.bestBid(), 2'900'000);
+    CHECK_EQ(book.outOfBandAdds(), 0u);
+    CHECK_EQ(book.reanchors(), 0u);
+}
+
 int main() {
+    test_band_shift_keeps_levels_and_parks_the_rest();
+    test_profile_anchor_builds_band_before_any_message();
     test_dynamic_band_anchors_on_first_add();
     test_dynamic_band_scales_with_price_and_clamps_at_zero();
     test_out_of_band_trade_reanchors_and_rebuilds();

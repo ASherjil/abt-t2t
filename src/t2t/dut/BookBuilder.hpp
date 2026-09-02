@@ -31,6 +31,7 @@ struct BookConfig {
     std::pmr::memory_resource* memory            = nullptr;
     std::uint64_t*             rehashes          = nullptr;
     std::uint64_t*             reanchors         = nullptr;
+    Price                      anchorPrice       = kNoPrice;
 };
 
 class BookBuilder {
@@ -48,6 +49,7 @@ public:
     [[nodiscard]] Price         bestAsk() const noexcept;
     [[nodiscard]] Quantity      sizeAt(Side side, Price price) const noexcept;
     [[nodiscard]] Quantity      restingShares(OrderId ref) const noexcept;
+    [[nodiscard]] Price         restingPrice(OrderId ref) const noexcept;
     [[nodiscard]] std::size_t   liveOrders() const noexcept;
     [[nodiscard]] std::size_t   orderCapacity() const noexcept;
     [[nodiscard]] std::size_t   ownOrders() const noexcept;
@@ -56,6 +58,7 @@ public:
     [[nodiscard]] Price         bandHigh() const noexcept;
     [[nodiscard]] std::uint64_t outOfBandAdds() const noexcept;
     [[nodiscard]] std::uint32_t reanchors() const noexcept;
+    [[nodiscard]] std::uint64_t parkedShares() const noexcept;
     [[nodiscard]] Price         tickWire() const noexcept;
     [[nodiscard]] std::size_t   footprintBytes() const noexcept;
 
@@ -73,15 +76,22 @@ private:
     void onTradePrice(Price price);
     void removeOrder(OrderId ref);
     void addShares(Side side, Price price, Quantity shares) noexcept;
+    void addLevel(Side side, Price price, Quantity shares) noexcept;
+    void park(Price price, Quantity shares) noexcept;
+    void unpark(Quantity shares) noexcept;
     void removeShares(Side side, Price price, Quantity shares) noexcept;
 
     [[nodiscard]] bool        inBand(Price price) const noexcept;
-    [[nodiscard]] bool        offGrid(Price price) const noexcept;
+    [[nodiscard]] bool        inRange(Price price) const noexcept;
+    [[nodiscard]] Price       tickFor(Price price) const noexcept;
+    [[nodiscard]] bool        needsAnchor(Price price) const noexcept;
     [[nodiscard]] std::size_t index(Price price) const noexcept;
     void                      anchor(Price price, bool trusted);
     void                      rebuildLevels();
-    void                      rescanBestBid() noexcept;
-    void                      rescanBestAsk() noexcept;
+    void shiftLevels(std::pmr::vector<Quantity>& levels, Price newMin, Price newMax) noexcept;
+    void recomputeBest() noexcept;
+    void rescanBestBid() noexcept;
+    void rescanBestAsk() noexcept;
 
     Price          m_minPrice;
     Price          m_maxPrice;
@@ -100,6 +110,9 @@ private:
     std::uint64_t  m_oob           = 0;
     std::uint32_t  m_reanchors     = 0;
     std::uint64_t* m_reanchorsOut  = nullptr;
+    std::uint64_t  m_parkedShares  = 0;
+    Price          m_parkedLo      = kNoPrice;
+    Price          m_parkedHi      = kNoPrice;
 
     std::pmr::vector<Quantity>          m_bidSize;
     std::pmr::vector<Quantity>          m_askSize;

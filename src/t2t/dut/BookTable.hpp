@@ -6,9 +6,12 @@
 #include <memory_resource>
 #include <span>
 #include <string>
+#include <string_view>
+#include <unordered_map>
 #include <vector>
 
 #include "t2t/dut/BookBuilder.hpp"
+#include "t2t/dut/SymbolProfile.hpp"
 #include "t2t/lob/Types.hpp"
 
 namespace abt::dut {
@@ -25,6 +28,7 @@ struct BookTableConfig {
     OrderId                    ownRefMin     = 0;
     std::vector<std::string>   hotSymbols;
     std::vector<std::uint16_t> hotLocates;
+    std::vector<SymbolProfile> profiles;
     std::pmr::memory_resource* memory = nullptr;
 };
 
@@ -57,6 +61,8 @@ public:
     [[nodiscard]] std::uint64_t      rehashes() const noexcept;
     [[nodiscard]] std::uint64_t      reanchors() const noexcept;
     [[nodiscard]] std::uint64_t      created() const noexcept;
+    [[nodiscard]] std::size_t        profiled() const noexcept;
+    [[nodiscard]] const BookBuilder* bookByName(std::string_view name) const noexcept;
     [[nodiscard]] std::size_t        footprintBytes() const noexcept;
     [[nodiscard]] std::size_t        liveOrders() const noexcept;
     [[nodiscard]] std::size_t        bookCapacity(std::uint16_t locate) const noexcept;
@@ -75,8 +81,19 @@ public:
     [[nodiscard]] static std::uint16_t locateOf(std::span<const std::byte> msg) noexcept;
 
 private:
-    BookBuilder* create(std::uint16_t locate, bool hot);
-    void         onDirectory(std::span<const std::byte> msg, std::uint16_t locate);
+    struct NameHash {
+        using is_transparent = void;
+
+        [[nodiscard]] std::size_t operator()(std::string_view s) const noexcept {
+            return std::hash<std::string_view>{}(s);
+        }
+    };
+
+    [[nodiscard]] BookConfig configFor(bool hot) noexcept;
+    [[nodiscard]] int        hotIndexByName(std::string_view name) const noexcept;
+    BookBuilder*             create(std::uint16_t locate, bool hot);
+    BookBuilder*             createProfiled(const SymbolProfile& p, bool hot);
+    void                     onDirectory(std::span<const std::byte> msg, std::uint16_t locate);
 
     BookTableConfig m_cfg;
 
@@ -85,14 +102,15 @@ private:
         std::int16_t hot  = static_cast<std::int16_t>(kCold);
     };
 
-    std::pmr::deque<BookBuilder> m_storage;
-    std::vector<Entry>           m_books;
-    BookBuilder                  m_empty;
-    std::vector<HotSymbol>       m_hot;
-    std::uint64_t                m_undirected = 0;
-    std::uint64_t                m_rehashes   = 0;
-    std::uint64_t                m_reanchors  = 0;
-    std::uint64_t                m_created    = 0;
+    std::pmr::deque<BookBuilder>                                             m_storage;
+    std::vector<Entry>                                                       m_books;
+    BookBuilder                                                              m_empty;
+    std::vector<HotSymbol>                                                   m_hot;
+    std::unordered_map<std::string, BookBuilder*, NameHash, std::equal_to<>> m_byName;
+    std::uint64_t                                                            m_undirected = 0;
+    std::uint64_t                                                            m_rehashes   = 0;
+    std::uint64_t                                                            m_reanchors  = 0;
+    std::uint64_t                                                            m_created    = 0;
 };
 
 inline std::uint16_t BookTable::locateOf(std::span<const std::byte> msg) noexcept {

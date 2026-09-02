@@ -64,6 +64,7 @@ struct NoRecorder {
 struct DutConfig {
     std::vector<std::string>   symbols;
     std::vector<std::uint16_t> locates;
+    std::vector<SymbolProfile> profiles;
     Price                      tickWire        = 1;
     std::size_t                coldBandTicks   = 2048;
     std::size_t                hotBandTicks    = 8192;
@@ -240,6 +241,7 @@ BookTableConfig DutSession<Mode, Strat, Io>::tableConfigOf(const DutConfig&     
     t.hotMapSlots   = cfg.hotMapSlots;
     t.ownRefMin     = cfg.ownRefMin;
     t.hotSymbols    = cfg.symbols;
+    t.profiles      = cfg.profiles;
     t.hotLocates    = cfg.locates;
     t.memory        = mr;
     return t;

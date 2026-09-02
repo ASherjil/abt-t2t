@@ -1,5 +1,7 @@
 #include "t2t/dut/BookTable.hpp"
 
+#include <bit>
+
 #include "t2t/protocol/Itch50.hpp"
 
 namespace abt::dut {
@@ -23,6 +25,27 @@ BookTable::BookTable(const BookTableConfig& cfg)
         }
         m_hot[i].book = m_books[locate].book;
     }
+    m_byName.reserve(cfg.profiles.size());
+    for (const SymbolProfile& p : cfg.profiles) {
+        if (p.name.empty() || p.refPrice <= 0 || m_byName.contains(p.name)) {
+            continue;
+        }
+        const int    h = hotIndexByName(p.name);
+        BookBuilder* b = createProfiled(p, h != kCold);
+        m_byName.emplace(p.name, b);
+        if (h != kCold && m_hot[static_cast<std::size_t>(h)].book == nullptr) {
+            m_hot[static_cast<std::size_t>(h)].book = b;
+        }
+    }
+}
+
+int BookTable::hotIndexByName(std::string_view name) const noexcept {
+    for (std::size_t i = 0; i < m_hot.size(); ++i) {
+        if (m_hot[i].name == name) {
+            return static_cast<int>(i);
+        }
+    }
+    return kCold;
 }
 
 int BookTable::apply(std::span<const std::byte> msg) {
@@ -53,28 +76,34 @@ void BookTable::onDirectory(std::span<const std::byte> msg, std::uint16_t locate
     if (msg.size() < sizeof(itch::StockDirectory)) {
         return;
     }
-    const auto* r = reinterpret_cast<const itch::StockDirectory*>(msg.data());
-    if (m_books[locate].hot == kCold) {
-        const std::string_view name = r->stock.view();
+    const auto*            r    = reinterpret_cast<const itch::StockDirectory*>(msg.data());
+    const std::string_view name = r->stock.view();
+    Entry&                 e    = m_books[locate];
+    if (e.book == nullptr) {
+        if (const auto it = m_byName.find(name); it != m_byName.end()) {
+            e.book = it->second;
+        }
+    }
+    if (e.hot == kCold) {
         for (std::size_t i = 0; i < m_hot.size(); ++i) {
             if (!m_hot[i].resolved && m_hot[i].name == name) {
-                m_hot[i].resolved   = true;
-                m_hot[i].locate     = locate;
-                m_books[locate].hot = static_cast<std::int16_t>(i);
-                if (m_books[locate].book == nullptr) {
+                m_hot[i].resolved = true;
+                m_hot[i].locate   = locate;
+                e.hot             = static_cast<std::int16_t>(i);
+                if (e.book == nullptr) {
                     create(locate, true);
                 }
-                m_hot[i].book = m_books[locate].book;
+                m_hot[i].book = e.book;
                 return;
             }
         }
     }
-    if (m_books[locate].book == nullptr) {
+    if (e.book == nullptr) {
         create(locate, false);
     }
 }
 
-BookBuilder* BookTable::create(std::uint16_t locate, bool hot) {
+BookConfig BookTable::configFor(bool hot) noexcept {
     BookConfig bc{};
     bc.tickWire          = m_cfg.tickWire;
     bc.subDollarTickWire = m_cfg.subDollarTick;
@@ -86,10 +115,26 @@ BookBuilder* BookTable::create(std::uint16_t locate, bool hot) {
     bc.memory            = m_cfg.memory;
     bc.rehashes          = &m_rehashes;
     bc.reanchors         = &m_reanchors;
-    m_storage.emplace_back(bc);
+    return bc;
+}
+
+BookBuilder* BookTable::create(std::uint16_t locate, bool hot) {
+    m_storage.emplace_back(configFor(hot));
     ++m_created;
     m_books[locate].book = &m_storage.back();
     return m_books[locate].book;
+}
+
+BookBuilder* BookTable::createProfiled(const SymbolProfile& p, bool hot) {
+    BookConfig bc   = configFor(hot);
+    const auto want = static_cast<std::size_t>(p.peakOrders) * 2;
+    if (want > bc.maxOrders) {
+        bc.maxOrders = std::bit_ceil(want);
+    }
+    bc.anchorPrice = p.refPrice;
+    m_storage.emplace_back(bc);
+    ++m_created;
+    return &m_storage.back();
 }
 
 const BookBuilder* BookTable::book(std::uint16_t locate) const noexcept {
@@ -131,6 +176,15 @@ std::uint64_t BookTable::reanchors() const noexcept {
 
 std::uint64_t BookTable::created() const noexcept {
     return m_created;
+}
+
+std::size_t BookTable::profiled() const noexcept {
+    return m_byName.size();
+}
+
+const BookBuilder* BookTable::bookByName(std::string_view name) const noexcept {
+    const auto it = m_byName.find(name);
+    return it == m_byName.end() ? nullptr : it->second;
 }
 
 std::size_t BookTable::footprintBytes() const noexcept {

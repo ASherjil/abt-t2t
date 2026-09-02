@@ -74,12 +74,33 @@ void FeedValidator::onMessage(std::span<const std::byte> msg) {
         case 'E': {
             if (const auto* e = as<itch::OrderExecuted>(msg); e != nullptr) {
                 checkReference(locate, e->orderRef.value(), e->executedShares.value());
+                if (const dut::BookBuilder* b = m_books.book(locate); b != nullptr) {
+                    if (const Price px = b->restingPrice(e->orderRef.value()); px != kNoPrice) {
+                        st.lastTrade = px;
+                    }
+                }
             }
             break;
         }
         case 'C': {
             if (const auto* c = as<itch::OrderExecutedWithPrice>(msg); c != nullptr) {
                 checkReference(locate, c->orderRef.value(), c->executedShares.value());
+                if (c->executionPrice.value() > 0) {
+                    st.lastTrade = static_cast<Price>(c->executionPrice.value());
+                }
+            }
+            break;
+        }
+        case 'P': {
+            if (const auto* p = as<itch::TradeNonCross>(msg); p != nullptr && p->price.value() > 0) {
+                st.lastTrade = static_cast<Price>(p->price.value());
+            }
+            break;
+        }
+        case 'Q': {
+            if (const auto* q = as<itch::CrossTrade>(msg);
+                q != nullptr && q->shares.value() > 0 && q->crossPrice.value() > 0) {
+                st.lastTrade = static_cast<Price>(q->crossPrice.value());
             }
             break;
         }
@@ -184,6 +205,18 @@ const std::vector<SymbolStats>& FeedValidator::perSymbol() const noexcept {
 
 const dut::BookTable& FeedValidator::books() const noexcept {
     return m_books;
+}
+
+std::vector<dut::SymbolProfile> FeedValidator::profiles() const {
+    std::vector<dut::SymbolProfile> out;
+    for (const SymbolStats& s : m_sym) {
+        if (s.name.empty() || s.lastTrade <= 0) {
+            continue;
+        }
+        out.push_back(dut::SymbolProfile{
+            .name = s.name, .refPrice = s.lastTrade, .peakOrders = static_cast<std::uint32_t>(s.maxLive)});
+    }
+    return out;
 }
 
 }   // namespace abt::replay

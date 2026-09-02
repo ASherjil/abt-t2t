@@ -3,10 +3,13 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <filesystem>
 #include <span>
+#include <string>
 #include <string_view>
 
 #include "t2t/dut/BookTable.hpp"
+#include "t2t/dut/SymbolProfile.hpp"
 #include "t2t/protocol/Itch50.hpp"
 #include "t2t/replay/FeedValidator.hpp"
 #include "t2t/util/HugePageArena.hpp"
@@ -223,7 +226,73 @@ void test_feed_validator_counts_faults() {
 
 }   // namespace
 
+void test_profile_prebuilds_books_and_binds_by_name() {
+    dut::BookTableConfig cfg = baseCfg();
+    cfg.bandFraction         = 0.10;
+    cfg.profiles             = {dut::SymbolProfile{.name = "AAPL", .refPrice = 3'200'000, .peakOrders = 3000},
+                                dut::SymbolProfile{.name = "ZZZZ", .refPrice = 50'000, .peakOrders = 10}};
+    dut::BookTable table(cfg);
+    CHECK_EQ(table.symbols(), 2u);
+    CHECK_EQ(table.profiled(), 2u);
+    CHECK_EQ(table.created(), 2u);
+    CHECK(table.hotBook(0).anchored());
+    CHECK_EQ(table.hotBook(0).bandLow(), 3'200'000 - 320'000);
+    CHECK(!table.hot(0).resolved);
+    CHECK(table.bookByName("ZZZZ") != nullptr && table.bookByName("ZZZZ")->anchored());
+    CHECK(table.bookByName("NOPE") == nullptr);
+
+    CHECK_EQ(table.apply(bytesOf(mkDir(13, "AAPL"))), 0);
+    CHECK(table.hot(0).resolved);
+    CHECK(table.book(13) == &table.hotBook(0));
+    CHECK_EQ(table.created(), 2u);
+    CHECK(table.bookCapacity(13) >= 6000u);
+    CHECK_EQ(table.apply(bytesOf(mkAdd(13, 1u, 'B', 10u, 3'000'000))), 0);
+    CHECK_EQ(table.hotBook(0).bestBid(), 3'000'000);
+    CHECK_EQ(table.hotBook(0).outOfBandAdds(), 0u);
+    CHECK_EQ(table.reanchors(), 0u);
+
+    CHECK_EQ(table.apply(bytesOf(mkDir(77, "ZZZZ"))), dut::BookTable::kCold);
+    CHECK(table.book(77) == table.bookByName("ZZZZ"));
+    CHECK_EQ(table.created(), 2u);
+    CHECK_EQ(table.apply(bytesOf(mkDir(78, "NEWX"))), dut::BookTable::kCold);
+    CHECK_EQ(table.created(), 3u);
+    CHECK(table.book(78) != nullptr && !table.book(78)->anchored());
+}
+
+void test_validator_exports_profile_and_file_round_trips() {
+    replay::FeedValidator v(baseCfg());
+    v.onMessage(bytesOf(mkDir(13, "AAPL")));
+    v.onMessage(bytesOf(mkAdd(13, 1u, 'B', 10u, 320'000)));
+    v.onMessage(bytesOf(mkAdd(13, 2u, 'S', 10u, 320'100)));
+    v.onMessage(bytesOf(mkExec(13, 2u, 10u)));
+    itch::TradeNonCross p{};
+    p.messageType = itch::MessageType::TradeNonCross;
+    p.stockLocate = 13;
+    p.shares      = 1;
+    p.price       = 320'050;
+    v.onMessage(bytesOf(p));
+    v.onMessage(bytesOf(mkDir(14, "QUIET")));
+    v.onMessage(bytesOf(mkAdd(14, 3u, 'B', 10u, 1000)));
+    const auto rows = v.profiles();
+    CHECK_EQ(rows.size(), 1u);
+    CHECK(rows[0].name == "AAPL");
+    CHECK_EQ(rows[0].refPrice, 320'050);
+    CHECK_EQ(rows[0].peakOrders, 2u);
+
+    const std::string path = (std::filesystem::temp_directory_path() / "abt_profile_test.txt").string();
+    CHECK(dut::writeSymbolProfile(path, rows));
+    const auto back = dut::readSymbolProfile(path);
+    CHECK_EQ(back.size(), 1u);
+    CHECK(back[0].name == "AAPL");
+    CHECK_EQ(back[0].refPrice, 320'050);
+    CHECK_EQ(back[0].peakOrders, 2u);
+    std::filesystem::remove(path);
+    CHECK(dut::readSymbolProfile("/nonexistent/abt.profile").empty());
+}
+
 int main() {
+    test_profile_prebuilds_books_and_binds_by_name();
+    test_validator_exports_profile_and_file_round_trips();
     test_directory_resolves_hot_symbols();
     test_undirected_locate_gets_a_cold_book();
     test_table_counts_reanchors_across_books();

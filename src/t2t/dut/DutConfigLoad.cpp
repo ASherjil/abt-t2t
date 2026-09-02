@@ -7,6 +7,7 @@
 
 #include "t2t/config/NetParse.hpp"
 #include "t2t/dut/DutAppConfig.hpp"
+#include "t2t/dut/SymbolProfile.hpp"
 
 namespace abt::dut {
 
@@ -45,6 +46,13 @@ DutAppConfig loadDutConfig(const std::string& path) {
     c.session.firstUserRef    = t["venue"]["first_user_ref"].value_or(c.session.firstUserRef);
     c.session.marketHoursOnly = t["venue"]["market_hours_only"].value_or(c.session.marketHoursOnly);
     c.session.ownRefMin       = static_cast<OrderId>(t["venue"]["own_ref_min"].value_or(std::int64_t{0}));
+    if (const std::string profile = t["venue"]["profile"].value_or(std::string{}); !profile.empty()) {
+        c.session.profiles = readSymbolProfile(profile);
+        if (c.session.profiles.empty()) {
+            fmt::print(stderr, "dut config: symbol profile {} missing or empty; books anchor on the feed\n",
+                       profile);
+        }
+    }
 
     c.quoter.tickWire         = c.session.tickWire;
     c.quoter.halfSpreadTicks  = t["quoter"]["half_spread_ticks"].value_or(c.quoter.halfSpreadTicks);

@@ -170,9 +170,9 @@ void LatencyRecorder::reset() noexcept {
 }
 
 void LatencyRecorder::summary() {
-    fmt::print("[{}] ns: n={} dropped={} min={} p50={} p90={} p99={} p99.9={} p99.99={} max={}\n", m_name,
-               count(), dropped(), min(), percentile(50.0), percentile(90.0), percentile(99.0),
-               percentile(99.9), percentile(99.99), max());
+    fmt::print("[{}] ns: n={} dropped={} min={} p50={} p90={} p99={} p99.9={} p99.99={} p99.999={} max={}\n",
+               m_name, count(), dropped(), min(), percentile(50.0), percentile(90.0), percentile(99.0),
+               percentile(99.9), percentile(99.99), percentile(99.999), max());
     if (m_worstRun.n > 0) {
         fmt::print("[{} worst] {}\n", m_name, describeWorst(worstRun()));
     }
@@ -238,8 +238,9 @@ void RecorderThread::flushInterval(util::HistogramLog& log, const std::vector<La
         if (h.count() > 0) {
             (void)log.writeInterval(r->name(), startEpoch, intervalSec, h);
             (void)log.writeComment(fmt::format("worst {}: {}", r->name(), describeWorst(r->worstInterval())));
-            fmt::print("[{} +{:.0f}s] ns: n={} p50={} p99={} p99.9={} max={}\n", r->name(), intervalSec,
-                       h.count(), h.percentile(50.0), h.percentile(99.0), h.percentile(99.9), h.max());
+            fmt::print("[{} +{:.0f}s] ns: n={} p50={} p99={} p99.9={} p99.99={} max={}\n", r->name(),
+                       intervalSec, h.count(), h.percentile(50.0), h.percentile(99.0), h.percentile(99.9),
+                       h.percentile(99.99), h.max());
         }
         r->resetInterval();
     }

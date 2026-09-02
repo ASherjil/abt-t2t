@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstring>
 
 namespace abt::dut {
 
@@ -38,21 +39,17 @@ BookBuilder::BookBuilder(const BookConfig& cfg)
       m_orders(cfg.maxOrders, cfg.memory) {
     m_orders.countGrowsIn(cfg.rehashes);
     m_reanchorsOut = cfg.reanchors;
+    if (cfg.anchorPrice != kNoPrice) {
+        anchor(cfg.anchorPrice, true);
+    }
 }
 
 void BookBuilder::anchor(Price price, bool trusted) {
-    if (m_anchored) {
-        ++m_reanchors;
-        if (m_reanchorsOut != nullptr) {
-            ++*m_reanchorsOut;
-        }
-    }
-    m_tickWire       = (m_subDollarTick > 0 && price < 10000) ? m_subDollarTick : m_baseTick;
-    m_tickDiv        = util::DivBy(static_cast<std::uint32_t>(m_tickWire));
+    const Price tick = tickFor(price);
     std::size_t band = m_bandTicks;
     if (trusted && m_bandFraction > 0.0) {
         const double byPrice = std::floor(static_cast<double>(price) * m_bandFraction /
-                                          static_cast<double>(m_tickWire));
+                                          static_cast<double>(tick));
         if (byPrice > static_cast<double>(band)) {
             band = static_cast<std::size_t>(byPrice);
         }
@@ -60,13 +57,34 @@ void BookBuilder::anchor(Price price, bool trusted) {
     if (m_maxBandTicks != 0 && band > m_maxBandTicks) {
         band = m_maxBandTicks;
     }
-    const Price span    = static_cast<Price>(band) * m_tickWire;
-    const Price aligned = price - price % m_tickWire;
-    m_minPrice          = aligned - span;
-    if (m_minPrice < 0) {
-        m_minPrice = 0;
+    const Price span    = static_cast<Price>(band) * tick;
+    const Price aligned = price - price % tick;
+    Price       newMin  = aligned - span;
+    if (newMin < 0) {
+        newMin = 0;
     }
-    m_maxPrice = m_minPrice + 2 * span;
+    const Price newMax = newMin + 2 * span;
+
+    const bool shiftable = m_anchored && tick == m_tickWire &&
+                           (m_parkedShares == 0 || newMax < m_parkedLo || newMin > m_parkedHi);
+    if (m_anchored) {
+        ++m_reanchors;
+        if (m_reanchorsOut != nullptr) {
+            ++*m_reanchorsOut;
+        }
+    }
+    if (shiftable) {
+        shiftLevels(m_bidSize, newMin, newMax);
+        shiftLevels(m_askSize, newMin, newMax);
+        m_minPrice = newMin;
+        m_maxPrice = newMax;
+        recomputeBest();
+        return;
+    }
+    m_tickWire = tick;
+    m_tickDiv  = util::DivBy(static_cast<std::uint32_t>(tick));
+    m_minPrice = newMin;
+    m_maxPrice = newMax;
     m_bidSize.assign(2 * band + 1, 0);
     m_askSize.assign(2 * band + 1, 0);
     m_bestBid  = kNoPrice;
@@ -75,16 +93,88 @@ void BookBuilder::anchor(Price price, bool trusted) {
     rebuildLevels();
 }
 
+void BookBuilder::shiftLevels(std::pmr::vector<Quantity>& levels, Price newMin, Price newMax) noexcept {
+    const std::size_t oldN = levels.size();
+    const std::size_t newN = static_cast<std::size_t>((newMax - newMin) / m_tickWire) + 1;
+    const Price       lo   = std::max(m_minPrice, newMin);
+    const Price       hi   = std::min(m_maxPrice, newMax);
+    std::size_t       oi0  = 0;
+    std::size_t       nj0  = 0;
+    std::size_t       len  = 0;
+    if (lo <= hi) {
+        oi0 = index(lo);
+        nj0 = static_cast<std::size_t>((lo - newMin) / m_tickWire);
+        len = static_cast<std::size_t>((hi - lo) / m_tickWire) + 1;
+    }
+    for (std::size_t i = 0; i < oldN; ++i) {
+        if ((i < oi0 || i >= oi0 + len) && levels[i] != 0) {
+            park(m_minPrice + static_cast<Price>(i) * m_tickWire, levels[i]);
+        }
+    }
+    if (newN > oldN) {
+        levels.resize(newN, 0);
+    }
+    if (len > 0 && nj0 != oi0) {
+        std::memmove(levels.data() + nj0, levels.data() + oi0, len * sizeof(Quantity));
+    }
+    std::fill(levels.begin(), levels.begin() + static_cast<std::ptrdiff_t>(nj0), 0u);
+    std::fill(levels.begin() + static_cast<std::ptrdiff_t>(nj0 + len), levels.end(), 0u);
+    if (newN < levels.size()) {
+        levels.resize(newN);
+    }
+}
+
+void BookBuilder::recomputeBest() noexcept {
+    if (m_bestBid == kNoPrice || !inBand(m_bestBid) || m_bidSize[index(m_bestBid)] == 0) {
+        const std::size_t j = util::scanDownNonZero(m_bidSize.data(), m_bidSize.size() - 1);
+        m_bestBid = j == util::kNoIndex ? kNoPrice : m_minPrice + static_cast<Price>(j) * m_tickWire;
+    }
+    if (m_bestAsk == kNoPrice || !inBand(m_bestAsk) || m_askSize[index(m_bestAsk)] == 0) {
+        const std::size_t j = util::scanUpNonZero(m_askSize.data(), 0, m_askSize.size() - 1);
+        m_bestAsk = j == util::kNoIndex ? kNoPrice : m_minPrice + static_cast<Price>(j) * m_tickWire;
+    }
+}
+
 void BookBuilder::rebuildLevels() {
+    m_parkedShares = 0;
+    m_parkedLo     = kNoPrice;
+    m_parkedHi     = kNoPrice;
     m_orders.forEach([this](OrderId, const Resting& r) {
-        if (!r.own) {
-            addShares(r.side, r.price, r.shares);
+        if (r.own) {
+            return;
+        }
+        if (inBand(r.price)) {
+            addLevel(r.side, r.price, r.shares);
+        } else {
+            park(r.price, r.shares);
         }
     });
 }
 
+void BookBuilder::park(Price price, Quantity shares) noexcept {
+    m_parkedShares += shares;
+    if (m_parkedLo == kNoPrice || price < m_parkedLo) {
+        m_parkedLo = price;
+    }
+    if (m_parkedHi == kNoPrice || price > m_parkedHi) {
+        m_parkedHi = price;
+    }
+}
+
+void BookBuilder::unpark(Quantity shares) noexcept {
+    m_parkedShares -= std::min<std::uint64_t>(shares, m_parkedShares);
+    if (m_parkedShares == 0) {
+        m_parkedLo = kNoPrice;
+        m_parkedHi = kNoPrice;
+    }
+}
+
+std::uint64_t BookBuilder::parkedShares() const noexcept {
+    return m_parkedShares;
+}
+
 void BookBuilder::onTradePrice(Price price) {
-    if (!inBand(price)) [[unlikely]] {
+    if (needsAnchor(price)) [[unlikely]] {
         anchor(price, true);
     }
 }
@@ -195,9 +285,12 @@ void BookBuilder::clear() noexcept {
     std::fill(m_bidSize.begin(), m_bidSize.end(), 0u);
     std::fill(m_askSize.begin(), m_askSize.end(), 0u);
     m_orders.clear();
-    m_own     = 0;
-    m_bestBid = kNoPrice;
-    m_bestAsk = kNoPrice;
+    m_own          = 0;
+    m_bestBid      = kNoPrice;
+    m_bestAsk      = kNoPrice;
+    m_parkedShares = 0;
+    m_parkedLo     = kNoPrice;
+    m_parkedHi     = kNoPrice;
 }
 
 Price BookBuilder::bestBid() const noexcept {
@@ -223,6 +316,11 @@ Quantity BookBuilder::restingShares(OrderId ref) const noexcept {
     return o == nullptr ? 0 : o->shares;
 }
 
+Price BookBuilder::restingPrice(OrderId ref) const noexcept {
+    const Resting* o = m_orders.find(ref);
+    return o == nullptr ? kNoPrice : o->price;
+}
+
 std::size_t BookBuilder::liveOrders() const noexcept {
     return m_orders.size();
 }
@@ -244,7 +342,7 @@ void BookBuilder::onAddOrder(const itch::AddOrder& msg) {
     const Side    side  = (msg.side == itch::Side::Buy) ? Side::Buy : Side::Sell;
     const Price   price = static_cast<Price>(msg.price.value());
     const bool    own   = m_ownRefMin != 0 && ref >= m_ownRefMin;
-    if (!m_anchored || offGrid(price)) [[unlikely]] {
+    if (!m_anchored) [[unlikely]] {
         anchor(price, false);
     }
     m_orders.insertOrAssign(ref, Resting{.price = price, .shares = shares, .side = side, .own = own});
@@ -271,9 +369,6 @@ void BookBuilder::onOrderReplace(const itch::OrderReplace& msg) {
         return;
     }
     const Price price = static_cast<Price>(msg.price.value());
-    if (offGrid(price)) [[unlikely]] {
-        anchor(price, false);
-    }
     m_orders.insertOrAssign(msg.newOrderRef.value(),
                             Resting{.price = price, .shares = shares, .side = orig.side, .own = orig.own});
     if (orig.own) [[unlikely]] {
@@ -288,7 +383,7 @@ void BookBuilder::reduceOrder(OrderId ref, Quantity by, bool trade) {
     if (o == nullptr) {
         return;
     }
-    if (trade && !inBand(o->price)) [[unlikely]] {
+    if (trade && needsAnchor(o->price)) [[unlikely]] {
         anchor(o->price, true);
     }
     const Quantity gone = (by < o->shares) ? by : o->shares;
@@ -319,8 +414,13 @@ void BookBuilder::removeOrder(OrderId ref) {
 void BookBuilder::addShares(Side side, Price price, Quantity shares) noexcept {
     if (!inBand(price)) [[unlikely]] {
         ++m_oob;
+        park(price, shares);
         return;
     }
+    addLevel(side, price, shares);
+}
+
+void BookBuilder::addLevel(Side side, Price price, Quantity shares) noexcept {
     const std::size_t i = index(price);
     if (side == Side::Buy) {
         m_bidSize[i] += shares;
@@ -336,7 +436,8 @@ void BookBuilder::addShares(Side side, Price price, Quantity shares) noexcept {
 }
 
 void BookBuilder::removeShares(Side side, Price price, Quantity shares) noexcept {
-    if (!inBand(price)) {
+    if (!inBand(price)) [[unlikely]] {
+        unpark(shares);
         return;
     }
     const std::size_t i = index(price);
@@ -361,13 +462,24 @@ void BookBuilder::removeShares(Side side, Price price, Quantity shares) noexcept
     }
 }
 
-bool BookBuilder::inBand(Price price) const noexcept {
+bool BookBuilder::inRange(Price price) const noexcept {
     return price >= m_minPrice && price <= m_maxPrice;
 }
 
-bool BookBuilder::offGrid(Price price) const noexcept {
-    return m_bandTicks != 0 && m_subDollarTick > 0 && m_tickWire != m_subDollarTick &&
-           price % m_tickWire != 0;
+bool BookBuilder::inBand(Price price) const noexcept {
+    if (!inRange(price)) {
+        return false;
+    }
+    const auto off = static_cast<std::uint32_t>(price - m_minPrice);
+    return off == m_tickDiv(off) * static_cast<std::uint32_t>(m_tickWire);
+}
+
+Price BookBuilder::tickFor(Price price) const noexcept {
+    return (m_subDollarTick > 0 && price < 10000) ? m_subDollarTick : m_baseTick;
+}
+
+bool BookBuilder::needsAnchor(Price price) const noexcept {
+    return !inRange(price) || tickFor(price) != m_tickWire;
 }
 
 std::size_t BookBuilder::index(Price price) const noexcept {

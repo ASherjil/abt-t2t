@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "t2t/dut/BookTable.hpp"
+#include "t2t/dut/SymbolProfile.hpp"
 
 namespace abt::replay {
 
@@ -19,6 +20,7 @@ struct SymbolStats {
     std::uint64_t locked     = 0;
     std::uint64_t resumeXing = 0;
     std::uint64_t maxLive    = 0;
+    Price         lastTrade  = 0;
 };
 
 struct FeedTotals {
@@ -46,6 +48,7 @@ public:
     [[nodiscard]] FeedTotals                      totals() const noexcept;
     [[nodiscard]] const std::vector<SymbolStats>& perSymbol() const noexcept;
     [[nodiscard]] const dut::BookTable&           books() const noexcept;
+    [[nodiscard]] std::vector<dut::SymbolProfile> profiles() const;
 
 private:
     void checkReference(std::uint16_t locate, OrderId ref, Quantity reduceBy) noexcept;
