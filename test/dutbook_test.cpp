@@ -171,10 +171,27 @@ void test_dynamic_band_scales_with_price_and_clamps_at_zero() {
     cfg.tickWire     = 100;
     cfg.bandTicks    = 10;
     cfg.bandFraction = 0.10;
+    cfg.maxBandTicks = 0;
     dut::BookBuilder pricey(cfg);
     pricey.apply(bytesOf(mkAdd(1u, 'B', 1u, 3'400'000'000 / 2)));
-    CHECK_EQ(pricey.bandLow(), 1'700'000'000 - 170'000'000);
-    CHECK_EQ(pricey.bandHigh(), 1'700'000'000 + 170'000'000);
+    CHECK_EQ(pricey.bandLow(), 1'700'000'000 - 1000);
+    CHECK_EQ(pricey.bandHigh(), 1'700'000'000 + 1000);
+    itch::TradeNonCross trade{};
+    trade.messageType = itch::MessageType::TradeNonCross;
+    trade.shares      = 1;
+    trade.price       = 1'700'005'000;
+    pricey.apply(bytesOf(trade));
+    CHECK_EQ(pricey.reanchors(), 1u);
+    CHECK_EQ(pricey.bandLow(), 1'700'005'000 - 170'000'500);
+    CHECK_EQ(pricey.bandHigh(), 1'700'005'000 + 170'000'500);
+
+    cfg.maxBandTicks = 100;
+    dut::BookBuilder capped(cfg);
+    capped.apply(bytesOf(mkAdd(1u, 'B', 1u, 1'000'000)));
+    trade.price = 2'000'000;
+    capped.apply(bytesOf(trade));
+    CHECK_EQ(capped.bandLow(), 2'000'000 - 10'000);
+    CHECK_EQ(capped.bandHigh(), 2'000'000 + 10'000);
 
     dut::BookBuilder penny(cfg);
     penny.apply(bytesOf(mkAdd(1u, 'B', 1u, 350)));
@@ -186,8 +203,8 @@ void test_dynamic_band_scales_with_price_and_clamps_at_zero() {
     dut::BookBuilder subDollar(cfg);
     subDollar.apply(bytesOf(mkAdd(1u, 'B', 1u, 350)));
     CHECK_EQ(subDollar.tickWire(), 1);
-    CHECK_EQ(subDollar.bandLow(), 350 - 35);
-    CHECK_EQ(subDollar.bandHigh(), 350 + 35);
+    CHECK_EQ(subDollar.bandLow(), 350 - 10);
+    CHECK_EQ(subDollar.bandHigh(), 350 + 10);
     subDollar.apply(bytesOf(mkAdd(2u, 'S', 1u, 351)));
     CHECK_EQ(subDollar.bestAsk(), 351);
 

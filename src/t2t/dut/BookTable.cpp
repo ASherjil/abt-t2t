@@ -79,6 +79,7 @@ BookBuilder* BookTable::create(std::uint16_t locate, bool hot) {
     bc.subDollarTickWire = m_cfg.subDollarTick;
     bc.bandTicks         = hot ? m_cfg.hotBandTicks : m_cfg.coldBandTicks;
     bc.bandFraction      = m_cfg.bandFraction;
+    bc.maxBandTicks      = m_cfg.maxBandTicks;
     bc.maxOrders         = hot ? m_cfg.hotMapSlots : m_cfg.coldMapSlots;
     bc.ownRefMin         = m_cfg.ownRefMin;
     bc.memory            = m_cfg.memory;

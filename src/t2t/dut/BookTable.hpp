@@ -18,6 +18,7 @@ struct BookTableConfig {
     Price                      subDollarTick = 1;
     std::size_t                coldBandTicks = 2048;
     std::size_t                hotBandTicks  = 8192;
+    std::size_t                maxBandTicks  = 1u << 16;
     double                     bandFraction  = 0.10;
     std::size_t                coldMapSlots  = 1024;
     std::size_t                hotMapSlots   = 1u << 16;

@@ -24,6 +24,7 @@ struct BookConfig {
     Price                      tickWire          = 1;
     Price                      subDollarTickWire = 0;
     std::size_t                bandTicks         = 2048;
+    std::size_t                maxBandTicks      = 1u << 16;
     double                     bandFraction      = 0.0;
     std::size_t                maxOrders         = 1u << 10;
     OrderId                    ownRefMin         = 0;
@@ -76,7 +77,7 @@ private:
     [[nodiscard]] bool        inBand(Price price) const noexcept;
     [[nodiscard]] bool        offGrid(Price price) const noexcept;
     [[nodiscard]] std::size_t index(Price price) const noexcept;
-    void                      anchor(Price price);
+    void                      anchor(Price price, bool trusted);
     void                      rebuildLevels();
     void                      rescanBestBid() noexcept;
     void                      rescanBestAsk() noexcept;
@@ -90,6 +91,7 @@ private:
     Price         m_bestBid       = kNoPrice;
     Price         m_bestAsk       = kNoPrice;
     std::size_t   m_bandTicks     = 0;
+    std::size_t   m_maxBandTicks  = 0;
     double        m_bandFraction  = 0.0;
     Price         m_baseTick      = 1;
     Price         m_subDollarTick = 0;

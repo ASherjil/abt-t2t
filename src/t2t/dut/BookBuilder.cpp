@@ -28,6 +28,7 @@ BookBuilder::BookBuilder(const BookConfig& cfg)
       m_ownRefMin(cfg.ownRefMin),
       m_tickDiv(static_cast<std::uint32_t>(cfg.tickWire)),
       m_bandTicks(cfg.bandTicks),
+      m_maxBandTicks(cfg.maxBandTicks),
       m_bandFraction(cfg.bandFraction),
       m_baseTick(cfg.tickWire),
       m_subDollarTick(cfg.subDollarTickWire),
@@ -38,19 +39,22 @@ BookBuilder::BookBuilder(const BookConfig& cfg)
     m_orders.countGrowsIn(cfg.rehashes);
 }
 
-void BookBuilder::anchor(Price price) {
+void BookBuilder::anchor(Price price, bool trusted) {
     if (m_anchored) {
         ++m_reanchors;
     }
     m_tickWire       = (m_subDollarTick > 0 && price < 10000) ? m_subDollarTick : m_baseTick;
     m_tickDiv        = util::DivBy(static_cast<std::uint32_t>(m_tickWire));
     std::size_t band = m_bandTicks;
-    if (m_bandFraction > 0.0) {
+    if (trusted && m_bandFraction > 0.0) {
         const double byPrice = std::floor(static_cast<double>(price) * m_bandFraction /
                                           static_cast<double>(m_tickWire));
         if (byPrice > static_cast<double>(band)) {
             band = static_cast<std::size_t>(byPrice);
         }
+    }
+    if (m_maxBandTicks != 0 && band > m_maxBandTicks) {
+        band = m_maxBandTicks;
     }
     const Price span    = static_cast<Price>(band) * m_tickWire;
     const Price aligned = price - price % m_tickWire;
@@ -77,7 +81,7 @@ void BookBuilder::rebuildLevels() {
 
 void BookBuilder::onTradePrice(Price price) {
     if (!inBand(price)) [[unlikely]] {
-        anchor(price);
+        anchor(price, true);
     }
 }
 
@@ -237,7 +241,7 @@ void BookBuilder::onAddOrder(const itch::AddOrder& msg) {
     const Price   price = static_cast<Price>(msg.price.value());
     const bool    own   = m_ownRefMin != 0 && ref >= m_ownRefMin;
     if (!m_anchored || offGrid(price)) [[unlikely]] {
-        anchor(price);
+        anchor(price, false);
     }
     m_orders.insertOrAssign(ref, Resting{.price = price, .shares = shares, .side = side, .own = own});
     if (own) [[unlikely]] {
@@ -264,7 +268,7 @@ void BookBuilder::onOrderReplace(const itch::OrderReplace& msg) {
     }
     const Price price = static_cast<Price>(msg.price.value());
     if (offGrid(price)) [[unlikely]] {
-        anchor(price);
+        anchor(price, false);
     }
     m_orders.insertOrAssign(msg.newOrderRef.value(),
                             Resting{.price = price, .shares = shares, .side = orig.side, .own = orig.own});
@@ -281,7 +285,7 @@ void BookBuilder::reduceOrder(OrderId ref, Quantity by, bool trade) {
         return;
     }
     if (trade && !inBand(o->price)) [[unlikely]] {
-        anchor(o->price);
+        anchor(o->price, true);
     }
     const Quantity gone = (by < o->shares) ? by : o->shares;
     if (!o->own) {
