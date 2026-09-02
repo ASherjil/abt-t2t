@@ -216,10 +216,10 @@ void test_dynamic_band_scales_with_price_and_clamps_at_zero() {
     CHECK_EQ(junkFirst.reanchors(), 1u);
     CHECK_EQ(junkFirst.bestBid(), 5384);
     junkFirst.apply(bytesOf(mkAdd(3u, 'S', 100u, 5385)));
-    junkFirst.apply(bytesOf(mkAdd(4u, 'B', 100u, 5300)));
+    junkFirst.apply(bytesOf(mkAdd(4u, 'B', 100u, 5380)));
     CHECK_EQ(junkFirst.bestAsk(), 5385);
     junkFirst.apply(bytesOf(mkDelete(2u)));
-    CHECK_EQ(junkFirst.bestBid(), 5300);
+    CHECK_EQ(junkFirst.bestBid(), 5380);
     CHECK_EQ(junkFirst.liveOrders(), 3u);
 }
 
