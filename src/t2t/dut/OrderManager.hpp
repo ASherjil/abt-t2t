@@ -72,6 +72,7 @@ public:
                           std::span<Outbound, kMaxOutbound> out) noexcept;
     void        onAck(std::span<const std::byte> ouch) noexcept;
     void        encodeTestOrder(Outbound& out) noexcept;
+    void        warmEncode(std::size_t sym, Outbound& out) const noexcept;
     void        prefetch(std::size_t sym) const noexcept;
 
     [[nodiscard]] std::size_t      symbolCount() const noexcept;

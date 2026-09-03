@@ -64,7 +64,7 @@ public:
     [[nodiscard]] const HotSymbol&   hot(std::size_t idx) const noexcept;
     [[nodiscard]] std::size_t        hotCount() const noexcept;
     [[nodiscard]] int                hotIndexOf(std::uint16_t locate) const noexcept;
-    void                             prefetchHotOrders(std::span<const std::byte> msg) const noexcept;
+    int                              prefetchHotOrders(std::span<const std::byte> msg) const noexcept;
 
     [[nodiscard]] bool isHot(std::uint16_t locate) const noexcept {
         return ((m_hotBits[locate >> 6] >> (locate & 63u)) & 1u) != 0;

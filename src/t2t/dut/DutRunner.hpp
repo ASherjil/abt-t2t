@@ -12,14 +12,36 @@
 #include "t2t/dut/DutSession.hpp"
 #include "t2t/dut/LatencyRecorder.hpp"
 #include "t2t/dut/QuoterStrategy.hpp"
+#include "t2t/dut/SampleContext.hpp"
+#include "t2t/protocol/Itch50Text.hpp"
+#include "t2t/protocol/MoldUdp64.hpp"
 #include "t2t/util/Affinity.hpp"
 #include "t2t/util/Clock.hpp"
 #include "t2t/util/MemLock.hpp"
+#include "t2t/util/Tsc.hpp"
 
 namespace abt::dut {
 
 inline constexpr std::uint64_t kDutLogPeriodNs       = 1'000'000'000ull;
+inline constexpr std::uint64_t kDutPreOpenWarmNs     = 100'000'000ull;
 inline constexpr std::uint64_t kDutPollsPerClockRead = 1u << 16;
+
+template <class Session>
+void printCaptures(Session& sess) {
+    const StageNames& names = sess.t2tSw().stageNames();
+    for (const CapturedPacket* c : sess.captures().sorted()) {
+        std::array<std::uint64_t, SampleContext::kStages> ns{};
+        for (std::size_t i = 0; i < SampleContext::kStages; ++i) {
+            ns[i] = tsc::toNs(SampleContext::stage(c->stages, i));
+        }
+        fmt::print("[t2t_sw capture] {}ns {}{}\n", tsc::toNs(c->ticks), describeContext(c->ctx),
+                   describeStages(SampleContext::packStages(ns[0], ns[1], ns[2], ns[3]), names));
+        mold::forEachMessage(c->packet(), [&](std::uint64_t, std::span<const std::byte> msg) {
+            const bool hot = msg.size() >= 3 && sess.books().isHot(BookTable::locateOf(msg));
+            fmt::print("    {} {}\n", hot ? "hot " : "    ", itch::describe(msg));
+        });
+    }
+}
 
 template <class Session>
 void printDutReport(Session& sess, util::ThreadCounters atStart, util::ThreadCounters now) {
@@ -36,6 +58,7 @@ void printDutReport(Session& sess, util::ThreadCounters atStart, util::ThreadCou
         sess.t2tHol().summary();
         sess.proc().summary();
         sess.ackRtt().summary();
+        printCaptures(sess);
     }
     const OmsStats& s = sess.oms().stats();
     fmt::print("[oms] orders sent={} enters={} replaces={} cancels={} accepts={} fills={} rejects={} "
@@ -152,6 +175,7 @@ int runDut(const DutAppConfig& cfg, typename T::Type& backend, volatile std::sig
         const util::ThreadCounters countersAtStart = util::threadCounters();
         sess.sendLogin(cfg.socket.session, cfg.socket.username);
         std::uint64_t nextLogin = monotonicNs() + kDutLogPeriodNs;
+        std::uint64_t nextWarm  = nextLogin;
         std::uint64_t polls     = 0;
         while (stop == 0) {
             sess.poll();
@@ -165,6 +189,9 @@ int runDut(const DutAppConfig& cfg, typename T::Type& backend, volatile std::sig
                 if (now >= nextLog) {
                     (void)statusQ.try_push(sess.status(now - start));
                     nextLog += kDutLogPeriodNs;
+                }
+                if (now >= nextWarm) {
+                    nextWarm = now + kDutPreOpenWarmNs;
                     if (sess.sessionEstablished() && !sess.marketOpen()) {
                         sess.warmQuotePath();
                         sess.sendTestOrder();

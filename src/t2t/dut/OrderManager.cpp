@@ -257,6 +257,12 @@ bool OrderManager::isTestRef(std::uint32_t userRef) const noexcept {
     return r.userRef == userRef && r.sym == kTestSym;
 }
 
+void OrderManager::warmEncode(std::size_t sym, Outbound& out) const noexcept {
+    encodeEnter(out, sym, 0, Side::Buy, 0, 0);
+    encodeEnter(out, sym, 0, Side::Sell, 0, 0);
+    encodeReplace(out, 0, 0, 0, 0);
+}
+
 void OrderManager::encodeTestOrder(Outbound& out) noexcept {
     const std::uint32_t ref = allocRef(kTestSym, Side::Buy);
     ouch::EnterOrder    o{};

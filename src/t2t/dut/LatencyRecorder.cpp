@@ -28,7 +28,9 @@ double epochSeconds() noexcept {
     return static_cast<double>(ts.tv_sec) + static_cast<double>(ts.tv_nsec) * 1e-9;
 }
 
-std::string describe(std::uint64_t ctx) {
+}   // namespace
+
+std::string describeContext(std::uint64_t ctx) {
     const std::uint8_t f = SampleContext::flags(ctx);
     return fmt::format(
         "seq={} msgs={} {}{}{}{}{}{}{}{}", SampleContext::seq(ctx), SampleContext::msgs(ctx),
@@ -53,13 +55,15 @@ std::string describeStages(std::uint64_t stages, const StageNames& names) {
     return out;
 }
 
+namespace {
+
 std::string describeWorst(std::span<const Outlier> worst, const StageNames& names) {
     std::string out;
     for (const Outlier& o : worst) {
         if (!out.empty()) {
             out += " | ";
         }
-        out += fmt::format("{}ns {}{}", o.ns, describe(o.ctx), describeStages(o.stages, names));
+        out += fmt::format("{}ns {}{}", o.ns, describeContext(o.ctx), describeStages(o.stages, names));
     }
     return out;
 }

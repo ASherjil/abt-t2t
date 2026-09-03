@@ -33,6 +33,7 @@
 #include "t2t/dut/DutStatus.hpp"
 #include "t2t/dut/LatencyRecorder.hpp"
 #include "t2t/dut/OrderManager.hpp"
+#include "t2t/dut/PacketCapture.hpp"
 #include "t2t/dut/SampleContext.hpp"
 #include "t2t/dut/SequenceTracker.hpp"
 #include "t2t/dut/Strategy.hpp"
@@ -44,6 +45,7 @@
 #include "t2t/protocol/Ouch50.hpp"
 #include "t2t/protocol/SoupBinTcp.hpp"
 #include "t2t/protocol/UdpFramer.hpp"
+#include "t2t/util/CacheLine.hpp"
 #include "t2t/util/Clock.hpp"
 #include "t2t/util/HugePageArena.hpp"
 #include "t2t/util/Tsc.hpp"
@@ -145,6 +147,8 @@ public:
         requires (build::kSwTiming);
     [[nodiscard]] SwRecorder& ackRtt() noexcept
         requires (build::kSwTiming);
+    [[nodiscard]] const PacketCapture& captures() const noexcept
+        requires (build::kSwTiming);
     [[nodiscard]] std::uint32_t    ordersSent() const noexcept;
     [[nodiscard]] std::uint64_t    packetsReceived() const noexcept;
     [[nodiscard]] std::uint64_t    foreignMessages() const noexcept;
@@ -166,7 +170,11 @@ public:
         requires (Mode == IoMode::Loopback);
 
 private:
-    static constexpr std::uint32_t kInFlight = 1024;
+    static constexpr std::uint32_t  kInFlight      = 1024;
+    static constexpr std::uint32_t  kIdleWarmEvery = 512;
+    static constexpr std::uint16_t  kPrefetchAhead = 4;
+    static constexpr std::size_t    kIoPrefetchMax = 8192;
+    static constexpr std::ptrdiff_t kTxStrideMax   = 1 << 16;
 
     struct InFlight {
         std::uint32_t userRef = 0;
@@ -190,6 +198,8 @@ private:
         std::array<Header, kHeaderKinds> oeHeaders{};
         std::uint16_t                    ackPort  = 0;
         bool                             loggedIn = false;
+        const std::uint8_t*              txLast   = nullptr;
+        std::ptrdiff_t                   txStride = 0;
     };
 
     static constexpr std::array<std::size_t, TransportState::kHeaderKinds> kHeaderPayload{
@@ -227,6 +237,7 @@ private:
     [[nodiscard]] static BookTableConfig tableConfigOf(const DutConfig& cfg, std::pmr::memory_resource* mr,
                                                        BookScope scope);
     void                                 touch(int hot) noexcept;
+    void                                 idleWarm() noexcept;
 
     DutConfig                m_cfg;
     util::HugePageArena      m_arena;
@@ -241,27 +252,31 @@ private:
     SwRecorder               m_proc;
     SwRecorder               m_t2tHol;
     SwRecorder               m_ackRtt;
-    std::uint64_t            m_lastRxTsc    = 0;
-    bool                     m_idleSince    = true;
-    std::uint32_t            m_ordersSent   = 0;
-    std::uint32_t            m_commits      = 0;
-    bool                     m_reapHit      = false;
-    std::uint64_t            m_packets      = 0;
-    std::uint32_t            m_resets       = 0;
-    std::uint32_t            m_feedFaults   = 0;
-    std::uint64_t            m_lastFault    = 0;
-    bool                     m_marketOpen   = false;
-    bool                     m_feedValid    = true;
-    bool                     m_reconcileAll = false;
-    std::uint32_t            m_gen          = 0;
-    std::size_t              m_touchedCount = 0;
+    alignas(util::kCacheLineBytes) std::uint64_t m_lastRxTsc = 0;
+    bool          m_idleSince                                = true;
+    std::uint32_t m_ordersSent                               = 0;
+    std::uint32_t m_commits                                  = 0;
+    bool          m_reapHit                                  = false;
+    std::uint64_t m_packets                                  = 0;
+    std::uint32_t m_resets                                   = 0;
+    std::uint32_t m_feedFaults                               = 0;
+    std::uint64_t m_lastFault                                = 0;
+    bool          m_marketOpen                               = false;
+    bool          m_feedValid                                = true;
+    bool          m_reconcileAll                             = false;
+    std::uint32_t m_gen                                      = 0;
+    std::size_t   m_touchedCount                             = 0;
+    std::uint32_t m_idlePolls                                = 0;
+    std::size_t   m_warmNext                                 = 0;
 
     std::vector<Outbound>           m_out;
     QuoteTargets                    m_warm{};
+    Outbound                        m_warmOut{};
     std::vector<std::uint16_t>      m_touched;
     std::vector<std::uint32_t>      m_touchGen;
     std::array<InFlight, kInFlight> m_inflight{};
 
+    [[no_unique_address]] std::conditional_t<build::kSwTiming, PacketCapture, Empty>           m_capture{};
     [[no_unique_address]] std::conditional_t<Mode == IoMode::Loopback, Capture, Empty>         m_cap{};
     [[no_unique_address]] std::conditional_t<Mode == IoMode::Socket, SocketState, Empty>       m_sock{};
     [[no_unique_address]] std::conditional_t<Mode == IoMode::Transport, TransportState, Empty> m_io{};
@@ -521,6 +536,10 @@ void DutSession<Mode, Strat, Io>::poll()
         const auto          f     = m_io.io->tryReceive();
         if (f.status == 0) {
             m_idleSince = true;
+            if (++m_idlePolls == kIdleWarmEvery) [[unlikely]] {
+                m_idlePolls = 0;
+                idleWarm();
+            }
             break;
         }
         const auto        raw   = f.data;
@@ -540,6 +559,10 @@ void DutSession<Mode, Strat, Io>::poll()
                     m_oms.onAck(payload);
                 }
             } else {
+                const std::byte* const end = p + net::kL2L3L4Overhead + len;
+                for (const std::byte* q = p + util::kCacheLineBytes; q < end; q += util::kCacheLineBytes) {
+                    __builtin_prefetch(q);
+                }
                 const std::uint64_t rxHwts = static_cast<std::uint64_t>(f.sec) * 1'000'000'000ull + f.nsec;
                 applyPacket(payload, rxHwts, rxTsc);
             }
@@ -631,6 +654,13 @@ DutSession<Mode, Strat, Io>::SwRecorder& DutSession<Mode, Strat, Io>::ackRtt() n
 }
 
 template <IoMode Mode, Strategy Strat, class Io>
+const PacketCapture& DutSession<Mode, Strat, Io>::captures() const noexcept
+    requires (build::kSwTiming)
+{
+    return m_capture;
+}
+
+template <IoMode Mode, Strategy Strat, class Io>
 std::uint32_t DutSession<Mode, Strat, Io>::ordersSent() const noexcept {
     return m_ordersSent;
 }
@@ -664,10 +694,11 @@ void DutSession<Mode, Strat, Io>::applyPacket(std::span<const std::byte> moldPac
     if (r == SequenceTracker::Result::Gap) [[unlikely]] {
         invalidateFeed(seq);
     }
+    int entryHot = BookTable::kCold;
     if (moldPacket.size() >= mold::kHeaderSize + 2 + 3) [[likely]] {
-        const int h = m_books.hotIndexOf(BookTable::locateOf(moldPacket.subspan(mold::kHeaderSize + 2, 3)));
-        if (h != BookTable::kCold) {
-            prefetchQuotePath(static_cast<std::size_t>(h));
+        entryHot = m_books.hotIndexOf(BookTable::locateOf(moldPacket.subspan(mold::kHeaderSize + 2, 3)));
+        if (entryHot != BookTable::kCold) {
+            prefetchQuotePath(static_cast<std::size_t>(entryHot));
         }
     }
     const std::uint64_t rehashBefore   = m_books.rehashes();
@@ -677,14 +708,49 @@ void DutSession<Mode, Strat, Io>::applyPacket(std::span<const std::byte> moldPac
     m_reapHit                          = false;
     ++m_gen;
     m_touchedCount = 0;
-    if (msgs > 1) {
-        mold::forEachMessage(moldPacket, [this](std::uint64_t, std::span<const std::byte> msg) {
-            m_books.prefetchHotOrders(msg);
-        });
+    {
+        const std::byte* const base  = moldPacket.data();
+        const std::size_t      total = moldPacket.size();
+        const std::uint16_t    count = (msgs == mold::kHeartbeat || msgs == mold::kEndOfSession) ? 0 : msgs;
+        const auto             next  = [base, total](std::size_t& off, std::span<const std::byte>& msg) {
+            if (off + 2 > total) {
+                return false;
+            }
+            const std::uint16_t mlen = mold::getU16(base + off);
+            if (off + 2 + mlen > total) {
+                return false;
+            }
+            msg = {base + off + 2, mlen};
+            off += 2 + mlen;
+            return true;
+        };
+        std::size_t   aheadOff      = mold::kHeaderSize;
+        std::uint16_t aheadIdx      = count > 1 ? 0 : count;
+        int           last          = entryHot;
+        const auto    prefetchAhead = [&] {
+            std::span<const std::byte> pm;
+            if (aheadIdx < count && next(aheadOff, pm)) {
+                ++aheadIdx;
+                const int h = m_books.prefetchHotOrders(pm);
+                if (h != BookTable::kCold && h != last) {
+                    prefetchQuotePath(static_cast<std::size_t>(h));
+                    last = h;
+                }
+            }
+        };
+        for (std::uint16_t k = 0; k < kPrefetchAhead; ++k) {
+            prefetchAhead();
+        }
+        std::size_t off = mold::kHeaderSize;
+        for (std::uint16_t i = 0; i < count; ++i) {
+            std::span<const std::byte> msg;
+            if (!next(off, msg)) {
+                break;
+            }
+            prefetchAhead();
+            applyMessage(msg);
+        }
     }
-    mold::forEachMessage(moldPacket, [this](std::uint64_t, std::span<const std::byte> msg) {
-        applyMessage(msg);
-    });
     if (m_reconcileAll) [[unlikely]] {
         m_reconcileAll = false;
         for (std::size_t h = 0; h < m_books.hotCount(); ++h) {
@@ -712,6 +778,9 @@ void DutSession<Mode, Strat, Io>::applyPacket(std::span<const std::byte> moldPac
     const std::uint64_t applied    = swMark();
     std::uint64_t       quoteTicks = 0;
     std::uint64_t       txTicks    = 0;
+    std::uint64_t       t2tTicks   = 0;
+    std::uint64_t       sendCtx    = 0;
+    std::uint64_t       sendStages = 0;
     for (std::size_t k = 0; k < m_touchedCount; ++k) {
         const std::size_t   h       = m_touched[k];
         const std::uint64_t q0      = swMark();
@@ -741,6 +810,9 @@ void DutSession<Mode, Strat, Io>::applyPacket(std::span<const std::byte> moldPac
                     m_t2tSw.record(now - rxTsc, ctx, stages);
                     m_t2tHol.record(now - ((m_idleSince || m_lastRxTsc == 0) ? rxTsc : m_lastRxTsc), ctx,
                                     stages);
+                    t2tTicks   = now - rxTsc;
+                    sendCtx    = ctx;
+                    sendStages = stages;
                 }
                 recordSend(m_out[i].userRef, rxHwts, ctx, now);
             }
@@ -760,6 +832,9 @@ void DutSession<Mode, Strat, Io>::applyPacket(std::span<const std::byte> moldPac
         m_proc.record(end - begin, SampleContext::pack(seq, msgs, flags),
                       SampleContext::packStages(applied - begin, quoteTicks, txTicks,
                                                 end - applied - quoteTicks - txTicks));
+        if (t2tTicks > m_capture.floor()) [[unlikely]] {
+            m_capture.offer(t2tTicks, sendCtx, sendStages, moldPacket);
+        }
     }
 }
 
@@ -829,6 +904,29 @@ void DutSession<Mode, Strat, Io>::prefetchQuotePath(std::size_t hot) const noexc
     if constexpr (Mode == IoMode::Transport) {
         __builtin_prefetch(m_io.oeHeaders.data());
         __builtin_prefetch(m_io.oeHeaders.data() + 1);
+        const std::uint8_t* next = m_io.txLast + m_io.txStride;
+        __builtin_prefetch(next, 1);
+        __builtin_prefetch(next + util::kCacheLineBytes, 1);
+    }
+}
+
+template <IoMode Mode, Strategy Strat, class Io>
+void DutSession<Mode, Strat, Io>::idleWarm() noexcept {
+    const std::size_t n = m_books.hotCount();
+    if (n == 0) {
+        return;
+    }
+    if (m_warmNext >= n) {
+        m_warmNext = 0;
+    }
+    prefetchQuotePath(m_warmNext);
+    ++m_warmNext;
+    if constexpr (Mode == IoMode::Transport) {
+        const auto*           base  = reinterpret_cast<const std::byte*>(m_io.io);
+        constexpr std::size_t bytes = sizeof(Io) < kIoPrefetchMax ? sizeof(Io) : kIoPrefetchMax;
+        for (std::size_t off = 0; off < bytes; off += util::kCacheLineBytes) {
+            __builtin_prefetch(base + off);
+        }
     }
 }
 
@@ -837,6 +935,7 @@ void DutSession<Mode, Strat, Io>::warmQuotePath() noexcept {
     for (std::size_t h = 0; h < m_books.hotCount(); ++h) {
         prefetchQuotePath(h);
         m_warm = m_strats[h].onBook(m_books.hotBook(h), m_oms.account(h));
+        m_oms.warmEncode(h, m_warmOut);
     }
 }
 
@@ -943,7 +1042,10 @@ bool DutSession<Mode, Strat, Io>::sendOrder(std::span<const std::byte> ouch) {
         if (buf == nullptr) [[unlikely]] {
             return false;
         }
-        const std::size_t kind = headerKind(ouch.size());
+        const std::ptrdiff_t stride = buf - m_io.txLast;
+        m_io.txStride               = (stride > 0 && stride <= kTxStrideMax) ? stride : m_io.txStride;
+        m_io.txLast                 = buf;
+        const std::size_t kind      = headerKind(ouch.size());
         if (kind < TransportState::kHeaderKinds) [[likely]] {
             std::memcpy(buf, m_io.oeHeaders[kind].data(), net::kL2L3L4Overhead);
             std::memcpy(buf + net::kL2L3L4Overhead, ouch.data(), ouch.size());

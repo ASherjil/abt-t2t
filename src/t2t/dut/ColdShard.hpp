@@ -9,6 +9,7 @@
 #include <rigtorp/SPSCQueue.h>
 
 #include "t2t/dut/BookTable.hpp"
+#include "t2t/util/CacheLine.hpp"
 
 namespace abt::dut {
 
@@ -54,12 +55,12 @@ private:
     rigtorp::SPSCQueue<FrameRef> m_queue;
     std::size_t                  m_safeDepth;
     int                          m_core;
-    std::uint64_t                m_dropped  = 0;
-    std::uint64_t                m_applied  = 0;
-    std::uint64_t                m_packets  = 0;
-    std::uint64_t                m_stale    = 0;
-    std::size_t                  m_maxDepth = 0;
-    std::jthread                 m_thread;
+    std::uint64_t                m_dropped                 = 0;
+    alignas(util::kCacheLineBytes) std::uint64_t m_applied = 0;
+    std::uint64_t m_packets                                = 0;
+    std::uint64_t m_stale                                  = 0;
+    std::size_t   m_maxDepth                               = 0;
+    std::jthread  m_thread;
 };
 
 }   // namespace abt::dut

@@ -179,11 +179,16 @@ std::size_t BookTable::hotCount() const noexcept {
     return m_hot.size();
 }
 
-void BookTable::prefetchHotOrders(std::span<const std::byte> msg) const noexcept {
+int BookTable::prefetchHotOrders(std::span<const std::byte> msg) const noexcept {
     if (msg.size() < sizeof(itch::OrderDelete)) {
-        return;
+        return kCold;
     }
-    const char type = static_cast<char>(msg[0]);
+    const std::uint16_t locate = locateOf(msg);
+    if (!isHot(locate)) {
+        return kCold;
+    }
+    const Entry& e    = m_books[locate];
+    const char   type = static_cast<char>(msg[0]);
     switch (type) {
         case 'A':
         case 'F':
@@ -194,11 +199,10 @@ void BookTable::prefetchHotOrders(std::span<const std::byte> msg) const noexcept
         case 'U':
             break;
         default:
-            return;
+            return e.hot;
     }
-    const Entry& e = m_books[locateOf(msg)];
-    if (e.book == nullptr || e.hot == kCold) {
-        return;
+    if (e.book == nullptr) {
+        return e.hot;
     }
     const auto* d = reinterpret_cast<const itch::OrderDelete*>(msg.data());
     e.book->prefetchOrder(d->orderRef.value());
@@ -206,6 +210,7 @@ void BookTable::prefetchHotOrders(std::span<const std::byte> msg) const noexcept
         const auto* u = reinterpret_cast<const itch::OrderReplace*>(msg.data());
         e.book->prefetchOrder(u->newOrderRef.value());
     }
+    return e.hot;
 }
 
 int BookTable::hotIndexOf(std::uint16_t locate) const noexcept {

@@ -25,6 +25,9 @@ struct Outlier {
 
 using StageNames = std::array<const char*, 4>;
 
+[[nodiscard]] std::string describeContext(std::uint64_t ctx);
+[[nodiscard]] std::string describeStages(std::uint64_t stagesNs, const StageNames& names);
+
 class LatencyRecorder {
 public:
     static constexpr std::size_t kWorst = 8;
