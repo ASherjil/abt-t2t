@@ -2,23 +2,50 @@
 # Loopback run on the rig: exchange_sim_<backend> (cx0) <-DAC-> dut_<backend> (cx1), both on isolated
 # cores, for a fixed duration, then a clean SIGINT shutdown so both binaries print their final report.
 #
-#   scripts/loopback_test.sh [seconds] [sim backend] [preset] [dut backend]
-#       defaults: 10  verbs  release  <same as sim>
-#   e.g. scripts/loopback_test.sh 150 verbs release ef_vi   (sim on the ConnectX-4 Lx, DUT on the X2522)
+#   scripts/loopback_test.sh [seconds] [sim backend] [dut backend] [preset]
+#       backends: socket | dpdk | verbs | ef_vi   presets: release | release-hw | relwithdebinfo
+#       after the duration the words can come in any order; one backend name = both sides.
+#       defaults: 10 s, verbs both sides, release
+#   e.g. scripts/loopback_test.sh 150 verbs ef_vi        sim on the ConnectX-4 Lx, DUT on the X2522
+#        scripts/loopback_test.sh 150 verbs              verbs loopback, both ConnectX-4 ports
+#        scripts/loopback_test.sh 150 verbs ef_vi release-hw
 #
 # Needs root for the raw-packet QPs; re-execs itself under sudo. Logs land in results/loopback_<ts>/.
 set -euo pipefail
 
+if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
+    sed -n '2,12p' "$0"; exit 0
+fi
+
 duration="${1:-10}"
-backend="${2:-verbs}"
-preset="${3:-release}"
-dut_backend="${4:-${backend}}"
+shift $(( $# > 0 ? 1 : 0 ))
+backend=""
+dut_backend=""
+preset="release"
+for word in "$@"; do
+    case "${word}" in
+        socket|dpdk|verbs|ef_vi)
+            if [[ -z "${backend}" ]]; then
+                backend="${word}"
+            elif [[ -z "${dut_backend}" ]]; then
+                dut_backend="${word}"
+            else
+                echo "too many backends: ${word}"; exit 1
+            fi ;;
+        release|release-hw|relwithdebinfo|debug)
+            preset="${word}" ;;
+        *)
+            echo "unknown argument '${word}' (backend: socket|dpdk|verbs|ef_vi, preset: release|release-hw|relwithdebinfo|debug)"; exit 1 ;;
+    esac
+done
+backend="${backend:-verbs}"
+dut_backend="${dut_backend:-${backend}}"
 
 self="$(readlink -f "$0")"
 cd "$(dirname "${self}")/.."
 
 if [[ ( "${backend}" != "socket" || "${dut_backend}" != "socket" ) && "${EUID}" -ne 0 ]]; then
-    exec sudo --preserve-env=HOME "${self}" "${duration}" "${backend}" "${preset}" "${dut_backend}"
+    exec sudo --preserve-env=HOME "${self}" "${duration}" "${backend}" "${dut_backend}" "${preset}"
 fi
 
 bin_suffix() {
