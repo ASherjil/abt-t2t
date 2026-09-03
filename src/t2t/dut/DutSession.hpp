@@ -143,6 +143,8 @@ public:
         requires (build::kSwTiming);
     [[nodiscard]] SwRecorder& t2tHol() noexcept
         requires (build::kSwTiming);
+    [[nodiscard]] SwRecorder& ackRtt() noexcept
+        requires (build::kSwTiming);
     [[nodiscard]] std::uint32_t    ordersSent() const noexcept;
     [[nodiscard]] std::uint64_t    packetsReceived() const noexcept;
     [[nodiscard]] std::uint64_t    foreignMessages() const noexcept;
@@ -170,6 +172,7 @@ private:
         std::uint32_t userRef = 0;
         std::uint64_t rxHwts  = 0;
         std::uint64_t ctx     = 0;
+        std::uint64_t sendTsc = 0;
         bool          live    = false;
     };
 
@@ -214,7 +217,9 @@ private:
     void onSystemEvent(std::span<const std::byte> msg) noexcept;
     void invalidateFeed(std::uint64_t seq) noexcept;
     [[nodiscard]] bool sendOrder(std::span<const std::byte> ouch);
-    void               recordSend(std::uint32_t userRef, std::uint64_t rxHwts, std::uint64_t ctx) noexcept;
+    void               recordSend(std::uint32_t userRef, std::uint64_t rxHwts, std::uint64_t ctx,
+                                  std::uint64_t sendTsc) noexcept;
+    void               recordAck(std::span<const std::byte> ouch) noexcept;
     [[nodiscard]] static std::uint16_t   udpDstPort(const std::uint8_t* frame) noexcept;
     [[nodiscard]] static std::uint64_t   swNow() noexcept;
     [[nodiscard]] static std::uint64_t   swMark() noexcept;
@@ -235,6 +240,7 @@ private:
     SwRecorder               m_t2tSw;
     SwRecorder               m_proc;
     SwRecorder               m_t2tHol;
+    SwRecorder               m_ackRtt;
     std::uint64_t            m_lastRxTsc    = 0;
     bool                     m_idleSince    = true;
     std::uint32_t            m_ordersSent   = 0;
@@ -274,6 +280,7 @@ DutSession<Mode, Strat, Io>::DutSession(const DutConfig& cfg, Strat strat)
       m_t2tSw(makeSwRecorder("t2t_sw", cfg)),
       m_proc(makeSwRecorder("proc", cfg)),
       m_t2tHol(makeSwRecorder("t2t_sw_hol", cfg)),
+      m_ackRtt(makeSwRecorder("ack_rtt", cfg)),
       m_out(OrderManager::kMaxOutbound * (m_books.hotCount() == 0 ? 1 : m_books.hotCount())),
       m_touched(m_books.hotCount()),
       m_touchGen(m_books.hotCount(), 0) {
@@ -529,6 +536,7 @@ void DutSession<Mode, Strat, Io>::poll()
                         m_io.loggedIn = true;
                     }
                 } else {
+                    recordAck(payload);
                     m_oms.onAck(payload);
                 }
             } else {
@@ -613,6 +621,13 @@ DutSession<Mode, Strat, Io>::SwRecorder& DutSession<Mode, Strat, Io>::t2tHol() n
     requires (build::kSwTiming)
 {
     return m_t2tHol;
+}
+
+template <IoMode Mode, Strategy Strat, class Io>
+DutSession<Mode, Strat, Io>::SwRecorder& DutSession<Mode, Strat, Io>::ackRtt() noexcept
+    requires (build::kSwTiming)
+{
+    return m_ackRtt;
 }
 
 template <IoMode Mode, Strategy Strat, class Io>
@@ -718,15 +733,16 @@ void DutSession<Mode, Strat, Io>::applyPacket(std::span<const std::byte> moldPac
                 sent = true;
                 flags |= SampleContext::kSent | (m_reapHit ? SampleContext::kTxReap : 0);
                 const std::uint64_t ctx = SampleContext::pack(seq, msgs, flags);
+                std::uint64_t       now = 0;
                 if constexpr (build::kSwTiming) {
-                    const std::uint64_t now    = tsc::now();
+                    now                        = tsc::now();
                     const std::uint64_t stages = SampleContext::packStages(begin - rxTsc, applied - begin,
                                                                            q1 - applied, now - q1);
                     m_t2tSw.record(now - rxTsc, ctx, stages);
                     m_t2tHol.record(now - ((m_idleSince || m_lastRxTsc == 0) ? rxTsc : m_lastRxTsc), ctx,
                                     stages);
                 }
-                recordSend(m_out[i].userRef, rxHwts, ctx);
+                recordSend(m_out[i].userRef, rxHwts, ctx, now);
             }
         }
         txTicks += swMark() - q1;
@@ -946,10 +962,29 @@ bool DutSession<Mode, Strat, Io>::sendOrder(std::span<const std::byte> ouch) {
 }
 
 template <IoMode Mode, Strategy Strat, class Io>
-void DutSession<Mode, Strat, Io>::recordSend(std::uint32_t userRef, std::uint64_t rxHwts,
-                                             std::uint64_t ctx) noexcept {
+void DutSession<Mode, Strat, Io>::recordSend(std::uint32_t userRef, std::uint64_t rxHwts, std::uint64_t ctx,
+                                             std::uint64_t sendTsc) noexcept {
     m_inflight[userRef % kInFlight] =
-        InFlight{.userRef = userRef, .rxHwts = rxHwts, .ctx = ctx, .live = true};
+        InFlight{.userRef = userRef, .rxHwts = rxHwts, .ctx = ctx, .sendTsc = sendTsc, .live = true};
+}
+
+template <IoMode Mode, Strategy Strat, class Io>
+void DutSession<Mode, Strat, Io>::recordAck(std::span<const std::byte> ouch) noexcept {
+    if constexpr (build::kSwTiming) {
+        std::uint32_t ref = 0;
+        const auto    t   = static_cast<ouch::OutType>(static_cast<char>(ouch[0]));
+        if (t == ouch::OutType::Accepted && ouch.size() >= sizeof(ouch::Accepted)) {
+            ref = reinterpret_cast<const ouch::Accepted*>(ouch.data())->userRefNum.value();
+        } else if (t == ouch::OutType::Replaced && ouch.size() >= sizeof(ouch::Replaced)) {
+            ref = reinterpret_cast<const ouch::Replaced*>(ouch.data())->userRefNum.value();
+        } else {
+            return;
+        }
+        const InFlight& slot = m_inflight[ref % kInFlight];
+        if (slot.userRef == ref && slot.sendTsc != 0) {
+            m_ackRtt.record(tsc::now() - slot.sendTsc, slot.ctx);
+        }
+    }
 }
 
 template <IoMode Mode, Strategy Strat, class Io>

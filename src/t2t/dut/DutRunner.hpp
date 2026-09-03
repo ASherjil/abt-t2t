@@ -35,17 +35,25 @@ void printDutReport(Session& sess, util::ThreadCounters atStart, util::ThreadCou
         sess.t2tSw().summary();
         sess.t2tHol().summary();
         sess.proc().summary();
+        sess.ackRtt().summary();
     }
     const OmsStats& s = sess.oms().stats();
     fmt::print("[oms] orders sent={} enters={} replaces={} cancels={} accepts={} fills={} rejects={} "
-               "(replace-not-allowed={} price={} qty={} other={}) unknown={} test={} position={}\n",
+               "(replace-not-allowed={} price={} qty={} other={}) unknown={} test={} position={} "
+               "quote-skips: pending={} unchanged={}\n",
                sess.ordersSent(), s.enters, s.replaces, s.cancels, s.accepts, s.fills, s.rejects,
-               s.rejReplace, s.rejPrice, s.rejQty, s.rejOther, s.unknown, s.tests, sess.oms().netPosition());
+               s.rejReplace, s.rejPrice, s.rejQty, s.rejOther, s.unknown, s.tests, sess.oms().netPosition(),
+               s.pendingSkips, s.unchanged);
     for (std::size_t h = 0; h < sess.books().hotCount(); ++h) {
         const HotSymbol& hs = sess.books().hot(h);
-        fmt::print("[oms] {:<8} locate={} resolved={} position={} bid={} ask={} live={}\n", hs.name,
-                   hs.locate, hs.resolved, sess.oms().account(h).position, sess.book(h).bestBid(),
-                   sess.book(h).bestAsk(), sess.book(h).liveOrders());
+        const QuoteSlot& qb = sess.oms().slot(h, Side::Buy);
+        const QuoteSlot& qa = sess.oms().slot(h, Side::Sell);
+        fmt::print("[oms] {:<8} locate={} resolved={} position={} bid={} ask={} live={} quote bid[{} ref={} "
+                   "pend={} px={} leaves={}] ask[{} ref={} pend={} px={} leaves={}]\n",
+                   hs.name, hs.locate, hs.resolved, sess.oms().account(h).position, sess.book(h).bestBid(),
+                   sess.book(h).bestAsk(), sess.book(h).liveOrders(), static_cast<int>(qb.state), qb.userRef,
+                   qb.pendingRef, qb.price, qb.leaves, static_cast<int>(qa.state), qa.userRef, qa.pendingRef,
+                   qa.price, qa.leaves);
     }
     const SequenceTracker& f = sess.feed();
     fmt::print("[feed] packets={} next seq={} gaps={} missed={} stale={} foreign msgs={} resets={} "
@@ -79,6 +87,7 @@ std::vector<LatencyRecorder*> recordersOf(Session& sess) {
         recs.push_back(&sess.t2tSw());
         recs.push_back(&sess.proc());
         recs.push_back(&sess.t2tHol());
+        recs.push_back(&sess.ackRtt());
     }
     return recs;
 }

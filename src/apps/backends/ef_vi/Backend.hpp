@@ -9,9 +9,9 @@
 
 struct Backend {
     static constexpr std::uint16_t kNbRxBufs    = 256;
-    static constexpr std::uint16_t kNbTxBufs    = 8;
+    static constexpr std::uint16_t kNbTxBufs    = 64;
     static constexpr std::uint32_t kBufSize     = 2048;
-    static constexpr unsigned      kCtThreshold = 64;
+    static constexpr unsigned      kCtThreshold = 128;
     static constexpr bool          kUseCtpio    = true;
 
     using Type = EtherFabricVirtualInterface<EtherFabricMode::RxTx, kNbRxBufs, kNbTxBufs, kBufSize,

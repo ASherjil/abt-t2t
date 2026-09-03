@@ -128,6 +128,7 @@ std::size_t OrderManager::reconcileSide(std::size_t sym, Side side, bool want, P
                 return 1;
             }
             if (price == s.price && qty == s.leaves) {
+                ++m_stats.unchanged;
                 return 0;
             }
             const std::uint32_t ref = allocRef(sym, side);
@@ -141,6 +142,7 @@ std::size_t OrderManager::reconcileSide(std::size_t sym, Side side, bool want, P
         case QuoteState::PendingReplace:
         case QuoteState::PendingCancel:
         default: {
+            m_stats.pendingSkips += want ? 1u : 0u;
             return 0;
         }
     }

@@ -64,6 +64,10 @@ for bin in "${sim_bin}" "${dut_bin}"; do
 done
 
 
+# ef_vi: the in-order CTPIO writer (sfence per 64 B block) makes fallbacks architectural instead of a
+# per-process lottery (abtrda3 Known_driver_issues.md 4.1). sudo resets the environment, so export here.
+export EF_VI_CTPIO_MODE="${EF_VI_CTPIO_MODE:-in_order}"
+
 out="results/loopback_$(date +%Y%m%d_%H%M%S)"
 mkdir -p "${out}"
 {
@@ -73,6 +77,7 @@ mkdir -p "${out}"
     done
     echo "sim backend ${backend}  dut backend ${dut_backend}  preset ${preset}  duration ${duration}s  host $(hostname)  $(date -Is)"
     echo "sw_timing $(sed -n 's/^ABT_SW_TIMING:BOOL=//p' "build/${preset}/CMakeCache.txt")"
+    echo "ef_vi_ctpio_mode ${EF_VI_CTPIO_MODE}"
     echo "hlog $(sed -n 's/^log_file *= *"\([^"]*\)".*/\1/p' config/dut.toml)  start_epoch $(date +%s)"
 } > "${out}/versions.txt"
 sim_log="${out}/sim.log"
