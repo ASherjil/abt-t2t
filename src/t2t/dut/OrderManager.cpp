@@ -433,6 +433,20 @@ void OrderManager::onRejected(const ouch::Rejected& m) noexcept {
         return;
     }
     ++m_stats.rejects;
+    switch (static_cast<ouch::RejectReason>(m.reason.value())) {
+        case ouch::RejectReason::ReplaceNotAllowed:
+            ++m_stats.rejReplace;
+            break;
+        case ouch::RejectReason::InvalidPrice:
+            ++m_stats.rejPrice;
+            break;
+        case ouch::RejectReason::InvalidQuantity:
+            ++m_stats.rejQty;
+            break;
+        default:
+            ++m_stats.rejOther;
+            break;
+    }
     if (QuoteSlot* p = slotByPending(ref); p != nullptr) {
         p->pendingRef = 0;
         if (p->leaves > 0) {

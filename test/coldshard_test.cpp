@@ -64,7 +64,8 @@ struct Frames {
     mold::Packer                            packer{"SESSION01", 1};
     std::size_t                             next = 0;
 
-    explicit Frames(std::size_t n) : bufs(n) {
+    explicit Frames(std::size_t n)
+        : bufs(n) {
     }
 
     template <class... Msgs>

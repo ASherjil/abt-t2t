@@ -38,7 +38,9 @@ void ColdShard::start() {
     if (m_thread.joinable()) {
         return;
     }
-    m_thread = std::jthread([this](const std::stop_token& stop) { loop(stop); });
+    m_thread = std::jthread([this](const std::stop_token& stop) {
+        loop(stop);
+    });
 }
 
 void ColdShard::stop() {
@@ -87,7 +89,9 @@ void ColdShard::consume(const FrameRef& f) noexcept {
 
 void ColdShard::applyFrame(std::span<const std::byte> moldPacket) noexcept {
     ++m_packets;
-    (void)mold::forEachMessage(moldPacket, [this](std::uint64_t, std::span<const std::byte> msg) { applyOne(msg); });
+    (void)mold::forEachMessage(moldPacket, [this](std::uint64_t, std::span<const std::byte> msg) {
+        applyOne(msg);
+    });
 }
 
 void ColdShard::applyOne(std::span<const std::byte> msg) noexcept {

@@ -37,14 +37,18 @@ struct QuoteSlot {
 };
 
 struct OmsStats {
-    std::uint64_t enters   = 0;
-    std::uint64_t replaces = 0;
-    std::uint64_t cancels  = 0;
-    std::uint64_t accepts  = 0;
-    std::uint64_t fills    = 0;
-    std::uint64_t rejects  = 0;
-    std::uint64_t unknown  = 0;
-    std::uint64_t tests    = 0;
+    std::uint64_t enters     = 0;
+    std::uint64_t replaces   = 0;
+    std::uint64_t cancels    = 0;
+    std::uint64_t accepts    = 0;
+    std::uint64_t fills      = 0;
+    std::uint64_t rejects    = 0;
+    std::uint64_t unknown    = 0;
+    std::uint64_t tests      = 0;
+    std::uint64_t rejReplace = 0;
+    std::uint64_t rejPrice   = 0;
+    std::uint64_t rejQty     = 0;
+    std::uint64_t rejOther   = 0;
 };
 
 struct Outbound {

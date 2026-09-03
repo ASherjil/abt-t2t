@@ -13,7 +13,9 @@ class LevelBits {
 public:
     static constexpr std::size_t kNone = std::numeric_limits<std::size_t>::max();
 
-    explicit LevelBits(std::pmr::memory_resource* mr) noexcept : m_l0(mr), m_l1(mr) {
+    explicit LevelBits(std::pmr::memory_resource* mr) noexcept
+        : m_l0(mr),
+          m_l1(mr) {
     }
 
     void reset(std::size_t ticks) {
@@ -73,9 +75,9 @@ public:
         if (m != 0) {
             return (w << 6) + static_cast<std::size_t>(std::countr_zero(m));
         }
-        std::size_t         w1 = w >> 6;
-        const std::size_t   b1 = w & 63;
-        std::uint64_t       m1 = b1 == 63 ? 0 : (m_l1[w1] & (~std::uint64_t{0} << (b1 + 1)));
+        std::size_t       w1 = w >> 6;
+        const std::size_t b1 = w & 63;
+        std::uint64_t     m1 = b1 == 63 ? 0 : (m_l1[w1] & (~std::uint64_t{0} << (b1 + 1)));
         for (;;) {
             if (m1 != 0) {
                 const std::size_t ww = (w1 << 6) + static_cast<std::size_t>(std::countr_zero(m1));

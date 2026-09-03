@@ -38,9 +38,9 @@ void printDutReport(Session& sess, util::ThreadCounters atStart, util::ThreadCou
     }
     const OmsStats& s = sess.oms().stats();
     fmt::print("[oms] orders sent={} enters={} replaces={} cancels={} accepts={} fills={} rejects={} "
-               "unknown={} test={} position={}\n",
-               sess.ordersSent(), s.enters, s.replaces, s.cancels, s.accepts, s.fills, s.rejects, s.unknown,
-               s.tests, sess.oms().netPosition());
+               "(replace-not-allowed={} price={} qty={} other={}) unknown={} test={} position={}\n",
+               sess.ordersSent(), s.enters, s.replaces, s.cancels, s.accepts, s.fills, s.rejects,
+               s.rejReplace, s.rejPrice, s.rejQty, s.rejOther, s.unknown, s.tests, sess.oms().netPosition());
     for (std::size_t h = 0; h < sess.books().hotCount(); ++h) {
         const HotSymbol& hs = sess.books().hot(h);
         fmt::print("[oms] {:<8} locate={} resolved={} position={} bid={} ask={} live={}\n", hs.name,
