@@ -66,6 +66,7 @@ public:
                           std::span<Outbound, kMaxOutbound> out) noexcept;
     void        onAck(std::span<const std::byte> ouch) noexcept;
     void        encodeTestOrder(Outbound& out) noexcept;
+    void        prefetch(std::size_t sym) const noexcept;
 
     [[nodiscard]] std::size_t      symbolCount() const noexcept;
     [[nodiscard]] const Account&   account(std::size_t sym = 0) const noexcept;
@@ -86,6 +87,14 @@ private:
 
     using Pair = std::array<QuoteSlot, 2>;
 
+    struct EnterTemplates {
+        ouch::EnterOrder bid{};
+        ouch::EnterOrder ask{};
+    };
+
+    [[nodiscard]] static ouch::EnterOrder   enterTemplate(std::string_view symbol, Side side) noexcept;
+    [[nodiscard]] static ouch::ReplaceOrder replaceTemplate() noexcept;
+
     [[nodiscard]] std::size_t reconcileSide(std::size_t sym, Side side, bool want, Price price, Quantity qty,
                                             Outbound& out) noexcept;
     [[nodiscard]] std::uint32_t allocRef(std::size_t sym, Side side) noexcept;
@@ -96,8 +105,8 @@ private:
 
     void        encodeEnter(Outbound& out, std::size_t sym, std::uint32_t userRef, Side side, Price price,
                             Quantity qty) const noexcept;
-    static void encodeReplace(Outbound& out, std::uint32_t origRef, std::uint32_t userRef, Price price,
-                              Quantity qty) noexcept;
+    void        encodeReplace(Outbound& out, std::uint32_t origRef, std::uint32_t userRef, Price price,
+                              Quantity qty) const noexcept;
     static void encodeCancel(Outbound& out, std::uint32_t userRef) noexcept;
 
     void        onAccepted(const ouch::Accepted& m) noexcept;
@@ -114,6 +123,8 @@ private:
     std::vector<Pair>             m_slots;
     std::vector<Account>          m_acct;
     std::array<RefSide, kRefRing> m_refs{};
+    std::vector<EnterTemplates>   m_enter;
+    ouch::ReplaceOrder            m_replace{};
 };
 
 }   // namespace abt::dut

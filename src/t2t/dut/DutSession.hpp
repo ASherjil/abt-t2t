@@ -29,12 +29,14 @@
 #include "t2t/BuildConfig.hpp"
 #include "t2t/dut/BookBuilder.hpp"
 #include "t2t/dut/BookTable.hpp"
+#include "t2t/dut/ColdShard.hpp"
 #include "t2t/dut/DutStatus.hpp"
 #include "t2t/dut/LatencyRecorder.hpp"
 #include "t2t/dut/OrderManager.hpp"
 #include "t2t/dut/SampleContext.hpp"
 #include "t2t/dut/SequenceTracker.hpp"
 #include "t2t/dut/Strategy.hpp"
+#include "t2t/dut/TxSignal.hpp"
 #include "t2t/dut/TxStamp.hpp"
 #include "t2t/lob/Types.hpp"
 #include "t2t/protocol/EthIpUdp.hpp"
@@ -55,10 +57,15 @@ enum class IoMode {
     Transport
 };
 
+inline constexpr std::size_t kSocketRxRing = 8192;
+
 struct NoTransport {};
 
 struct NoRecorder {
-    static void record(std::uint64_t, std::uint64_t = 0) noexcept {
+    static void record(std::uint64_t, std::uint64_t = 0, std::uint64_t = 0) noexcept {
+    }
+
+    static void setStageNames(const StageNames&) noexcept {
     }
 };
 
@@ -73,6 +80,10 @@ struct DutConfig {
     std::size_t                coldMapSlots    = 1024;
     std::size_t                hotMapSlots     = 1u << 16;
     std::size_t                arenaMb         = 0;
+    bool                       coldShard       = false;
+    int                        coldCore        = -1;
+    std::size_t                coldArenaMb     = 0;
+    std::size_t                coldQueue       = 8192;
     bool                       marketHoursOnly = false;
     OrderId                    ownRefMin       = 0;
     std::uint32_t              firstUserRef    = 1;
@@ -130,17 +141,24 @@ public:
         requires (build::kSwTiming);
     [[nodiscard]] SwRecorder& proc() noexcept
         requires (build::kSwTiming);
-    [[nodiscard]] std::uint32_t ordersSent() const noexcept;
-    [[nodiscard]] std::uint64_t packetsReceived() const noexcept;
-    [[nodiscard]] std::uint64_t foreignMessages() const noexcept;
-    [[nodiscard]] std::uint32_t sessionResets() const noexcept;
-    [[nodiscard]] bool          tradingAllowed(std::size_t hot = 0) const noexcept;
-    [[nodiscard]] bool          feedValid() const noexcept;
-    [[nodiscard]] bool          marketOpen() const noexcept;
-    void                        sendTestOrder() noexcept;
-    [[nodiscard]] DutStatus     status(std::uint64_t elapsedNs) const noexcept;
-    [[nodiscard]] std::uint32_t feedFaults() const noexcept;
-    [[nodiscard]] std::uint64_t lastFaultSeq() const noexcept;
+    [[nodiscard]] SwRecorder& t2tHol() noexcept
+        requires (build::kSwTiming);
+    [[nodiscard]] std::uint32_t    ordersSent() const noexcept;
+    [[nodiscard]] std::uint64_t    packetsReceived() const noexcept;
+    [[nodiscard]] std::uint64_t    foreignMessages() const noexcept;
+    [[nodiscard]] std::uint32_t    sessionResets() const noexcept;
+    [[nodiscard]] bool             tradingAllowed(std::size_t hot = 0) const noexcept;
+    [[nodiscard]] bool             feedValid() const noexcept;
+    [[nodiscard]] bool             marketOpen() const noexcept;
+    [[nodiscard]] const ColdShard* cold() const noexcept;
+    void                           startCold();
+    void                           stopCold();
+    void                           sendTestOrder() noexcept;
+    void                           warmQuotePath() noexcept;
+    void                           prefetchQuotePath(std::size_t hot) const noexcept;
+    [[nodiscard]] DutStatus        status(std::uint64_t elapsedNs) const noexcept;
+    [[nodiscard]] std::uint32_t    feedFaults() const noexcept;
+    [[nodiscard]] std::uint64_t    lastFaultSeq() const noexcept;
 
     [[nodiscard]] const std::vector<std::vector<std::byte>>& capturedOrders() const
         requires (Mode == IoMode::Loopback);
@@ -162,11 +180,26 @@ private:
     struct Empty {};
 
     struct TransportState {
-        Io*                           io = nullptr;
-        std::optional<net::UdpFramer> oeFramer;
-        std::uint16_t                 ackPort  = 0;
-        bool                          loggedIn = false;
+        static constexpr std::size_t kHeaderKinds = 3;
+        using Header                              = std::array<std::byte, net::kL2L3L4Overhead>;
+        Io*                              io       = nullptr;
+        std::optional<net::UdpFramer>    oeFramer;
+        std::array<Header, kHeaderKinds> oeHeaders{};
+        std::uint16_t                    ackPort  = 0;
+        bool                             loggedIn = false;
     };
+
+    static constexpr std::array<std::size_t, TransportState::kHeaderKinds> kHeaderPayload{
+        sizeof(ouch::EnterOrder), sizeof(ouch::ReplaceOrder), sizeof(ouch::CancelOrder)};
+
+    [[nodiscard]] static constexpr std::size_t headerKind(std::size_t payloadLen) noexcept {
+        for (std::size_t k = 0; k < TransportState::kHeaderKinds; ++k) {
+            if (kHeaderPayload[k] == payloadLen) {
+                return k;
+            }
+        }
+        return TransportState::kHeaderKinds;
+    }
 
     struct SocketState {
         util::UniqueFd             mdFd;
@@ -184,31 +217,41 @@ private:
     void               recordSend(std::uint32_t userRef, std::uint64_t rxHwts, std::uint64_t ctx) noexcept;
     [[nodiscard]] static std::uint16_t   udpDstPort(const std::uint8_t* frame) noexcept;
     [[nodiscard]] static std::uint64_t   swNow() noexcept;
+    [[nodiscard]] static std::uint64_t   swMark() noexcept;
     [[nodiscard]] static SwRecorder      makeSwRecorder(const char* name, const DutConfig& cfg);
-    [[nodiscard]] static BookTableConfig tableConfigOf(const DutConfig& cfg, std::pmr::memory_resource* mr);
+    [[nodiscard]] static BookTableConfig tableConfigOf(const DutConfig& cfg, std::pmr::memory_resource* mr,
+                                                       BookScope scope);
     void                                 touch(int hot) noexcept;
 
-    DutConfig           m_cfg;
-    util::HugePageArena m_arena;
-    BookTable           m_books;
-    std::vector<Strat>  m_strats;
-    OrderManager        m_oms;
-    SequenceTracker     m_seq;
-    LatencyRecorder     m_t2t;
-    SwRecorder          m_t2tSw;
-    SwRecorder          m_proc;
-    std::uint32_t       m_ordersSent   = 0;
-    std::uint64_t       m_packets      = 0;
-    std::uint32_t       m_resets       = 0;
-    std::uint32_t       m_feedFaults   = 0;
-    std::uint64_t       m_lastFault    = 0;
-    bool                m_marketOpen   = false;
-    bool                m_feedValid    = true;
-    bool                m_reconcileAll = false;
-    std::uint32_t       m_gen          = 0;
-    std::size_t         m_touchedCount = 0;
+    DutConfig                m_cfg;
+    util::HugePageArena      m_arena;
+    BookTable                m_books;
+    util::HugePageArena      m_coldArena;
+    std::optional<ColdShard> m_cold;
+    std::vector<Strat>       m_strats;
+    OrderManager             m_oms;
+    SequenceTracker          m_seq;
+    LatencyRecorder          m_t2t;
+    SwRecorder               m_t2tSw;
+    SwRecorder               m_proc;
+    SwRecorder               m_t2tHol;
+    std::uint64_t            m_lastRxTsc    = 0;
+    bool                     m_idleSince    = true;
+    std::uint32_t            m_ordersSent   = 0;
+    std::uint32_t            m_commits      = 0;
+    bool                     m_reapHit      = false;
+    std::uint64_t            m_packets      = 0;
+    std::uint32_t            m_resets       = 0;
+    std::uint32_t            m_feedFaults   = 0;
+    std::uint64_t            m_lastFault    = 0;
+    bool                     m_marketOpen   = false;
+    bool                     m_feedValid    = true;
+    bool                     m_reconcileAll = false;
+    std::uint32_t            m_gen          = 0;
+    std::size_t              m_touchedCount = 0;
 
     std::vector<Outbound>           m_out;
+    QuoteTargets                    m_warm{};
     std::vector<std::uint16_t>      m_touched;
     std::vector<std::uint32_t>      m_touchGen;
     std::array<InFlight, kInFlight> m_inflight{};
@@ -222,21 +265,35 @@ template <IoMode Mode, Strategy Strat, class Io>
 DutSession<Mode, Strat, Io>::DutSession(const DutConfig& cfg, Strat strat)
     : m_cfg(cfg),
       m_arena(cfg.arenaMb << 20),
-      m_books(tableConfigOf(cfg, cfg.arenaMb != 0 ? m_arena.resource() : nullptr)),
+      m_books(tableConfigOf(cfg, cfg.arenaMb != 0 ? m_arena.resource() : nullptr,
+                            cfg.coldShard ? BookScope::HotOnly : BookScope::All)),
+      m_coldArena(cfg.coldShard ? cfg.coldArenaMb << 20 : 0),
       m_strats(m_books.hotCount(), strat),
       m_oms(OmsConfig{.symbols = cfg.symbols, .firstUserRef = cfg.firstUserRef}),
       m_t2t("t2t_hw", cfg.queueCapacity, 1.0, cfg.sigFigs),
       m_t2tSw(makeSwRecorder("t2t_sw", cfg)),
       m_proc(makeSwRecorder("proc", cfg)),
+      m_t2tHol(makeSwRecorder("t2t_sw_hol", cfg)),
       m_out(OrderManager::kMaxOutbound * (m_books.hotCount() == 0 ? 1 : m_books.hotCount())),
       m_touched(m_books.hotCount()),
       m_touchGen(m_books.hotCount(), 0) {
+    if constexpr (build::kSwTiming) {
+        m_t2tSw.setStageNames({"rx", "book", "quote", "tx"});
+        m_t2tHol.setStageNames({"rx", "book", "quote", "tx"});
+        m_proc.setStageNames({"book", "quote", "tx", "rest"});
+    }
+    if (cfg.coldShard) {
+        m_cold.emplace(tableConfigOf(cfg, cfg.coldArenaMb != 0 ? m_coldArena.resource() : nullptr,
+                                     BookScope::ColdOnly),
+                       cfg.coldQueue, cfg.coldCore);
+    }
 }
 
 template <IoMode Mode, Strategy Strat, class Io>
 BookTableConfig DutSession<Mode, Strat, Io>::tableConfigOf(const DutConfig&           cfg,
-                                                           std::pmr::memory_resource* mr) {
+                                                           std::pmr::memory_resource* mr, BookScope scope) {
     BookTableConfig t{};
+    t.scope         = scope;
     t.tickWire      = cfg.tickWire;
     t.coldBandTicks = cfg.coldBandTicks;
     t.hotBandTicks  = cfg.hotBandTicks;
@@ -375,7 +432,9 @@ template <class Periodic>
 void DutSession<Mode, Strat, Io>::run(volatile std::sig_atomic_t& stop, Periodic periodic)
     requires (Mode == IoMode::Socket)
 {
-    std::array<std::byte, 8192> rx{};
+    std::vector<std::array<std::byte, 2048>> rxRing(kSocketRxRing);
+    std::array<std::byte, 8192>              oeRx{};
+    std::size_t                              rxAt = 0;
     while (stop == 0) {
         periodic();
         pollfd pfds[2] = {{m_sock.mdFd.get(), POLLIN, 0}, {m_sock.oeFd.get(), POLLIN, 0}};
@@ -384,15 +443,16 @@ void DutSession<Mode, Strat, Io>::run(volatile std::sig_atomic_t& stop, Periodic
         }
         if ((pfds[0].revents & POLLIN) != 0) {
             const std::uint64_t rxTsc = swNow();
+            auto&               rx    = rxRing[rxAt++ & (kSocketRxRing - 1)];
             const ssize_t       n     = ::recv(m_sock.mdFd.get(), rx.data(), rx.size(), 0);
             if (n > 0) {
                 onMarketData({rx.data(), static_cast<std::size_t>(n)}, monotonicNs(), rxTsc);
             }
         }
         if ((pfds[1].revents & POLLIN) != 0) {
-            const ssize_t n = ::recv(m_sock.oeFd.get(), rx.data(), rx.size(), 0);
+            const ssize_t n = ::recv(m_sock.oeFd.get(), oeRx.data(), oeRx.size(), 0);
             if (n > 0) {
-                onOrderEntry({rx.data(), static_cast<std::size_t>(n)});
+                onOrderEntry({oeRx.data(), static_cast<std::size_t>(n)});
             } else if (n == 0) {
                 fmt::print(stderr, "dut: venue closed order-entry connection\n");
                 break;
@@ -412,6 +472,10 @@ bool DutSession<Mode, Strat, Io>::prepareTransport(Io& io, const net::Endpoints&
     }
     m_io.io = &io;
     m_io.oeFramer.emplace(oeEp);
+    for (std::size_t k = 0; k < TransportState::kHeaderKinds; ++k) {
+        std::memcpy(m_io.oeHeaders[k].data(), m_io.oeFramer->header().data(), net::kL2L3L4Overhead);
+        net::UdpFramer::patch(m_io.oeHeaders[k].data(), kHeaderPayload[k]);
+    }
     m_io.ackPort = oeEp.srcPort;
     return true;
 }
@@ -431,6 +495,7 @@ void DutSession<Mode, Strat, Io>::sendLogin(std::string_view session, std::strin
     std::memcpy(buf + net::kL2L3L4Overhead, pkt.data(), pkt.size());
     m_io.oeFramer->patch(reinterpret_cast<std::byte*>(buf), pkt.size());
     m_io.io->commit();
+    ++m_commits;
 }
 
 template <IoMode Mode, Strategy Strat, class Io>
@@ -448,6 +513,7 @@ void DutSession<Mode, Strat, Io>::poll()
         const std::uint64_t rxTsc = swNow();
         const auto          f     = m_io.io->tryReceive();
         if (f.status == 0) {
+            m_idleSince = true;
             break;
         }
         const auto raw = f.data;
@@ -543,6 +609,13 @@ DutSession<Mode, Strat, Io>::SwRecorder& DutSession<Mode, Strat, Io>::proc() noe
 }
 
 template <IoMode Mode, Strategy Strat, class Io>
+DutSession<Mode, Strat, Io>::SwRecorder& DutSession<Mode, Strat, Io>::t2tHol() noexcept
+    requires (build::kSwTiming)
+{
+    return m_t2tHol;
+}
+
+template <IoMode Mode, Strategy Strat, class Io>
 std::uint32_t DutSession<Mode, Strat, Io>::ordersSent() const noexcept {
     return m_ordersSent;
 }
@@ -576,11 +649,24 @@ void DutSession<Mode, Strat, Io>::applyPacket(std::span<const std::byte> moldPac
     if (r == SequenceTracker::Result::Gap) [[unlikely]] {
         invalidateFeed(seq);
     }
+    if (moldPacket.size() >= mold::kHeaderSize + 2 + 3) [[likely]] {
+        const int h = m_books.hotIndexOf(BookTable::locateOf(moldPacket.subspan(mold::kHeaderSize + 2, 3)));
+        if (h != BookTable::kCold) {
+            prefetchQuotePath(static_cast<std::size_t>(h));
+        }
+    }
     const std::uint64_t rehashBefore   = m_books.rehashes();
     const std::uint64_t reanchorBefore = m_books.reanchors();
     const std::uint64_t createdBefore  = m_books.created();
+    const std::uint64_t rescanBefore   = m_books.rescans();
+    m_reapHit                          = false;
     ++m_gen;
     m_touchedCount = 0;
+    if (msgs > 1) {
+        mold::forEachMessage(moldPacket, [this](std::uint64_t, std::span<const std::byte> msg) {
+            m_books.prefetchHotOrders(msg);
+        });
+    }
     mold::forEachMessage(moldPacket, [this](std::uint64_t, std::span<const std::byte> msg) {
         applyMessage(msg);
     });
@@ -603,30 +689,61 @@ void DutSession<Mode, Strat, Io>::applyPacket(std::span<const std::byte> moldPac
     if (r == SequenceTracker::Result::Gap) {
         flags |= SampleContext::kGap;
     }
-    const std::uint64_t sentCtx = SampleContext::pack(seq, msgs, flags | SampleContext::kSent);
-    std::size_t         n       = 0;
-    bool                sent    = false;
+    if (m_books.rescans() != rescanBefore) {
+        flags |= SampleContext::kRescan;
+    }
+    std::size_t         n          = 0;
+    bool                sent       = false;
+    const std::uint64_t applied    = swMark();
+    std::uint64_t       quoteTicks = 0;
+    std::uint64_t       txTicks    = 0;
     for (std::size_t k = 0; k < m_touchedCount; ++k) {
-        const std::size_t  h       = m_touched[k];
-        const QuoteTargets targets = tradingAllowed(h)
-                                         ? m_strats[h].onBook(m_books.hotBook(h), m_oms.account(h))
-                                         : QuoteTargets{};
-        const std::size_t  base    = n;
+        const std::size_t   h       = m_touched[k];
+        const std::uint64_t q0      = swMark();
+        const QuoteTargets  targets = tradingAllowed(h)
+                                          ? m_strats[h].onBook(m_books.hotBook(h), m_oms.account(h))
+                                          : QuoteTargets{};
+        const std::size_t   base    = n;
         n += m_oms.reconcile(h, targets,
                              std::span<Outbound, OrderManager::kMaxOutbound>{&m_out[base],
                                                                              OrderManager::kMaxOutbound});
+        if (n - base >= 2) {
+            flags |= SampleContext::kMulti;
+        }
+        const std::uint64_t q1 = swMark();
+        quoteTicks += q1 - q0;
         for (std::size_t i = base; i < n; ++i) {
-            if (sendOrder({m_out[i].buf.data(), m_out[i].len}) && !sent) {
+            const bool ok = sendOrder({m_out[i].buf.data(), m_out[i].len});
+            if (ok && !sent) {
                 sent = true;
+                flags |= SampleContext::kSent | (m_reapHit ? SampleContext::kTxReap : 0);
+                const std::uint64_t ctx = SampleContext::pack(seq, msgs, flags);
                 if constexpr (build::kSwTiming) {
-                    m_t2tSw.record(tsc::now() - rxTsc, sentCtx);
+                    const std::uint64_t now    = tsc::now();
+                    const std::uint64_t stages = SampleContext::packStages(begin - rxTsc, applied - begin,
+                                                                           q1 - applied, now - q1);
+                    m_t2tSw.record(now - rxTsc, ctx, stages);
+                    m_t2tHol.record(now - ((m_idleSince || m_lastRxTsc == 0) ? rxTsc : m_lastRxTsc), ctx,
+                                    stages);
                 }
-                recordSend(m_out[i].userRef, rxHwts, sentCtx);
+                recordSend(m_out[i].userRef, rxHwts, ctx);
             }
         }
+        txTicks += swMark() - q1;
     }
+    if (m_cold) {
+        (void)m_cold->push(moldPacket);
+    }
+    m_lastRxTsc = rxTsc;
+    m_idleSince = false;
     if constexpr (build::kSwTiming) {
-        m_proc.record(tsc::now() - begin, sent ? sentCtx : SampleContext::pack(seq, msgs, flags));
+        if (m_reapHit) {
+            flags |= SampleContext::kTxReap;
+        }
+        const std::uint64_t end = tsc::now();
+        m_proc.record(end - begin, SampleContext::pack(seq, msgs, flags),
+                      SampleContext::packStages(applied - begin, quoteTicks, txTicks,
+                                                end - applied - quoteTicks - txTicks));
     }
 }
 
@@ -641,6 +758,9 @@ void DutSession<Mode, Strat, Io>::applyMessage(std::span<const std::byte> msg) {
         return;
     }
     if (!m_feedValid) [[unlikely]] {
+        return;
+    }
+    if (m_cold && type != 'R' && !m_books.isHot(BookTable::locateOf(msg))) {
         return;
     }
     const int hot = m_books.apply(msg);
@@ -686,6 +806,25 @@ void DutSession<Mode, Strat, Io>::sendTestOrder() noexcept {
 }
 
 template <IoMode Mode, Strategy Strat, class Io>
+void DutSession<Mode, Strat, Io>::prefetchQuotePath(std::size_t hot) const noexcept {
+    __builtin_prefetch(&m_strats[hot]);
+    m_oms.prefetch(hot);
+    __builtin_prefetch(&m_out[OrderManager::kMaxOutbound * hot]);
+    if constexpr (Mode == IoMode::Transport) {
+        __builtin_prefetch(m_io.oeHeaders.data());
+        __builtin_prefetch(m_io.oeHeaders.data() + 1);
+    }
+}
+
+template <IoMode Mode, Strategy Strat, class Io>
+void DutSession<Mode, Strat, Io>::warmQuotePath() noexcept {
+    for (std::size_t h = 0; h < m_books.hotCount(); ++h) {
+        prefetchQuotePath(h);
+        m_warm = m_strats[h].onBook(m_books.hotBook(h), m_oms.account(h));
+    }
+}
+
+template <IoMode Mode, Strategy Strat, class Io>
 bool DutSession<Mode, Strat, Io>::tradingAllowed(std::size_t hot) const noexcept {
     return m_feedValid && (!m_cfg.marketHoursOnly || (m_marketOpen && m_books.hot(hot).trading));
 }
@@ -697,6 +836,9 @@ void DutSession<Mode, Strat, Io>::invalidateFeed(std::uint64_t seq) noexcept {
     m_reconcileAll = true;
     ++m_feedFaults;
     m_books.clearAll();
+    if (m_cold) {
+        m_cold->reset();
+    }
 }
 
 template <IoMode Mode, Strategy Strat, class Io>
@@ -707,6 +849,25 @@ bool DutSession<Mode, Strat, Io>::feedValid() const noexcept {
 template <IoMode Mode, Strategy Strat, class Io>
 bool DutSession<Mode, Strat, Io>::marketOpen() const noexcept {
     return m_marketOpen;
+}
+
+template <IoMode Mode, Strategy Strat, class Io>
+const ColdShard* DutSession<Mode, Strat, Io>::cold() const noexcept {
+    return m_cold ? &*m_cold : nullptr;
+}
+
+template <IoMode Mode, Strategy Strat, class Io>
+void DutSession<Mode, Strat, Io>::startCold() {
+    if (m_cold) {
+        m_cold->start();
+    }
+}
+
+template <IoMode Mode, Strategy Strat, class Io>
+void DutSession<Mode, Strat, Io>::stopCold() {
+    if (m_cold) {
+        m_cold->stop();
+    }
 }
 
 template <IoMode Mode, Strategy Strat, class Io>
@@ -766,10 +927,19 @@ bool DutSession<Mode, Strat, Io>::sendOrder(std::span<const std::byte> ouch) {
         if (buf == nullptr) [[unlikely]] {
             return false;
         }
-        std::memcpy(buf, m_io.oeFramer->header().data(), net::kL2L3L4Overhead);
-        std::memcpy(buf + net::kL2L3L4Overhead, ouch.data(), ouch.size());
-        m_io.oeFramer->patch(reinterpret_cast<std::byte*>(buf), ouch.size());
+        const std::size_t kind = headerKind(ouch.size());
+        if (kind < TransportState::kHeaderKinds) [[likely]] {
+            std::memcpy(buf, m_io.oeHeaders[kind].data(), net::kL2L3L4Overhead);
+            std::memcpy(buf + net::kL2L3L4Overhead, ouch.data(), ouch.size());
+        } else {
+            std::memcpy(buf, m_io.oeFramer->header().data(), net::kL2L3L4Overhead);
+            std::memcpy(buf + net::kL2L3L4Overhead, ouch.data(), ouch.size());
+            m_io.oeFramer->patch(reinterpret_cast<std::byte*>(buf), ouch.size());
+        }
         m_io.io->commit();
+        if ((++m_commits & (kTxSignalEvery - 1)) == 0) [[unlikely]] {
+            m_reapHit = true;
+        }
     }
     ++m_ordersSent;
     return true;
@@ -792,6 +962,15 @@ template <IoMode Mode, Strategy Strat, class Io>
 std::uint64_t DutSession<Mode, Strat, Io>::swNow() noexcept {
     if constexpr (build::kSwTiming) {
         return tsc::now();
+    } else {
+        return 0;
+    }
+}
+
+template <IoMode Mode, Strategy Strat, class Io>
+std::uint64_t DutSession<Mode, Strat, Io>::swMark() noexcept {
+    if constexpr (build::kSwTiming) {
+        return tsc::mark();
     } else {
         return 0;
     }

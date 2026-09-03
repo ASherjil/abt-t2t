@@ -30,3 +30,6 @@ compile_commands.json
 # Market data lives in the tree but never in git (see data/README.md)
 /data/*
 !/data/README.md
+
+# Test fixtures written by test binaries run from the tree
+*.itch

@@ -4,13 +4,14 @@
 #include <string_view>
 
 #include "t2t/config/BackendTraits.hpp"
+#include "t2t/dut/TxSignal.hpp"
 
 #include "Verbs.hpp"
 
 struct Backend {
     static constexpr std::uint16_t kSqDepth     = 256;
     static constexpr std::uint16_t kRqDepth     = 8192;
-    static constexpr std::uint16_t kSignalEvery = 64;
+    static constexpr std::uint16_t kSignalEvery = static_cast<std::uint16_t>(abt::dut::kTxSignalEvery);
     static constexpr std::uint16_t kMaxInline   = 512;
     static constexpr std::uint16_t kMaxFrame    = 2048;
 

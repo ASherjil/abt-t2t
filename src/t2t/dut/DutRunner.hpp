@@ -33,6 +33,7 @@ void printDutReport(Session& sess, util::ThreadCounters atStart, util::ThreadCou
     sess.t2t().summary();
     if constexpr (build::kSwTiming) {
         sess.t2tSw().summary();
+        sess.t2tHol().summary();
         sess.proc().summary();
     }
     const OmsStats& s = sess.oms().stats();
@@ -51,11 +52,19 @@ void printDutReport(Session& sess, util::ThreadCounters atStart, util::ThreadCou
                "live orders={}\n",
                sess.packetsReceived(), f.expected(), f.gaps(), f.missed(), f.stale(), sess.foreignMessages(),
                sess.sessionResets(), sess.books().liveOrders());
-    fmt::print("[feed] symbols booked={} profiled={} undirected msgs={} rehashes={} reanchors={} books={} MB "
-               "arena={}\n",
+    fmt::print("[feed] symbols booked={} profiled={} undirected msgs={} rehashes={} reanchors={} rescans={} "
+               "books={} MB arena={}\n",
                sess.books().symbols(), sess.books().profiled(), sess.books().undirected(),
-               sess.books().rehashes(), sess.books().reanchors(), sess.books().footprintBytes() >> 20,
-               sess.arenaInfo());
+               sess.books().rehashes(), sess.books().reanchors(), sess.books().rescans(),
+               sess.books().footprintBytes() >> 20, sess.arenaInfo());
+    if (const ColdShard* c = sess.cold(); c != nullptr) {
+        const BookTable& cb = c->books();
+        fmt::print("[cold] core={} symbols booked={} profiled={} undirected msgs={} rehashes={} reanchors={} "
+                   "books={} MB live orders={} ring: packets={} msgs={} dropped={} stale={} max depth={}\n",
+                   c->core(), cb.symbols(), cb.profiled(), cb.undirected(), cb.rehashes(), cb.reanchors(),
+                   cb.footprintBytes() >> 20, cb.liveOrders(), c->packets(), c->applied(), c->dropped(),
+                   c->stale(), c->maxDepth());
+    }
     if (sess.feedFaults() > 0) {
         fmt::print("[feed] FAULTS={} last at seq={} state={}: book invalidated and quoting stopped until the "
                    "next StartOfMessages\n",
@@ -69,6 +78,7 @@ std::vector<LatencyRecorder*> recordersOf(Session& sess) {
     if constexpr (build::kSwTiming) {
         recs.push_back(&sess.t2tSw());
         recs.push_back(&sess.proc());
+        recs.push_back(&sess.t2tHol());
     }
     return recs;
 }
@@ -95,6 +105,7 @@ int runDut(const DutAppConfig& cfg, typename T::Type& backend, volatile std::sig
         sess.login(cfg.socket.session, cfg.socket.username);
 
         RecorderThread consumer(recordersOf(sess), cfg.measure.histogramCore, flushOf(cfg.measure), &statusQ);
+        sess.startCold();
         (void)util::pinThread(cfg.transport.cpuCore);
         const util::ThreadCounters countersAtStart = util::threadCounters();
         sess.run(stop, [&] {
@@ -105,6 +116,7 @@ int runDut(const DutAppConfig& cfg, typename T::Type& backend, volatile std::sig
             }
         });
         const util::ThreadCounters countersAtEnd = util::threadCounters();
+        sess.stopCold();
         consumer.stop();
         printDutStatus(sess.status(monotonicNs() - start));
         printDutReport(sess, countersAtStart, countersAtEnd);
@@ -123,6 +135,7 @@ int runDut(const DutAppConfig& cfg, typename T::Type& backend, volatile std::sig
                    cfg.transport.orderEntry.dstPort);
 
         RecorderThread consumer(recordersOf(sess), cfg.measure.histogramCore, flushOf(cfg.measure), &statusQ);
+        sess.startCold();
         if (!util::pinThread(cfg.transport.cpuCore)) {
             fmt::print(stderr, "dut: cannot pin to core {}\n", cfg.transport.cpuCore);
             return 1;
@@ -144,12 +157,14 @@ int runDut(const DutAppConfig& cfg, typename T::Type& backend, volatile std::sig
                     (void)statusQ.try_push(sess.status(now - start));
                     nextLog += kDutLogPeriodNs;
                     if (sess.sessionEstablished() && !sess.marketOpen()) {
+                        sess.warmQuotePath();
                         sess.sendTestOrder();
                     }
                 }
             }
         }
         const util::ThreadCounters countersAtEnd = util::threadCounters();
+        sess.stopCold();
         consumer.stop();
         printDutStatus(sess.status(monotonicNs() - start));
         printDutReport(sess, countersAtStart, countersAtEnd);

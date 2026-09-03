@@ -31,6 +31,10 @@ public:
 
     // Returns a pointer to the stored value (mutable), or nullptr if the key is absent. The pointer
     // is invalidated by any insertOrAssign that grows the table or by erase.
+    void prefetch(Key key) const noexcept {
+        __builtin_prefetch(&m_slots[slotFor(key)]);
+    }
+
     [[nodiscard]] Value*       find(Key key) noexcept;
     [[nodiscard]] const Value* find(Key key) const noexcept;
 

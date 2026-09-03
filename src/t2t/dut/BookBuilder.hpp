@@ -12,6 +12,7 @@
 #include <span>
 #include <vector>
 
+#include "t2t/dut/LevelBits.hpp"
 #include "t2t/lob/Types.hpp"
 #include "t2t/protocol/Itch50.hpp"
 #include "t2t/util/DivBy.hpp"
@@ -31,6 +32,7 @@ struct BookConfig {
     std::pmr::memory_resource* memory            = nullptr;
     std::uint64_t*             rehashes          = nullptr;
     std::uint64_t*             reanchors         = nullptr;
+    std::uint64_t*             rescans           = nullptr;
     Price                      anchorPrice       = kNoPrice;
 };
 
@@ -50,6 +52,7 @@ public:
     [[nodiscard]] Quantity      sizeAt(Side side, Price price) const noexcept;
     [[nodiscard]] Quantity      restingShares(OrderId ref) const noexcept;
     [[nodiscard]] Price         restingPrice(OrderId ref) const noexcept;
+    void                        prefetchOrder(OrderId ref) const noexcept;
     [[nodiscard]] std::size_t   liveOrders() const noexcept;
     [[nodiscard]] std::size_t   orderCapacity() const noexcept;
     [[nodiscard]] std::size_t   ownOrders() const noexcept;
@@ -92,6 +95,7 @@ private:
     void                      rebuildLevels();
     void shiftLevels(std::pmr::vector<Quantity>& levels, Price newMin, Price newMax) noexcept;
     void recomputeBest() noexcept;
+    void rebuildBits() noexcept;
     void rescanBestBid() noexcept;
     void rescanBestAsk() noexcept;
 
@@ -112,6 +116,7 @@ private:
     std::uint64_t  m_oob           = 0;
     std::uint32_t  m_reanchors     = 0;
     std::uint64_t* m_reanchorsOut  = nullptr;
+    std::uint64_t* m_rescansOut    = nullptr;
     std::uint64_t  m_parkedShares  = 0;
     std::uint32_t  m_epoch         = 0;
     Price          m_parkedLo      = kNoPrice;
@@ -119,6 +124,8 @@ private:
 
     std::pmr::vector<Quantity>          m_bidSize;
     std::pmr::vector<Quantity>          m_askSize;
+    LevelBits                           m_bidBits;
+    LevelBits                           m_askBits;
     util::FlatHashMap<OrderId, Resting> m_orders;
 };
 

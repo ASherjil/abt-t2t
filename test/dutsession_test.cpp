@@ -477,6 +477,45 @@ struct MockIo {
     }
 };
 
+void test_cold_shard_routes_unquoted_symbols() {
+    mold::Packer                packer("SESSION01", 1);
+    std::array<std::byte, 2048> buf{};
+    dut::DutConfig              cfg = baseCfg();
+    cfg.symbols                     = {"ABT"};
+    cfg.locates                     = {};
+    cfg.coldShard                   = true;
+    cfg.coldCore                    = -1;
+    dut::DutSession<dut::IoMode::Loopback, JoinBid> sess(cfg, JoinBid{10u});
+    CHECK(sess.cold() != nullptr);
+    sess.startCold();
+
+    packer.reset(buf.data(), buf.size());
+    (void)packer.append(bytesOf(mkDir(13, "ABT")));
+    (void)packer.append(bytesOf(mkDir(99, "COLD")));
+    (void)packer.append(bytesOf(mkAddAt(13, 1u, 'B', 500u, 100)));
+    (void)packer.append(bytesOf(mkAddAt(13, 2u, 'S', 500u, 102)));
+    (void)packer.append(bytesOf(mkAddAt(99, 3u, 'B', 500u, 300)));
+    (void)packer.append(bytesOf(mkAddAt(98, 4u, 'S', 500u, 400)));
+    sess.onMarketData(packer.finalize(), 1u);
+    sess.stopCold();
+
+    CHECK_EQ(sess.books().symbols(), 1u);
+    CHECK(sess.books().book(99) == nullptr);
+    CHECK_EQ(sess.book(0).bestBid(), 100);
+    CHECK_EQ(sess.book(0).bestAsk(), 102);
+    CHECK_EQ(sess.ordersSent(), 1u);
+    CHECK_EQ(sess.foreignMessages(), 0u);
+    const dut::BookTable& cb = sess.cold()->books();
+    CHECK_EQ(cb.symbols(), 2u);
+    CHECK(cb.book(13) == nullptr);
+    CHECK_EQ(cb.book(99)->bestBid(), 300);
+    CHECK_EQ(cb.book(98)->bestAsk(), 400);
+    CHECK_EQ(cb.liveOrders(), 2u);
+    CHECK_EQ(sess.cold()->applied(), 6u);
+    CHECK_EQ(sess.cold()->packets(), 1u);
+    CHECK_EQ(sess.cold()->dropped(), 0u);
+}
+
 void test_transport_login_roundtrip() {
     dut::DutSession<dut::IoMode::Transport, JoinBid, MockIo> sess(baseCfg(), JoinBid{10u});
     MockIo                                                   io;
@@ -512,6 +551,7 @@ void test_transport_login_roundtrip() {
 
 int main() {
     test_locate_filter_session_gating_and_reset();
+    test_cold_shard_routes_unquoted_symbols();
     test_transport_login_roundtrip();
     test_quote_lifecycle_through_session();
     test_take_and_t2t();

@@ -20,6 +20,7 @@ BookTable::BookTable(const BookTableConfig& cfg)
         m_hot[i].resolved          = true;
         m_hot[i].locate            = locate;
         m_books[locate].hot        = static_cast<std::int16_t>(i);
+        m_hotBits[locate >> 6] |= std::uint64_t{1} << (locate & 63u);
         if (m_books[locate].book == nullptr) {
             create(locate, true);
         }
@@ -30,7 +31,11 @@ BookTable::BookTable(const BookTableConfig& cfg)
         if (p.name.empty() || m_byName.contains(p.name)) {
             continue;
         }
-        const int    h = hotIndexByName(p.name);
+        const int h = hotIndexByName(p.name);
+        if ((cfg.scope == BookScope::HotOnly && h == kCold) ||
+            (cfg.scope == BookScope::ColdOnly && h != kCold)) {
+            continue;
+        }
         BookBuilder* b = createProfiled(p, h != kCold);
         m_byName.emplace(p.name, b);
         if (h != kCold && m_hot[static_cast<std::size_t>(h)].book == nullptr) {
@@ -57,8 +62,14 @@ int BookTable::apply(std::span<const std::byte> msg) {
     }
     Entry& e = m_books[locate];
     if (e.book == nullptr) [[unlikely]] {
+        if (m_cfg.scope == BookScope::HotOnly && e.hot == kCold) {
+            return kCold;
+        }
+        if (m_cfg.scope == BookScope::ColdOnly && e.hot != kCold) {
+            return e.hot;
+        }
         ++m_undirected;
-        create(locate, false);
+        create(locate, e.hot != kCold);
     }
     if (type == 'H') [[unlikely]] {
         const int h = e.hot;
@@ -97,6 +108,10 @@ void BookTable::onDirectory(std::span<const std::byte> msg, std::uint16_t locate
                 m_hot[i].resolved = true;
                 m_hot[i].locate   = locate;
                 e.hot             = static_cast<std::int16_t>(i);
+                m_hotBits[locate >> 6] |= std::uint64_t{1} << (locate & 63u);
+                if (m_cfg.scope == BookScope::ColdOnly) {
+                    return;
+                }
                 if (e.book == nullptr) {
                     create(locate, true);
                 }
@@ -105,7 +120,7 @@ void BookTable::onDirectory(std::span<const std::byte> msg, std::uint16_t locate
             }
         }
     }
-    if (e.book == nullptr) {
+    if (e.book == nullptr && m_cfg.scope != BookScope::HotOnly) {
         create(locate, false);
     }
 }
@@ -122,6 +137,7 @@ BookConfig BookTable::configFor(bool hot) noexcept {
     bc.memory            = m_cfg.memory;
     bc.rehashes          = &m_rehashes;
     bc.reanchors         = &m_reanchors;
+    bc.rescans           = &m_rescans;
     return bc;
 }
 
@@ -163,6 +179,35 @@ std::size_t BookTable::hotCount() const noexcept {
     return m_hot.size();
 }
 
+void BookTable::prefetchHotOrders(std::span<const std::byte> msg) const noexcept {
+    if (msg.size() < sizeof(itch::OrderDelete)) {
+        return;
+    }
+    const char type = static_cast<char>(msg[0]);
+    switch (type) {
+        case 'A':
+        case 'F':
+        case 'E':
+        case 'C':
+        case 'X':
+        case 'D':
+        case 'U':
+            break;
+        default:
+            return;
+    }
+    const Entry& e = m_books[locateOf(msg)];
+    if (e.book == nullptr || e.hot == kCold) {
+        return;
+    }
+    const auto* d = reinterpret_cast<const itch::OrderDelete*>(msg.data());
+    e.book->prefetchOrder(d->orderRef.value());
+    if (type == 'U' && msg.size() >= sizeof(itch::OrderReplace)) {
+        const auto* u = reinterpret_cast<const itch::OrderReplace*>(msg.data());
+        e.book->prefetchOrder(u->newOrderRef.value());
+    }
+}
+
 int BookTable::hotIndexOf(std::uint16_t locate) const noexcept {
     return m_books[locate].hot;
 }
@@ -181,6 +226,10 @@ std::uint64_t BookTable::rehashes() const noexcept {
 
 std::uint64_t BookTable::reanchors() const noexcept {
     return m_reanchors;
+}
+
+std::uint64_t BookTable::rescans() const noexcept {
+    return m_rescans;
 }
 
 std::uint64_t BookTable::created() const noexcept {

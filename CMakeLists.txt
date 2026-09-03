@@ -16,6 +16,20 @@ endif()
 # Interface target carrying warning/arch/opt flags (mirrors abtrda3's abtrda3_flags).
 include(cmake/CompilerWarnings.cmake)
 
+# Link-time optimisation for optimised builds: the DUT hot path spans several translation units
+# (BookTable, OrderManager, QuoterStrategy, the framer) and without LTO every one of them is a real
+# call per packet.
+if(CMAKE_BUILD_TYPE STREQUAL "Release" OR CMAKE_BUILD_TYPE STREQUAL "RelWithDebInfo")
+    include(CheckIPOSupported)
+    check_ipo_supported(RESULT ABT_IPO_OK OUTPUT ABT_IPO_MSG LANGUAGES CXX)
+    if(ABT_IPO_OK)
+        set(CMAKE_INTERPROCEDURAL_OPTIMIZATION ON)
+        message(STATUS "abt-t2t: LTO enabled")
+    else()
+        message(STATUS "abt-t2t: LTO not available (${ABT_IPO_MSG})")
+    endif()
+endif()
+
 find_package(Threads REQUIRED)
 
 # ccache when available: dependency and project objects survive a clean build.

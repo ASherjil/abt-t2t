@@ -34,6 +34,53 @@ OrderManager::OrderManager(const OmsConfig& cfg)
     if (m_cfg.symbols.empty()) {
         m_cfg.symbols.emplace_back();
     }
+    m_enter.reserve(m_cfg.symbols.size());
+    for (const std::string& name : m_cfg.symbols) {
+        m_enter.push_back(
+            EnterTemplates{.bid = enterTemplate(name, Side::Buy), .ask = enterTemplate(name, Side::Sell)});
+    }
+    m_replace = replaceTemplate();
+}
+
+ouch::EnterOrder OrderManager::enterTemplate(std::string_view symbol, Side side) noexcept {
+    ouch::EnterOrder o{};
+    o.type               = ouch::InType::EnterOrder;
+    o.userRefNum         = 0;
+    o.side               = ouchSide(side);
+    o.quantity           = 0;
+    o.symbol             = symbol;
+    o.price              = 0;
+    o.timeInForce        = ouch::TimeInForce::Day;
+    o.display            = ouch::Display::Visible;
+    o.capacity           = ouch::Capacity::Principal;
+    o.imSweepEligibility = ouch::ImSweep::NotEligible;
+    o.crossType          = ouch::CrossType::Continuous;
+    o.clOrdId            = std::string_view{};
+    o.appendageLength    = 0;
+    return o;
+}
+
+ouch::ReplaceOrder OrderManager::replaceTemplate() noexcept {
+    ouch::ReplaceOrder u{};
+    u.type               = ouch::InType::ReplaceOrder;
+    u.origUserRefNum     = 0;
+    u.userRefNum         = 0;
+    u.quantity           = 0;
+    u.price              = 0;
+    u.timeInForce        = ouch::TimeInForce::Day;
+    u.display            = ouch::Display::Visible;
+    u.imSweepEligibility = ouch::ImSweep::NotEligible;
+    u.clOrdId            = std::string_view{};
+    u.appendageLength    = 0;
+    return u;
+}
+
+void OrderManager::prefetch(std::size_t sym) const noexcept {
+    __builtin_prefetch(&m_slots[sym]);
+    __builtin_prefetch(&m_acct[sym]);
+    __builtin_prefetch(&m_enter[sym]);
+    __builtin_prefetch(&m_enter[sym].ask);
+    __builtin_prefetch(&m_refs[m_nextUserRef % kRefRing]);
 }
 
 std::size_t OrderManager::reconcile(std::size_t sym, const QuoteTargets& t,
@@ -262,38 +309,22 @@ QuoteSlot* OrderManager::slotByPending(std::uint32_t userRef) noexcept {
 
 void OrderManager::encodeEnter(Outbound& out, std::size_t sym, std::uint32_t userRef, Side side, Price price,
                                Quantity qty) const noexcept {
-    ouch::EnterOrder o{};
-    o.type               = ouch::InType::EnterOrder;
-    o.userRefNum         = userRef;
-    o.side               = ouchSide(side);
-    o.quantity           = qty;
-    o.symbol             = std::string_view{m_cfg.symbols[sym]};
-    o.price              = wirePrice(price);
-    o.timeInForce        = ouch::TimeInForce::Day;
-    o.display            = ouch::Display::Visible;
-    o.capacity           = ouch::Capacity::Principal;
-    o.imSweepEligibility = ouch::ImSweep::NotEligible;
-    o.crossType          = ouch::CrossType::Continuous;
-    o.clOrdId            = std::string_view{};
-    o.appendageLength    = 0;
+    ouch::EnterOrder o = side == Side::Buy ? m_enter[sym].bid : m_enter[sym].ask;
+    o.userRefNum       = userRef;
+    o.quantity         = qty;
+    o.price            = wirePrice(price);
     std::memcpy(out.buf.data(), &o, sizeof o);
     out.len     = sizeof o;
     out.userRef = userRef;
 }
 
 void OrderManager::encodeReplace(Outbound& out, std::uint32_t origRef, std::uint32_t userRef, Price price,
-                                 Quantity qty) noexcept {
-    ouch::ReplaceOrder u{};
-    u.type               = ouch::InType::ReplaceOrder;
+                                 Quantity qty) const noexcept {
+    ouch::ReplaceOrder u = m_replace;
     u.origUserRefNum     = origRef;
     u.userRefNum         = userRef;
     u.quantity           = qty;
     u.price              = wirePrice(price);
-    u.timeInForce        = ouch::TimeInForce::Day;
-    u.display            = ouch::Display::Visible;
-    u.imSweepEligibility = ouch::ImSweep::NotEligible;
-    u.clOrdId            = std::string_view{};
-    u.appendageLength    = 0;
     std::memcpy(out.buf.data(), &u, sizeof u);
     out.len     = sizeof u;
     out.userRef = userRef;

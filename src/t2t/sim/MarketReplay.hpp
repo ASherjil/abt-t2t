@@ -3,6 +3,8 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <filesystem>
+#include <fstream>
 #include <optional>
 #include <span>
 #include <string>
@@ -85,8 +87,19 @@ bool MarketReplay<Session>::open() {
     }
     std::span<const std::byte> msg;
     if (probe.mapped()) {
-        while (probe.next(msg)) {
-            ++m_fileMessages;
+        const std::string   sidecar     = m_cfg.file + ".msgcount";
+        const std::uint64_t size        = std::filesystem::file_size(m_cfg.file);
+        std::uint64_t       cachedSize  = 0;
+        std::uint64_t       cachedCount = 0;
+        if (std::ifstream in(sidecar); in && (in >> cachedSize >> cachedCount) && cachedSize == size) {
+            m_fileMessages = cachedCount;
+        } else {
+            while (probe.next(msg)) {
+                ++m_fileMessages;
+            }
+            if (std::ofstream out(sidecar); out) {
+                out << size << ' ' << m_fileMessages << '\n';
+            }
         }
         m_progress.mapped = true;
         m_reader.emplace(m_cfg.file);

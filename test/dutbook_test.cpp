@@ -346,7 +346,41 @@ void test_profile_anchor_builds_band_before_any_message() {
     CHECK_EQ(book.reanchors(), 0u);
 }
 
+void test_best_rescan_across_gaps_and_words() {
+    dut::BookConfig cfg{};
+    cfg.tickWire     = 100;
+    cfg.bandTicks    = 4096;
+    cfg.bandFraction = 0.0;
+    dut::BookBuilder book(cfg);
+    book.apply(bytesOf(mkAdd(1u, 'B', 1u, 3'200'000)));
+    book.apply(bytesOf(mkAdd(2u, 'B', 1u, 3'000'000)));
+    book.apply(bytesOf(mkAdd(3u, 'B', 1u, 2'900'100)));
+    book.apply(bytesOf(mkAdd(4u, 'S', 1u, 3'200'100)));
+    book.apply(bytesOf(mkAdd(5u, 'S', 1u, 3'400'000)));
+    book.apply(bytesOf(mkAdd(6u, 'S', 1u, 3'599'900)));
+    CHECK_EQ(book.bestBid(), 3'200'000);
+    CHECK_EQ(book.bestAsk(), 3'200'100);
+    book.apply(bytesOf(mkDelete(1u)));
+    CHECK_EQ(book.bestBid(), 3'000'000);
+    book.apply(bytesOf(mkDelete(2u)));
+    CHECK_EQ(book.bestBid(), 2'900'100);
+    book.apply(bytesOf(mkDelete(3u)));
+    CHECK_EQ(book.bestBid(), kNoPrice);
+    book.apply(bytesOf(mkDelete(4u)));
+    CHECK_EQ(book.bestAsk(), 3'400'000);
+    book.apply(bytesOf(mkDelete(5u)));
+    CHECK_EQ(book.bestAsk(), 3'599'900);
+    book.apply(bytesOf(mkDelete(6u)));
+    CHECK_EQ(book.bestAsk(), kNoPrice);
+    book.apply(bytesOf(mkAdd(7u, 'B', 1u, 2'790'500)));
+    book.apply(bytesOf(mkAdd(8u, 'B', 1u, 2'790'600)));
+    CHECK_EQ(book.bestBid(), 2'790'600);
+    book.apply(bytesOf(mkExec(8u, 1u)));
+    CHECK_EQ(book.bestBid(), 2'790'500);
+}
+
 int main() {
+    test_best_rescan_across_gaps_and_words();
     test_band_shift_keeps_levels_and_parks_the_rest();
     test_profile_anchor_builds_band_before_any_message();
     test_dynamic_band_anchors_on_first_add();

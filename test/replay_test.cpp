@@ -5,6 +5,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <filesystem>
 #include <span>
 #include <string>
 #include <string_view>
@@ -103,7 +104,7 @@ std::vector<std::vector<std::byte>> makeDay(std::uint64_t spanNs, int steps) {
 }
 
 std::string writeDay(const std::vector<std::vector<std::byte>>& msgs, const char* name) {
-    std::string            path = name;
+    std::string            path = (std::filesystem::temp_directory_path() / name).string();
     replay::ItchFileWriter w(path);
     CHECK(w.ok());
     for (const auto& m : msgs) {
@@ -302,5 +303,9 @@ int main() {
     test_paced_replay_takes_virtual_time();
     test_skip_to_and_stop_at();
     test_client_order_survives_replay_and_reset_cancels_it();
+    for (const char* name : {"replay_afap.itch", "replay_stream.itch", "replay_paced.itch",
+                             "replay_window.itch", "replay_client.itch"}) {
+        std::filesystem::remove(std::filesystem::temp_directory_path() / name);
+    }
     return abt::test::summary("replay_test");
 }

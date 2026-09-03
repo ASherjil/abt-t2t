@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <deque>
@@ -16,6 +17,12 @@
 
 namespace abt::dut {
 
+enum class BookScope : std::uint8_t {
+    All,
+    HotOnly,
+    ColdOnly
+};
+
 struct BookTableConfig {
     Price                      tickWire      = 100;
     Price                      subDollarTick = 1;
@@ -29,6 +36,7 @@ struct BookTableConfig {
     std::vector<std::string>   hotSymbols;
     std::vector<std::uint16_t> hotLocates;
     std::vector<SymbolProfile> profiles;
+    BookScope                  scope  = BookScope::All;
     std::pmr::memory_resource* memory = nullptr;
 };
 
@@ -56,10 +64,17 @@ public:
     [[nodiscard]] const HotSymbol&   hot(std::size_t idx) const noexcept;
     [[nodiscard]] std::size_t        hotCount() const noexcept;
     [[nodiscard]] int                hotIndexOf(std::uint16_t locate) const noexcept;
+    void                             prefetchHotOrders(std::span<const std::byte> msg) const noexcept;
+
+    [[nodiscard]] bool isHot(std::uint16_t locate) const noexcept {
+        return ((m_hotBits[locate >> 6] >> (locate & 63u)) & 1u) != 0;
+    }
+
     [[nodiscard]] std::size_t        symbols() const noexcept;
     [[nodiscard]] std::uint64_t      undirected() const noexcept;
     [[nodiscard]] std::uint64_t      rehashes() const noexcept;
     [[nodiscard]] std::uint64_t      reanchors() const noexcept;
+    [[nodiscard]] std::uint64_t      rescans() const noexcept;
     [[nodiscard]] std::uint64_t      created() const noexcept;
     [[nodiscard]] std::size_t        profiled() const noexcept;
     [[nodiscard]] const BookBuilder* bookByName(std::string_view name) const noexcept;
@@ -104,12 +119,14 @@ private:
 
     std::pmr::deque<BookBuilder>                                             m_storage;
     std::vector<Entry>                                                       m_books;
+    std::array<std::uint64_t, kLocates / 64>                                 m_hotBits{};
     BookBuilder                                                              m_empty;
     std::vector<HotSymbol>                                                   m_hot;
     std::unordered_map<std::string, BookBuilder*, NameHash, std::equal_to<>> m_byName;
     std::uint64_t                                                            m_undirected = 0;
     std::uint64_t                                                            m_rehashes   = 0;
     std::uint64_t                                                            m_reanchors  = 0;
+    std::uint64_t                                                            m_rescans    = 0;
     std::uint64_t                                                            m_created    = 0;
     std::uint32_t                                                            m_epoch      = 0;
     std::size_t                                                              m_live       = 0;

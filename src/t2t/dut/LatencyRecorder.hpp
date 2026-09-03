@@ -18,9 +18,12 @@
 namespace abt::dut {
 
 struct Outlier {
-    std::int64_t  ns  = 0;
-    std::uint64_t ctx = 0;
+    std::int64_t  ns     = 0;
+    std::uint64_t ctx    = 0;
+    std::uint64_t stages = 0;
 };
+
+using StageNames = std::array<const char*, 4>;
 
 class LatencyRecorder {
 public:
@@ -28,12 +31,14 @@ public:
 
     LatencyRecorder(std::string name, std::size_t queueCapacity, double nsPerUnit, int sigFigs = 3);
 
-    void record(std::uint64_t raw, std::uint64_t ctx = 0) noexcept;
+    void record(std::uint64_t raw, std::uint64_t ctx = 0, std::uint64_t stages = 0) noexcept;
+    void setStageNames(const StageNames& names) noexcept;
 
     bool        drainOne() noexcept;
     std::size_t drain() noexcept;
 
     [[nodiscard]] std::string_view         name() const noexcept;
+    [[nodiscard]] const StageNames&        stageNames() const noexcept;
     [[nodiscard]] const util::Histogram&   histogram() const noexcept;
     [[nodiscard]] const util::Histogram&   interval() const noexcept;
     [[nodiscard]] std::span<const Outlier> worstRun() noexcept;
@@ -52,14 +57,15 @@ private:
     struct Sample {
         std::uint64_t raw;
         std::uint64_t ctx;
+        std::uint64_t stages;
     };
 
     struct Worst {
         std::array<Outlier, kWorst> items{};
         std::size_t                 n = 0;
 
-        void                                   offer(std::int64_t ns, std::uint64_t ctx) noexcept;
-        void                                   clear() noexcept;
+        void offer(std::int64_t ns, std::uint64_t ctx, std::uint64_t stages) noexcept;
+        void clear() noexcept;
         [[nodiscard]] std::span<const Outlier> sorted() noexcept;
     };
 
@@ -71,6 +77,7 @@ private:
     std::atomic<std::uint64_t> m_dropped{0};
     Worst                      m_worstRun;
     Worst                      m_worstInterval;
+    StageNames                 m_stageNames{};
 };
 
 struct FlushConfig {
@@ -97,8 +104,8 @@ private:
     std::jthread m_thread;
 };
 
-inline void LatencyRecorder::record(std::uint64_t raw, std::uint64_t ctx) noexcept {
-    if (!m_queue.try_push(Sample{raw, ctx})) [[unlikely]] {
+inline void LatencyRecorder::record(std::uint64_t raw, std::uint64_t ctx, std::uint64_t stages) noexcept {
+    if (!m_queue.try_push(Sample{raw, ctx, stages})) [[unlikely]] {
         m_dropped.fetch_add(1, std::memory_order_relaxed);
     }
 }

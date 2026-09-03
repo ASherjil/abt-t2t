@@ -43,6 +43,10 @@ DutAppConfig loadDutConfig(const std::string& path) {
     c.session.coldMapSlots    = t["venue"]["cold_map_slots"].value_or(c.session.coldMapSlots);
     c.session.hotMapSlots     = t["venue"]["hot_map_slots"].value_or(c.session.hotMapSlots);
     c.session.arenaMb         = t["venue"]["arena_mb"].value_or(c.session.arenaMb);
+    c.session.coldShard       = t["venue"]["cold_shard"].value_or(c.session.coldShard);
+    c.session.coldCore        = t["venue"]["cold_core"].value_or(c.session.coldCore);
+    c.session.coldArenaMb     = t["venue"]["cold_arena_mb"].value_or(c.session.coldArenaMb);
+    c.session.coldQueue       = t["venue"]["cold_queue"].value_or(c.session.coldQueue);
     c.session.firstUserRef    = t["venue"]["first_user_ref"].value_or(c.session.firstUserRef);
     c.session.marketHoursOnly = t["venue"]["market_hours_only"].value_or(c.session.marketHoursOnly);
     c.session.ownRefMin       = static_cast<OrderId>(t["venue"]["own_ref_min"].value_or(std::int64_t{0}));

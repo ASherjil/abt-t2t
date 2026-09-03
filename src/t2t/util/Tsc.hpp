@@ -39,6 +39,14 @@ namespace detail {
 #endif
 }
 
+[[nodiscard]] inline std::uint64_t mark() noexcept {
+#ifdef __x86_64__
+    return __rdtsc();
+#else
+    return detail::monoNs();
+#endif
+}
+
 // Nanoseconds per counter tick, calibrated once against CLOCK_MONOTONIC. Each trial pairs a tick
 // read with a ns read; if the thread is descheduled *between* that pair the endpoint is skewed and
 // the ratio is wild, so we take the median over several trials and sanity-clamp the result (a real

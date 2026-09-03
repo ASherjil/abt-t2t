@@ -43,6 +43,7 @@ target_compile_features(abt_lob INTERFACE cxx_std_20)
 add_library(abt_dut STATIC
     dut/BookBuilder.cpp
     dut/BookTable.cpp
+    dut/ColdShard.cpp
     dut/LatencyRecorder.cpp
     dut/OrderManager.cpp
     dut/QuoterStrategy.cpp

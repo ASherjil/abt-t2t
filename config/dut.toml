@@ -12,7 +12,11 @@ hot_band_ticks  = 8192      # same for quoted symbols (+-$81.92); band_fraction 
 band_fraction   = 0.10      # band >= 10% of the anchor price on each side
 cold_map_slots  = 1024      # initial order-ref map slots per unquoted symbol (grows by rehash)
 hot_map_slots   = 65536     # per quoted symbol (real AAPL day peaks ~30k resting)
-arena_mb        = 1024      # hugepage arena for all books (0 = heap); full feed uses ~500 MB of it
+arena_mb        = 1024      # hugepage arena for the hot books (0 = heap); one 1 GiB page on the rig
+cold_shard      = true      # unquoted symbols are booked by a second thread fed through an SPSC ring
+cold_core       = 5         # isolated core the cold shard pins to (-1 = unpinned)
+cold_arena_mb   = 1024      # hugepage arena for the cold books; full feed uses ~500 MB of it
+cold_queue      = 8192      # frame descriptors between the hot thread and the cold shard = RX ring depth (frames are read in place)
 profile         = "data/symbols.profile"   # per-symbol reference price + peak orders from the previous
                                            # session (itch_replay --write-profile); books are built and
                                            # anchored from it at startup, "" = anchor on the feed

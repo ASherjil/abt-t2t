@@ -312,7 +312,46 @@ void test_validator_exports_profile_and_file_round_trips() {
     CHECK(dut::readSymbolProfile("/nonexistent/abt.profile").empty());
 }
 
+void test_scopes_split_hot_and_cold() {
+    dut::BookTableConfig cfg = baseCfg();
+    cfg.profiles             = {dut::SymbolProfile{.name = "AAPL", .refPrice = 320'000, .peakOrders = 10},
+                                dut::SymbolProfile{.name = "ZZZZ", .refPrice = 50'000, .peakOrders = 10}};
+    cfg.scope                = dut::BookScope::HotOnly;
+    dut::BookTable hot(cfg);
+    CHECK_EQ(hot.symbols(), 1u);
+    CHECK_EQ(hot.apply(bytesOf(mkAdd(99, 1u, 'B', 10u, 1000))), dut::BookTable::kCold);
+    CHECK_EQ(hot.symbols(), 1u);
+    CHECK(hot.book(99) == nullptr);
+    CHECK_EQ(hot.apply(bytesOf(mkDir(77, "ZZZZ"))), dut::BookTable::kCold);
+    CHECK(hot.book(77) == nullptr);
+    CHECK(!hot.isHot(13));
+    CHECK_EQ(hot.apply(bytesOf(mkDir(13, "AAPL"))), 0);
+    CHECK(hot.isHot(13));
+    CHECK(!hot.isHot(77));
+    CHECK(hot.book(13) != nullptr);
+    CHECK_EQ(hot.apply(bytesOf(mkAdd(13, 2u, 'B', 10u, 320'000))), 0);
+    CHECK_EQ(hot.hotBook(0).bestBid(), 320'000);
+    CHECK_EQ(hot.liveOrders(), 1u);
+
+    cfg.scope = dut::BookScope::ColdOnly;
+    dut::BookTable cold(cfg);
+    CHECK_EQ(cold.symbols(), 1u);
+    CHECK_EQ(cold.apply(bytesOf(mkDir(13, "AAPL"))), 0);
+    CHECK_EQ(cold.hotIndexOf(13), 0);
+    CHECK(cold.book(13) == nullptr);
+    CHECK_EQ(cold.apply(bytesOf(mkAdd(13, 3u, 'B', 10u, 320'000))), 0);
+    CHECK(cold.book(13) == nullptr);
+    CHECK_EQ(cold.hotBook(0).liveOrders(), 0u);
+    CHECK_EQ(cold.apply(bytesOf(mkDir(77, "ZZZZ"))), dut::BookTable::kCold);
+    CHECK_EQ(cold.apply(bytesOf(mkAdd(77, 4u, 'B', 10u, 50'000))), dut::BookTable::kCold);
+    CHECK_EQ(cold.book(77)->bestBid(), 50'000);
+    CHECK_EQ(cold.apply(bytesOf(mkAdd(99, 5u, 'B', 10u, 1000))), dut::BookTable::kCold);
+    CHECK_EQ(cold.symbols(), 2u);
+    CHECK_EQ(cold.liveOrders(), 2u);
+}
+
 int main() {
+    test_scopes_split_hot_and_cold();
     test_profile_prebuilds_books_and_binds_by_name();
     test_validator_exports_profile_and_file_round_trips();
     test_directory_resolves_hot_symbols();

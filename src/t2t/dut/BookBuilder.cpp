@@ -19,7 +19,11 @@ BookBuilder::BookBuilder(Price minPrice, Price maxPrice, Price tickWire, std::si
       m_tickDiv(static_cast<std::uint32_t>(tickWire)),
       m_bidSize(static_cast<std::size_t>((maxPrice - minPrice) / tickWire) + 1, 0),
       m_askSize(static_cast<std::size_t>((maxPrice - minPrice) / tickWire) + 1, 0),
+      m_bidBits(std::pmr::get_default_resource()),
+      m_askBits(std::pmr::get_default_resource()),
       m_orders(maxOrders) {
+    m_bidBits.reset(m_bidSize.size());
+    m_askBits.reset(m_askSize.size());
 }
 
 BookBuilder::BookBuilder(const BookConfig& cfg)
@@ -36,9 +40,14 @@ BookBuilder::BookBuilder(const BookConfig& cfg)
       m_anchored(false),
       m_bidSize(cfg.memory == nullptr ? std::pmr::get_default_resource() : cfg.memory),
       m_askSize(cfg.memory == nullptr ? std::pmr::get_default_resource() : cfg.memory),
+      m_bidBits(cfg.memory == nullptr ? std::pmr::get_default_resource() : cfg.memory),
+      m_askBits(cfg.memory == nullptr ? std::pmr::get_default_resource() : cfg.memory),
       m_orders(cfg.maxOrders, cfg.memory) {
+    m_bidBits.reset(1);
+    m_askBits.reset(1);
     m_orders.countGrowsIn(cfg.rehashes);
     m_reanchorsOut = cfg.reanchors;
+    m_rescansOut   = cfg.rescans;
     if (cfg.anchorPrice != kNoPrice) {
         anchor(cfg.anchorPrice, true);
     }
@@ -78,6 +87,7 @@ void BookBuilder::anchor(Price price, bool trusted) {
         shiftLevels(m_askSize, newMin, newMax);
         m_minPrice = newMin;
         m_maxPrice = newMax;
+        rebuildBits();
         recomputeBest();
         return;
     }
@@ -87,6 +97,8 @@ void BookBuilder::anchor(Price price, bool trusted) {
     m_maxPrice = newMax;
     m_bidSize.assign(2 * band + 1, 0);
     m_askSize.assign(2 * band + 1, 0);
+    m_bidBits.reset(m_bidSize.size());
+    m_askBits.reset(m_askSize.size());
     m_bestBid  = kNoPrice;
     m_bestAsk  = kNoPrice;
     m_anchored = true;
@@ -124,14 +136,27 @@ void BookBuilder::shiftLevels(std::pmr::vector<Quantity>& levels, Price newMin, 
     }
 }
 
+void BookBuilder::rebuildBits() noexcept {
+    m_bidBits.reset(m_bidSize.size());
+    m_askBits.reset(m_askSize.size());
+    for (std::size_t i = 0; i < m_bidSize.size(); ++i) {
+        if (m_bidSize[i] != 0) {
+            m_bidBits.set(i);
+        }
+        if (m_askSize[i] != 0) {
+            m_askBits.set(i);
+        }
+    }
+}
+
 void BookBuilder::recomputeBest() noexcept {
     if (m_bestBid == kNoPrice || !inBand(m_bestBid) || m_bidSize[index(m_bestBid)] == 0) {
-        const std::size_t j = util::scanDownNonZero(m_bidSize.data(), m_bidSize.size() - 1);
-        m_bestBid = j == util::kNoIndex ? kNoPrice : m_minPrice + static_cast<Price>(j) * m_tickWire;
+        const std::size_t j = m_bidBits.prev(m_bidSize.size() - 1);
+        m_bestBid = j == LevelBits::kNone ? kNoPrice : m_minPrice + static_cast<Price>(j) * m_tickWire;
     }
     if (m_bestAsk == kNoPrice || !inBand(m_bestAsk) || m_askSize[index(m_bestAsk)] == 0) {
-        const std::size_t j = util::scanUpNonZero(m_askSize.data(), 0, m_askSize.size() - 1);
-        m_bestAsk = j == util::kNoIndex ? kNoPrice : m_minPrice + static_cast<Price>(j) * m_tickWire;
+        const std::size_t j = m_askBits.next(0);
+        m_bestAsk = j == LevelBits::kNone ? kNoPrice : m_minPrice + static_cast<Price>(j) * m_tickWire;
     }
 }
 
@@ -196,8 +221,9 @@ Price BookBuilder::tickWire() const noexcept {
 }
 
 std::size_t BookBuilder::footprintBytes() const noexcept {
-    return (m_bidSize.capacity() + m_askSize.capacity()) * sizeof(Quantity) +
-           m_orders.capacity() * (sizeof(OrderId) + sizeof(Resting)) + sizeof(BookBuilder);
+    return (m_bidSize.capacity() + m_askSize.capacity()) * sizeof(Quantity) + m_bidBits.bytes() +
+           m_askBits.bytes() + m_orders.capacity() * (sizeof(OrderId) + sizeof(Resting)) +
+           sizeof(BookBuilder);
 }
 
 bool BookBuilder::anchored() const noexcept {
@@ -297,6 +323,8 @@ void BookBuilder::clear() noexcept {
     }
     std::fill(m_bidSize.begin(), m_bidSize.end(), 0u);
     std::fill(m_askSize.begin(), m_askSize.end(), 0u);
+    m_bidBits.clearAll();
+    m_askBits.clearAll();
     m_orders.clear();
     m_own          = 0;
     m_bestBid      = kNoPrice;
@@ -327,6 +355,10 @@ Quantity BookBuilder::sizeAt(Side side, Price price) const noexcept {
 Quantity BookBuilder::restingShares(OrderId ref) const noexcept {
     const Resting* o = m_orders.find(ref);
     return o == nullptr ? 0 : o->shares;
+}
+
+void BookBuilder::prefetchOrder(OrderId ref) const noexcept {
+    m_orders.prefetch(ref);
 }
 
 Price BookBuilder::restingPrice(OrderId ref) const noexcept {
@@ -436,11 +468,17 @@ void BookBuilder::addShares(Side side, Price price, Quantity shares) noexcept {
 void BookBuilder::addLevel(Side side, Price price, Quantity shares) noexcept {
     const std::size_t i = index(price);
     if (side == Side::Buy) {
+        if (m_bidSize[i] == 0) {
+            m_bidBits.set(i);
+        }
         m_bidSize[i] += shares;
         if (m_bestBid == kNoPrice || price > m_bestBid) {
             m_bestBid = price;
         }
     } else {
+        if (m_askSize[i] == 0) {
+            m_askBits.set(i);
+        }
         m_askSize[i] += shares;
         if (m_bestAsk == kNoPrice || price < m_bestAsk) {
             m_bestAsk = price;
@@ -460,8 +498,11 @@ void BookBuilder::removeShares(Side side, Price price, Quantity shares) noexcept
         } else {
             m_bidSize[i] -= shares;
         }
-        if (m_bidSize[i] == 0 && price == m_bestBid) {
-            rescanBestBid();
+        if (m_bidSize[i] == 0) {
+            m_bidBits.clear(i);
+            if (price == m_bestBid) {
+                rescanBestBid();
+            }
         }
     } else {
         if (shares >= m_askSize[i]) {
@@ -469,8 +510,11 @@ void BookBuilder::removeShares(Side side, Price price, Quantity shares) noexcept
         } else {
             m_askSize[i] -= shares;
         }
-        if (m_askSize[i] == 0 && price == m_bestAsk) {
-            rescanBestAsk();
+        if (m_askSize[i] == 0) {
+            m_askBits.clear(i);
+            if (price == m_bestAsk) {
+                rescanBestAsk();
+            }
         }
     }
 }
@@ -500,24 +544,19 @@ std::size_t BookBuilder::index(Price price) const noexcept {
 }
 
 void BookBuilder::rescanBestBid() noexcept {
-    // Fall back to the next populated level below the old best. AVX2 checks 8 levels per step,
-    // which matters when the book has gaps and the next level is far down.
-    const std::size_t j = util::scanDownNonZero(m_bidSize.data(), index(m_bestBid));
-    if (j == util::kNoIndex) {
-        m_bestBid = kNoPrice;
-    } else {
-        m_bestBid = m_minPrice + static_cast<Price>(j) * m_tickWire;
+    if (m_rescansOut != nullptr) {
+        ++*m_rescansOut;
     }
+    const std::size_t j = m_bidBits.prev(index(m_bestBid));
+    m_bestBid           = j == LevelBits::kNone ? kNoPrice : m_minPrice + static_cast<Price>(j) * m_tickWire;
 }
 
 void BookBuilder::rescanBestAsk() noexcept {
-    const std::size_t last = m_askSize.size() - 1;
-    const std::size_t j    = util::scanUpNonZero(m_askSize.data(), index(m_bestAsk), last);
-    if (j == util::kNoIndex) {
-        m_bestAsk = kNoPrice;
-    } else {
-        m_bestAsk = m_minPrice + static_cast<Price>(j) * m_tickWire;
+    if (m_rescansOut != nullptr) {
+        ++*m_rescansOut;
     }
+    const std::size_t j = m_askBits.next(index(m_bestAsk));
+    m_bestAsk           = j == LevelBits::kNone ? kNoPrice : m_minPrice + static_cast<Price>(j) * m_tickWire;
 }
 
 }   // namespace abt::dut

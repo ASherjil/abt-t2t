@@ -30,21 +30,36 @@ double epochSeconds() noexcept {
 
 std::string describe(std::uint64_t ctx) {
     const std::uint8_t f = SampleContext::flags(ctx);
-    return fmt::format("seq={} msgs={} {}{}{}{}{}", SampleContext::seq(ctx), SampleContext::msgs(ctx),
-                       (f & SampleContext::kSent) != 0 ? "S" : "-",
-                       (f & SampleContext::kRehash) != 0 ? "R" : "-",
-                       (f & SampleContext::kGap) != 0 ? "G" : "-",
-                       (f & SampleContext::kReanchor) != 0 ? "A" : "-",
-                       (f & SampleContext::kNewBook) != 0 ? "N" : "-");
+    return fmt::format(
+        "seq={} msgs={} {}{}{}{}{}{}{}{}", SampleContext::seq(ctx), SampleContext::msgs(ctx),
+        (f & SampleContext::kSent) != 0 ? "S" : "-", (f & SampleContext::kRehash) != 0 ? "R" : "-",
+        (f & SampleContext::kGap) != 0 ? "G" : "-", (f & SampleContext::kReanchor) != 0 ? "A" : "-",
+        (f & SampleContext::kNewBook) != 0 ? "N" : "-", (f & SampleContext::kRescan) != 0 ? "L" : "-",
+        (f & SampleContext::kMulti) != 0 ? "M" : "-", (f & SampleContext::kTxReap) != 0 ? "T" : "-");
 }
 
-std::string describeWorst(std::span<const Outlier> worst) {
+std::string describeStages(std::uint64_t stages, const StageNames& names) {
+    if (stages == 0 || names[0] == nullptr) {
+        return {};
+    }
+    std::string out = " [";
+    for (std::size_t i = 0; i < SampleContext::kStages; ++i) {
+        if (names[i] == nullptr) {
+            break;
+        }
+        out += fmt::format("{}{} {}", i == 0 ? "" : " ", names[i], SampleContext::stage(stages, i));
+    }
+    out += "]";
+    return out;
+}
+
+std::string describeWorst(std::span<const Outlier> worst, const StageNames& names) {
     std::string out;
     for (const Outlier& o : worst) {
         if (!out.empty()) {
             out += " | ";
         }
-        out += fmt::format("{}ns {}", o.ns, describe(o.ctx));
+        out += fmt::format("{}ns {}{}", o.ns, describe(o.ctx), describeStages(o.stages, names));
     }
     return out;
 }
@@ -66,23 +81,40 @@ LatencyRecorder::LatencyRecorder(std::string name, std::size_t queueCapacity, do
 }
 
 bool LatencyRecorder::drainOne() noexcept {
-    const Sample* s = m_queue.front();
-    if (s == nullptr) {
+    const Sample* head = m_queue.front();
+    if (head == nullptr) {
         return false;
     }
-    const Sample sample = *s;
+    const Sample sample = *head;
     m_queue.pop();
     const auto v = static_cast<std::int64_t>(static_cast<double>(sample.raw) * m_nsPerUnit);
     m_hist.record(v);
     m_interval.record(v);
-    m_worstRun.offer(v, sample.ctx);
-    m_worstInterval.offer(v, sample.ctx);
+    std::uint64_t stagesNs = 0;
+    if (sample.stages != 0) {
+        std::array<std::uint64_t, SampleContext::kStages> s{};
+        for (std::size_t i = 0; i < SampleContext::kStages; ++i) {
+            s[i] = static_cast<std::uint64_t>(static_cast<double>(SampleContext::stage(sample.stages, i)) *
+                                              m_nsPerUnit);
+        }
+        stagesNs = SampleContext::packStages(s[0], s[1], s[2], s[3]);
+    }
+    m_worstRun.offer(v, sample.ctx, stagesNs);
+    m_worstInterval.offer(v, sample.ctx, stagesNs);
     return true;
 }
 
-void LatencyRecorder::Worst::offer(std::int64_t ns, std::uint64_t ctx) noexcept {
+void LatencyRecorder::setStageNames(const StageNames& names) noexcept {
+    m_stageNames = names;
+}
+
+const StageNames& LatencyRecorder::stageNames() const noexcept {
+    return m_stageNames;
+}
+
+void LatencyRecorder::Worst::offer(std::int64_t ns, std::uint64_t ctx, std::uint64_t stages) noexcept {
     if (n < kWorst) {
-        items[n++] = Outlier{ns, ctx};
+        items[n++] = Outlier{ns, ctx, stages};
         return;
     }
     std::size_t lowest = 0;
@@ -92,7 +124,7 @@ void LatencyRecorder::Worst::offer(std::int64_t ns, std::uint64_t ctx) noexcept 
         }
     }
     if (ns > items[lowest].ns) {
-        items[lowest] = Outlier{ns, ctx};
+        items[lowest] = Outlier{ns, ctx, stages};
     }
 }
 
@@ -183,7 +215,7 @@ void LatencyRecorder::summary() {
                m_name, count(), dropped(), min(), percentile(50.0), percentile(90.0), percentile(99.0),
                percentile(99.9), percentile(99.99), percentile(99.999), max());
     if (m_worstRun.n > 0) {
-        fmt::print("[{} worst] {}\n", m_name, describeWorst(worstRun()));
+        fmt::print("[{} worst] {}\n", m_name, describeWorst(worstRun(), m_stageNames));
     }
 }
 
@@ -254,7 +286,8 @@ void RecorderThread::flushInterval(util::HistogramLog& log, const std::vector<La
         const util::Histogram& h = r->interval();
         if (h.count() > 0) {
             (void)log.writeInterval(r->name(), startEpoch, intervalSec, h);
-            (void)log.writeComment(fmt::format("worst {}: {}", r->name(), describeWorst(r->worstInterval())));
+            (void)log.writeComment(
+                fmt::format("worst {}: {}", r->name(), describeWorst(r->worstInterval(), r->stageNames())));
             fmt::print("[{} +{:.0f}s] ns: n={} p50={} p99={} p99.9={} p99.99={} max={}\n", r->name(),
                        intervalSec, h.count(), h.percentile(50.0), h.percentile(99.0), h.percentile(99.9),
                        h.percentile(99.99), h.max());
