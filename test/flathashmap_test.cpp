@@ -86,6 +86,51 @@ void test_grow() {
     }
 }
 
+void test_erase_at() {
+    Map map(16);
+    for (std::uint64_t k = 1; k <= 9; ++k) {
+        map.insertOrAssign(k, static_cast<std::uint32_t>(k * 10));
+    }
+    for (std::uint64_t k = 1; k <= 9; k += 2) {
+        std::uint32_t* v = map.find(k);
+        CHECK(v != nullptr);
+        if (v != nullptr) {
+            map.eraseAt(map.indexOf(v));
+        }
+    }
+    CHECK_EQ(map.size(), 4u);
+    for (std::uint64_t k = 1; k <= 9; ++k) {
+        if (k % 2 == 0) {
+            expectVal(map, k, static_cast<std::uint32_t>(k * 10));
+        } else {
+            CHECK(map.find(k) == nullptr);
+        }
+    }
+    std::unordered_map<std::uint64_t, std::uint32_t> oracle;
+    Map                                              big(64);
+    std::uint64_t                                    x = 88172645463325252ull;
+    for (int i = 0; i < 20000; ++i) {
+        x ^= x << 13;
+        x ^= x >> 7;
+        x ^= x << 17;
+        const std::uint64_t key = 1 + (x % 700);
+        if ((x >> 20) % 3 == 0) {
+            std::uint32_t* v = big.find(key);
+            if (v != nullptr) {
+                big.eraseAt(big.indexOf(v));
+            }
+            oracle.erase(key);
+        } else {
+            big.insertOrAssign(key, static_cast<std::uint32_t>(i));
+            oracle[key] = static_cast<std::uint32_t>(i);
+        }
+    }
+    CHECK_EQ(big.size(), oracle.size());
+    for (const auto& [k, v] : oracle) {
+        expectVal(big, k, v);
+    }
+}
+
 void test_oracle() {
     Map                                              map(16);
     std::unordered_map<std::uint64_t, std::uint32_t> oracle;
@@ -143,6 +188,7 @@ void test_oracle() {
 }   // namespace
 
 int main() {
+    test_erase_at();
     test_basic();
     test_grow();
     test_oracle();

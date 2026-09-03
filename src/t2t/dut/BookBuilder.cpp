@@ -165,13 +165,13 @@ void BookBuilder::rebuildLevels() {
     m_parkedLo     = kNoPrice;
     m_parkedHi     = kNoPrice;
     m_orders.forEach([this](OrderId, const Resting& r) {
-        if (r.own) {
+        if (r.own()) {
             return;
         }
         if (inBand(r.price)) {
-            addLevel(r.side, r.price, r.shares);
+            addLevel(r.side(), r.price, r.shares());
         } else {
-            park(r.price, r.shares);
+            park(r.price, r.shares());
         }
     });
 }
@@ -354,7 +354,7 @@ Quantity BookBuilder::sizeAt(Side side, Price price) const noexcept {
 
 Quantity BookBuilder::restingShares(OrderId ref) const noexcept {
     const Resting* o = m_orders.find(ref);
-    return o == nullptr ? 0 : o->shares;
+    return o == nullptr ? 0 : o->shares();
 }
 
 void BookBuilder::prefetchOrder(OrderId ref) const noexcept {
@@ -390,7 +390,7 @@ void BookBuilder::onAddOrder(const itch::AddOrder& msg) {
     if (!m_anchored) [[unlikely]] {
         anchor(price, false);
     }
-    m_orders.insertOrAssign(ref, Resting{.price = price, .shares = shares, .side = side, .own = own});
+    m_orders.insertOrAssign(ref, Resting::make(price, shares, side, own));
     if (own) [[unlikely]] {
         ++m_own;
         return;
@@ -403,8 +403,8 @@ void BookBuilder::onOrderReplace(const itch::OrderReplace& msg) {
     if (!m_orders.erase(msg.origOrderRef.value(), orig)) {
         return;
     }
-    if (!orig.own) {
-        removeShares(orig.side, orig.price, orig.shares);
+    if (!orig.own()) {
+        removeShares(orig.side(), orig.price, orig.shares());
     } else {
         --m_own;
     }
@@ -414,13 +414,12 @@ void BookBuilder::onOrderReplace(const itch::OrderReplace& msg) {
         return;
     }
     const Price price = static_cast<Price>(msg.price.value());
-    m_orders.insertOrAssign(msg.newOrderRef.value(),
-                            Resting{.price = price, .shares = shares, .side = orig.side, .own = orig.own});
-    if (orig.own) [[unlikely]] {
+    m_orders.insertOrAssign(msg.newOrderRef.value(), Resting::make(price, shares, orig.side(), orig.own()));
+    if (orig.own()) [[unlikely]] {
         ++m_own;
         return;
     }
-    addShares(orig.side, price, shares);
+    addShares(orig.side(), price, shares);
 }
 
 void BookBuilder::reduceOrder(OrderId ref, Quantity by, bool trade) {
@@ -431,16 +430,17 @@ void BookBuilder::reduceOrder(OrderId ref, Quantity by, bool trade) {
     if (trade && needsAnchor(o->price)) [[unlikely]] {
         anchor(o->price, true);
     }
-    const Quantity gone = (by < o->shares) ? by : o->shares;
-    if (!o->own) {
-        removeShares(o->side, o->price, gone);
+    const Quantity have = o->shares();
+    const Quantity gone = (by < have) ? by : have;
+    if (!o->own()) {
+        removeShares(o->side(), o->price, gone);
     }
-    o->shares -= gone;
-    if (o->shares == 0) {
-        if (o->own) {
+    o->setShares(have - gone);
+    if (have == gone) {
+        if (o->own()) {
             --m_own;
         }
-        m_orders.erase(ref);
+        m_orders.eraseAt(m_orders.indexOf(o));
     }
 }
 
@@ -449,11 +449,11 @@ void BookBuilder::removeOrder(OrderId ref) {
     if (!m_orders.erase(ref, o)) {
         return;
     }
-    if (o.own) {
+    if (o.own()) {
         --m_own;
         return;
     }
-    removeShares(o.side, o.price, o.shares);
+    removeShares(o.side(), o.price, o.shares());
 }
 
 void BookBuilder::addShares(Side side, Price price, Quantity shares) noexcept {

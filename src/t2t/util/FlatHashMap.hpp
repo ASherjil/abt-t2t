@@ -43,6 +43,9 @@ public:
     void insertOrAssign(Key key, const Value& value);
 
     bool erase(Key key) noexcept;
+    // Index of a value returned by find(), for eraseAt() without a second probe.
+    [[nodiscard]] std::size_t indexOf(const Value* value) const noexcept;
+    void                      eraseAt(std::size_t idx) noexcept;
     // Combined find+erase: copies the removed value into `out`, walking the probe chain once
     // instead of a separate find() then erase(). Returns false if the key was absent.
     bool erase(Key key, Value& out) noexcept;
@@ -192,6 +195,18 @@ bool FlatHashMap<Key, Value, Empty>::erase(Key key) noexcept {
     }
     eraseAtHole(hole);
     return true;
+}
+
+template <class Key, class Value, Key Empty>
+std::size_t FlatHashMap<Key, Value, Empty>::indexOf(const Value* value) const noexcept {
+    const auto* slot = reinterpret_cast<const Slot*>(reinterpret_cast<const std::byte*>(value) -
+                                                     offsetof(Slot, value));
+    return static_cast<std::size_t>(slot - m_slots.data());
+}
+
+template <class Key, class Value, Key Empty>
+void FlatHashMap<Key, Value, Empty>::eraseAt(std::size_t idx) noexcept {
+    eraseAtHole(idx);
 }
 
 template <class Key, class Value, Key Empty>

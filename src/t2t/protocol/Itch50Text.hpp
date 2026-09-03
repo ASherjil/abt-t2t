@@ -18,14 +18,15 @@ namespace abt::itch {
     const std::byte* d    = msg.data();
     const char       type = static_cast<char>(msg[0]);
     const auto*      hdr  = reinterpret_cast<const SystemEvent*>(d);
-    std::string      out  = fmt::format("{} loc={} ts={}", type, hdr->stockLocate.value(), hdr->timestamp.value());
+    std::string out = fmt::format("{} loc={} ts={}", type, hdr->stockLocate.value(), hdr->timestamp.value());
     switch (static_cast<MessageType>(type)) {
         case MessageType::AddOrder:
         case MessageType::AddOrderMpid:
             if (msg.size() >= sizeof(AddOrder)) {
                 const auto* a = reinterpret_cast<const AddOrder*>(d);
-                out += fmt::format(" ref={} {} sh={} {} px={}", a->orderRef.value(), static_cast<char>(a->side),
-                                   a->shares.value(), a->stock.view(), a->price.value());
+                out += fmt::format(" ref={} {} sh={} {} px={}", a->orderRef.value(),
+                                   static_cast<char>(a->side), a->shares.value(), a->stock.view(),
+                                   a->price.value());
             }
             break;
         case MessageType::OrderExecuted:
@@ -57,15 +58,16 @@ namespace abt::itch {
         case MessageType::OrderReplace:
             if (msg.size() >= sizeof(OrderReplace)) {
                 const auto* u = reinterpret_cast<const OrderReplace*>(d);
-                out += fmt::format(" orig={} new={} sh={} px={}", u->origOrderRef.value(), u->newOrderRef.value(),
-                                   u->shares.value(), u->price.value());
+                out += fmt::format(" orig={} new={} sh={} px={}", u->origOrderRef.value(),
+                                   u->newOrderRef.value(), u->shares.value(), u->price.value());
             }
             break;
         case MessageType::TradeNonCross:
             if (msg.size() >= sizeof(TradeNonCross)) {
                 const auto* p = reinterpret_cast<const TradeNonCross*>(d);
-                out += fmt::format(" {} sh={} {} px={} match={}", static_cast<char>(p->side), p->shares.value(),
-                                   p->stock.view(), p->price.value(), p->matchNumber.value());
+                out += fmt::format(" {} sh={} {} px={} match={}", static_cast<char>(p->side),
+                                   p->shares.value(), p->stock.view(), p->price.value(),
+                                   p->matchNumber.value());
             }
             break;
         case MessageType::CrossTrade:

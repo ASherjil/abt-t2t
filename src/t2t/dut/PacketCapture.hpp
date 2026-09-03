@@ -13,10 +13,10 @@ namespace abt::dut {
 struct CapturedPacket {
     static constexpr std::size_t kMaxBytes = 1500;
 
-    std::uint64_t                     ticks        = 0;
-    std::uint64_t                     ctx          = 0;
-    std::uint64_t                     stages       = 0;
-    std::uint16_t                     len          = 0;
+    std::uint64_t                    ticks  = 0;
+    std::uint64_t                    ctx    = 0;
+    std::uint64_t                    stages = 0;
+    std::uint16_t                    len    = 0;
     std::array<std::byte, kMaxBytes> bytes{};
 
     [[nodiscard]] std::span<const std::byte> packet() const noexcept {
@@ -32,7 +32,8 @@ public:
         return m_floor;
     }
 
-    void offer(std::uint64_t ticks, std::uint64_t ctx, std::uint64_t stages, std::span<const std::byte> pkt) noexcept {
+    void offer(std::uint64_t ticks, std::uint64_t ctx, std::uint64_t stages,
+               std::span<const std::byte> pkt) noexcept {
         std::size_t lowest = 0;
         for (std::size_t i = 1; i < kSlots; ++i) {
             if (m_slots[i].ticks < m_slots[lowest].ticks) {
@@ -58,8 +59,9 @@ public:
                 out.push_back(&c);
             }
         }
-        std::sort(out.begin(), out.end(),
-                  [](const CapturedPacket* a, const CapturedPacket* b) { return a->ticks > b->ticks; });
+        std::sort(out.begin(), out.end(), [](const CapturedPacket* a, const CapturedPacket* b) {
+            return a->ticks > b->ticks;
+        });
         return out;
     }
 

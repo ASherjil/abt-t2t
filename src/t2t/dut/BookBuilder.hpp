@@ -69,11 +69,36 @@ public:
 
 private:
     struct Resting {
-        Price    price;
-        Quantity shares;
-        Side     side;
-        bool     own;
+        static constexpr std::uint32_t kSharesMask = (1u << 30) - 1;
+        static constexpr std::uint32_t kSell       = 1u << 30;
+        static constexpr std::uint32_t kOwn        = 1u << 31;
+
+        Price         price;
+        std::uint32_t bits;
+
+        [[nodiscard]] static Resting make(Price price, Quantity shares, Side side, bool own) noexcept {
+            const std::uint32_t sh = shares > kSharesMask ? kSharesMask : shares;
+            return Resting{price, sh | (side == Side::Sell ? kSell : 0u) | (own ? kOwn : 0u)};
+        }
+
+        [[nodiscard]] Quantity shares() const noexcept {
+            return bits & kSharesMask;
+        }
+
+        [[nodiscard]] Side side() const noexcept {
+            return (bits & kSell) != 0 ? Side::Sell : Side::Buy;
+        }
+
+        [[nodiscard]] bool own() const noexcept {
+            return (bits & kOwn) != 0;
+        }
+
+        void setShares(Quantity shares) noexcept {
+            bits = (bits & ~kSharesMask) | (shares & kSharesMask);
+        }
     };
+
+    static_assert(sizeof(Resting) == 8);
 
     void onAddOrder(const itch::AddOrder& msg);
     void onOrderReplace(const itch::OrderReplace& msg);
