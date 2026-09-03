@@ -81,6 +81,7 @@ if(ABT_SW_TIMING)
     target_include_directories(dutproc_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
     target_link_libraries(dutproc_test PRIVATE abt::dut abt::flags fmt::fmt)
     add_test(NAME dutproc_test COMMAND dutproc_test)
+    set_tests_properties(dutproc_test PROPERTIES RUN_SERIAL TRUE)
 endif()
 
 add_executable(itchfile_test itchfile_test.cpp)

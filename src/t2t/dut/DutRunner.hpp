@@ -23,7 +23,8 @@
 namespace abt::dut {
 
 inline constexpr std::uint64_t kDutLogPeriodNs       = 1'000'000'000ull;
-inline constexpr std::uint64_t kDutPreOpenWarmNs     = 100'000'000ull;
+inline constexpr std::uint64_t kDutPreOpenWarmNs     = 5'000'000ull;
+inline constexpr std::uint64_t kDutPreOpenTestNs     = 10'000'000ull;
 inline constexpr std::uint64_t kDutPollsPerClockRead = 1u << 16;
 
 template <class Session>
@@ -44,6 +45,20 @@ void printCaptures(Session& sess) {
 }
 
 template <class Session>
+void printOpenTraces(Session& sess) {
+    const auto& traces = sess.openTraces();
+    for (std::size_t i = 0; i < traces.n && i < traces.slots.size(); ++i) {
+        const auto& t = traces.slots[i];
+        std::string syms;
+        for (std::size_t k = 0; k < t.n; ++k) {
+            syms += fmt::format("{}{}/{}", k == 0 ? "" : " ", tsc::toNs(t.quote[k]), tsc::toNs(t.tx[k]));
+        }
+        fmt::print("[reconcile-all] seq={} msgs={} apply={} touch={} flags={} quote/tx ns per symbol: {}\n",
+                   t.seq, t.msgs, tsc::toNs(t.apply), tsc::toNs(t.touch), tsc::toNs(t.flags), syms);
+    }
+}
+
+template <class Session>
 void printDutReport(Session& sess, util::ThreadCounters atStart, util::ThreadCounters now) {
     const util::ProcessMemory mem = util::processMemory();
     fmt::print("[mem] rss={} MB peak={} MB hugetlb={} MB\n", mem.rssMb, mem.peakRssMb, mem.hugetlbMb);
@@ -58,7 +73,9 @@ void printDutReport(Session& sess, util::ThreadCounters atStart, util::ThreadCou
         sess.t2tHol().summary();
         sess.proc().summary();
         sess.ackRtt().summary();
+        sess.rxStage().summary();
         printCaptures(sess);
+        printOpenTraces(sess);
     }
     const OmsStats& s = sess.oms().stats();
     fmt::print("[oms] orders sent={} enters={} replaces={} cancels={} accepts={} fills={} rejects={} "
@@ -95,6 +112,11 @@ void printDutReport(Session& sess, util::ThreadCounters atStart, util::ThreadCou
                    c->core(), cb.symbols(), cb.profiled(), cb.undirected(), cb.rehashes(), cb.reanchors(),
                    cb.footprintBytes() >> 20, cb.liveOrders(), c->packets(), c->applied(), c->dropped(),
                    c->stale(), c->maxDepth());
+        std::string seqs;
+        for (const std::uint64_t q : c->reanchorSeqs()) {
+            seqs += fmt::format(" {}", q);
+        }
+        fmt::print("[cold] reanchor seqs:{}\n", seqs);
     }
     if (sess.feedFaults() > 0) {
         fmt::print("[feed] FAULTS={} last at seq={} state={}: book invalidated and quoting stopped until the "
@@ -111,6 +133,7 @@ std::vector<LatencyRecorder*> recordersOf(Session& sess) {
         recs.push_back(&sess.proc());
         recs.push_back(&sess.t2tHol());
         recs.push_back(&sess.ackRtt());
+        recs.push_back(&sess.rxStage());
     }
     return recs;
 }
@@ -176,6 +199,7 @@ int runDut(const DutAppConfig& cfg, typename T::Type& backend, volatile std::sig
         sess.sendLogin(cfg.socket.session, cfg.socket.username);
         std::uint64_t nextLogin = monotonicNs() + kDutLogPeriodNs;
         std::uint64_t nextWarm  = nextLogin;
+        std::uint64_t nextTest  = nextLogin;
         std::uint64_t polls     = 0;
         while (stop == 0) {
             sess.poll();
@@ -194,6 +218,11 @@ int runDut(const DutAppConfig& cfg, typename T::Type& backend, volatile std::sig
                     nextWarm = now + kDutPreOpenWarmNs;
                     if (sess.sessionEstablished() && !sess.marketOpen()) {
                         sess.warmQuotePath();
+                    }
+                }
+                if (now >= nextTest) {
+                    nextTest = now + kDutPreOpenTestNs;
+                    if (sess.sessionEstablished() && !sess.marketOpen()) {
                         sess.sendTestOrder();
                     }
                 }

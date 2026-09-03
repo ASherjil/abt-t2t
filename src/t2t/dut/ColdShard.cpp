@@ -1,5 +1,7 @@
 #include "t2t/dut/ColdShard.hpp"
 
+#include <algorithm>
+
 #include <immintrin.h>
 
 #include "t2t/protocol/Itch50.hpp"
@@ -85,13 +87,25 @@ void ColdShard::consume(const FrameRef& f) noexcept {
         return;
     }
     applyFrame({f.data, f.len});
+    for (std::uint32_t off = 0; off < f.len; off += 64) {
+        asm volatile("clflushopt %0" : : "m"(*(f.data + off)));
+    }
 }
 
 void ColdShard::applyFrame(std::span<const std::byte> moldPacket) noexcept {
     ++m_packets;
+    const std::uint64_t before = m_books.reanchors();
     (void)mold::forEachMessage(moldPacket, [this](std::uint64_t, std::span<const std::byte> msg) {
         applyOne(msg);
     });
+    if (m_books.reanchors() != before) [[unlikely]] {
+        m_reanchorSeqs[m_reanchorCount % m_reanchorSeqs.size()] = mold::sequenceOf(moldPacket);
+        ++m_reanchorCount;
+    }
+}
+
+std::span<const std::uint64_t> ColdShard::reanchorSeqs() const noexcept {
+    return {m_reanchorSeqs.data(), std::min(m_reanchorCount, m_reanchorSeqs.size())};
 }
 
 void ColdShard::applyOne(std::span<const std::byte> msg) noexcept {

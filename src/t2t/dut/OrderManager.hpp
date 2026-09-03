@@ -73,6 +73,7 @@ public:
     void        onAck(std::span<const std::byte> ouch) noexcept;
     void        encodeTestOrder(Outbound& out) noexcept;
     void        warmEncode(std::size_t sym, Outbound& out) const noexcept;
+    void        warmReconcile(std::size_t sym, Outbound& out) noexcept;
     void        prefetch(std::size_t sym) const noexcept;
 
     [[nodiscard]] std::size_t      symbolCount() const noexcept;
@@ -102,6 +103,9 @@ private:
     [[nodiscard]] static ouch::EnterOrder   enterTemplate(std::string_view symbol, Side side) noexcept;
     [[nodiscard]] static ouch::ReplaceOrder replaceTemplate() noexcept;
 
+    [[nodiscard, gnu::noinline]] std::size_t reconcileSlot(QuoteSlot& s, std::size_t sym, Side side,
+                                                           bool want, Price price, Quantity qty,
+                                                           Outbound& out) noexcept;
     [[nodiscard]] std::size_t reconcileSide(std::size_t sym, Side side, bool want, Price price, Quantity qty,
                                             Outbound& out) noexcept;
     [[nodiscard]] std::uint32_t allocRef(std::size_t sym, Side side) noexcept;

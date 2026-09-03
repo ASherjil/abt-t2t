@@ -76,10 +76,13 @@ ouch::ReplaceOrder OrderManager::replaceTemplate() noexcept {
 }
 
 void OrderManager::prefetch(std::size_t sym) const noexcept {
-    __builtin_prefetch(&m_slots[sym]);
+    __builtin_prefetch(&m_slots[sym][0]);
+    __builtin_prefetch(&m_slots[sym][1]);
     __builtin_prefetch(&m_acct[sym]);
     __builtin_prefetch(&m_enter[sym]);
     __builtin_prefetch(&m_enter[sym].ask);
+    __builtin_prefetch(&m_replace);
+    __builtin_prefetch(&m_stats);
     __builtin_prefetch(&m_refs[m_nextUserRef % kRefRing]);
 }
 
@@ -100,7 +103,28 @@ std::size_t OrderManager::reconcile(std::size_t sym, const QuoteTargets& t,
 
 std::size_t OrderManager::reconcileSide(std::size_t sym, Side side, bool want, Price price, Quantity qty,
                                         Outbound& out) noexcept {
-    QuoteSlot& s = m_slots[sym][idx(side)];
+    return reconcileSlot(m_slots[sym][idx(side)], sym, side, want, price, qty, out);
+}
+
+void OrderManager::warmReconcile(std::size_t sym, Outbound& out) noexcept {
+    QuoteSlot           scratch{};
+    const OmsStats      stats   = m_stats;
+    const std::uint32_t nextRef = m_nextUserRef;
+    const RefSide       ref0    = m_refs[nextRef % kRefRing];
+    const RefSide       ref1    = m_refs[(nextRef + 1) % kRefRing];
+    (void)reconcileSlot(scratch, sym, Side::Buy, true, 1, 1, out);
+    scratch.state  = QuoteState::Live;
+    scratch.price  = 1;
+    scratch.leaves = 1;
+    (void)reconcileSlot(scratch, sym, Side::Buy, true, 2, 1, out);
+    m_stats                          = stats;
+    m_nextUserRef                    = nextRef;
+    m_refs[nextRef % kRefRing]       = ref0;
+    m_refs[(nextRef + 1) % kRefRing] = ref1;
+}
+
+std::size_t OrderManager::reconcileSlot(QuoteSlot& s, std::size_t sym, Side side, bool want, Price price,
+                                        Quantity qty, Outbound& out) noexcept {
     if (want && qty == 0) {
         want = false;
     }

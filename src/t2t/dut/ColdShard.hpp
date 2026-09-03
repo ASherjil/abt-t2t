@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <span>
@@ -34,14 +35,15 @@ public:
     void start();
     void stop();
 
-    [[nodiscard]] const BookTable& books() const noexcept;
-    [[nodiscard]] std::uint64_t    applied() const noexcept;
-    [[nodiscard]] std::uint64_t    packets() const noexcept;
-    [[nodiscard]] std::uint64_t    dropped() const noexcept;
-    [[nodiscard]] std::uint64_t    stale() const noexcept;
-    [[nodiscard]] std::size_t      maxDepth() const noexcept;
-    [[nodiscard]] int              core() const noexcept;
-    [[nodiscard]] bool             running() const noexcept;
+    [[nodiscard]] const BookTable&               books() const noexcept;
+    [[nodiscard]] std::uint64_t                  applied() const noexcept;
+    [[nodiscard]] std::uint64_t                  packets() const noexcept;
+    [[nodiscard]] std::uint64_t                  dropped() const noexcept;
+    [[nodiscard]] std::uint64_t                  stale() const noexcept;
+    [[nodiscard]] std::size_t                    maxDepth() const noexcept;
+    [[nodiscard]] int                            core() const noexcept;
+    [[nodiscard]] bool                           running() const noexcept;
+    [[nodiscard]] std::span<const std::uint64_t> reanchorSeqs() const noexcept;
 
 private:
     static constexpr std::uint32_t kDepthSampleEvery = 256;
@@ -57,10 +59,12 @@ private:
     int                          m_core;
     std::uint64_t                m_dropped                 = 0;
     alignas(util::kCacheLineBytes) std::uint64_t m_applied = 0;
-    std::uint64_t m_packets                                = 0;
-    std::uint64_t m_stale                                  = 0;
-    std::size_t   m_maxDepth                               = 0;
-    std::jthread  m_thread;
+    std::uint64_t                 m_packets                = 0;
+    std::uint64_t                 m_stale                  = 0;
+    std::size_t                   m_maxDepth               = 0;
+    std::array<std::uint64_t, 16> m_reanchorSeqs{};
+    std::size_t                   m_reanchorCount = 0;
+    std::jthread                  m_thread;
 };
 
 }   // namespace abt::dut
