@@ -540,6 +540,8 @@ void test_transport_login_roundtrip() {
     std::array<std::byte, 64> soupBuf{};
     const auto                ack = soup::packLoginAccepted(soupBuf.data(), "SIM0000001", 1);
     std::vector<std::uint8_t> frame(net::kL2L3L4Overhead + ack.size(), 0);
+    frame[16] = static_cast<std::uint8_t>((frame.size() - net::kEthHeaderSize) >> 8);
+    frame[17] = static_cast<std::uint8_t>((frame.size() - net::kEthHeaderSize) & 0xff);
     frame[36] = static_cast<std::uint8_t>(41001u >> 8);
     frame[37] = static_cast<std::uint8_t>(41001u & 0xff);
     std::memcpy(frame.data() + net::kL2L3L4Overhead, ack.data(), ack.size());

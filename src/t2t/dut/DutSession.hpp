@@ -516,12 +516,12 @@ void DutSession<Mode, Strat, Io>::poll()
             m_idleSince = true;
             break;
         }
-        const auto raw = f.data;
-        if (raw.size() > net::kL2L3L4Overhead) {
-            const auto*                      frame = reinterpret_cast<const std::uint8_t*>(raw.data());
-            const auto*                      p     = reinterpret_cast<const std::byte*>(raw.data());
-            const std::span<const std::byte> payload{p + net::kL2L3L4Overhead,
-                                                     raw.size() - net::kL2L3L4Overhead};
+        const auto        raw   = f.data;
+        const auto*       frame = reinterpret_cast<const std::uint8_t*>(raw.data());
+        const auto*       p     = reinterpret_cast<const std::byte*>(raw.data());
+        const std::size_t len   = net::udpPayloadLen(p, raw.size());
+        if (len > 0) {
+            const std::span<const std::byte> payload{p + net::kL2L3L4Overhead, len};
             if (udpDstPort(frame) == m_io.ackPort) {
                 if (payload[0] == std::byte{0}) [[unlikely]] {
                     soup::Packet sp{};

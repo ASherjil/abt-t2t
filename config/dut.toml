@@ -45,12 +45,12 @@ session      = "SIM0000001"
 username     = "DUT001"
 
 [transport]
-interface = "cx1"            # NIC the DUT drives (ConnectX-4 Lx port 1 in loopback; X2522 later)
-driver    = "mlx5_core"      # "mlx5_core" | "sfc" (dpdk backend devargs policy)
+interface = "cx1"            # NIC the DUT drives: cx1 = ConnectX-4 Lx port 1 (verbs); enp1s0f0 = X2522-Plus port 0 (ef_vi)
+driver    = "mlx5_core"      # "mlx5_core" | "sfc" (dpdk backend devargs policy; "sfc" with the X2522)
 cpu_core  = 6                # isolated core the DUT hot loop pins to
 
 [network]
-local_mac = "b8:83:03:9c:d4:5d"   # cx1
+local_mac = "b8:83:03:9c:d4:5d"   # cx1 (X2522 enp1s0f0 = 00:0f:53:ad:3c:90, enp1s0f1 = 00:0f:53:ad:3c:91)
 local_ip  = "10.0.0.2"
 peer_mac  = "b8:83:03:9c:d4:5c"   # cx0 (sim)
 peer_ip   = "10.0.0.1"

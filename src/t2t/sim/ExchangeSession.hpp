@@ -579,11 +579,11 @@ bool ExchangeSession<Mode, Tx>::pollOrderEntry(std::uint64_t ts)
 {
     for (auto f = m_io.tx->tryReceive(); f.status != 0; f = m_io.tx->tryReceive()) {
         ++m_stats.oePackets;
-        const auto raw = f.data;
-        if (raw.size() > net::kL2L3L4Overhead) {
-            const auto*                      p = reinterpret_cast<const std::byte*>(raw.data());
-            const std::span<const std::byte> payload{p + net::kL2L3L4Overhead,
-                                                     raw.size() - net::kL2L3L4Overhead};
+        const auto        raw = f.data;
+        const auto*       p   = reinterpret_cast<const std::byte*>(raw.data());
+        const std::size_t len = net::udpPayloadLen(p, raw.size());
+        if (len > 0) {
+            const std::span<const std::byte> payload{p + net::kL2L3L4Overhead, len};
             if (payload[0] == std::byte{0}) [[unlikely]] {
                 soup::Packet sp{};
                 if (soup::parse(payload, sp) != 0 && sp.type == soup::Type::LoginRequest) {

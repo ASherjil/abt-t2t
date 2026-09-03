@@ -17,6 +17,8 @@ inline constexpr std::size_t kIpv4HeaderSize = 20;
 inline constexpr std::size_t kUdpHeaderSize  = 8;
 inline constexpr std::size_t kL2L3L4Overhead = kEthHeaderSize + kIpv4HeaderSize + kUdpHeaderSize;
 
+[[nodiscard]] inline std::size_t udpPayloadLen(const std::byte* frame, std::size_t frameLen) noexcept;
+
 inline constexpr std::uint16_t kEtherTypeIpv4    = 0x0800;
 inline constexpr std::uint8_t  kIpv4VerIhl       = 0x45;
 inline constexpr std::uint8_t  kIpProtocolUdp    = 17;
@@ -68,5 +70,19 @@ struct UdpHeader {
 static_assert(sizeof(UdpHeader) == kUdpHeaderSize);
 static_assert(alignof(UdpHeader) == 1);
 static_assert(std::is_trivially_copyable_v<UdpHeader>);
+
+inline std::size_t udpPayloadLen(const std::byte* frame, std::size_t frameLen) noexcept {
+    if (frameLen <= kL2L3L4Overhead) {
+        return 0;
+    }
+    const auto*       ip    = reinterpret_cast<const Ipv4Header*>(frame + kEthHeaderSize);
+    const std::size_t total = ip->totalLen.value();
+    if (total < kIpv4HeaderSize + kUdpHeaderSize) {
+        return 0;
+    }
+    const std::size_t declared = total - kIpv4HeaderSize - kUdpHeaderSize;
+    const std::size_t present  = frameLen - kL2L3L4Overhead;
+    return declared < present ? declared : present;
+}
 
 }   // namespace abt::net

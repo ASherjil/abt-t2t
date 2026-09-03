@@ -2,7 +2,9 @@
 # Loopback run on the rig: exchange_sim_<backend> (cx0) <-DAC-> dut_<backend> (cx1), both on isolated
 # cores, for a fixed duration, then a clean SIGINT shutdown so both binaries print their final report.
 #
-#   scripts/loopback_test.sh [seconds] [backend] [preset]     defaults: 10  verbs  release
+#   scripts/loopback_test.sh [seconds] [sim backend] [preset] [dut backend]
+#       defaults: 10  verbs  release  <same as sim>
+#   e.g. scripts/loopback_test.sh 150 verbs release ef_vi   (sim on the ConnectX-4 Lx, DUT on the X2522)
 #
 # Needs root for the raw-packet QPs; re-execs itself under sudo. Logs land in results/loopback_<ts>/.
 set -euo pipefail
@@ -10,23 +12,27 @@ set -euo pipefail
 duration="${1:-10}"
 backend="${2:-verbs}"
 preset="${3:-release}"
+dut_backend="${4:-${backend}}"
 
 self="$(readlink -f "$0")"
 cd "$(dirname "${self}")/.."
 
-if [[ "${backend}" != "socket" && "${EUID}" -ne 0 ]]; then
-    exec sudo --preserve-env=HOME "${self}" "${duration}" "${backend}" "${preset}"
+if [[ ( "${backend}" != "socket" || "${dut_backend}" != "socket" ) && "${EUID}" -ne 0 ]]; then
+    exec sudo --preserve-env=HOME "${self}" "${duration}" "${backend}" "${preset}" "${dut_backend}"
 fi
 
-suffix="_${backend}"
-if [[ "${backend}" == "socket" ]]; then
-    suffix=""
-fi
-sim_bin="build/${preset}/apps/exchange_sim${suffix}"
-dut_bin="build/${preset}/apps/dut${suffix}"
+bin_suffix() {
+    if [[ "$1" == "socket" ]]; then
+        echo ""
+    else
+        echo "_$1"
+    fi
+}
+sim_bin="build/${preset}/apps/exchange_sim$(bin_suffix "${backend}")"
+dut_bin="build/${preset}/apps/dut$(bin_suffix "${dut_backend}")"
 for bin in "${sim_bin}" "${dut_bin}"; do
     if [[ ! -x "${bin}" ]]; then
-        echo "missing ${bin} — build the '${backend}' tier first (scripts/build.sh)"; exit 1
+        echo "missing ${bin} — build a tier that includes it first (scripts/build.sh)"; exit 1
     fi
 done
 
@@ -38,7 +44,7 @@ mkdir -p "${out}"
     for d in "build/${preset}/_deps/abtrda3-src" "${FETCHCONTENT_SOURCE_DIR_ABTRDA3:-}"; do
         [[ -n "${d}" && -d "${d}/.git" ]] && echo "abtrda3 $(git -C "${d}" rev-parse --short HEAD)" && break
     done
-    echo "backend ${backend}  preset ${preset}  duration ${duration}s  host $(hostname)  $(date -Is)"
+    echo "sim backend ${backend}  dut backend ${dut_backend}  preset ${preset}  duration ${duration}s  host $(hostname)  $(date -Is)"
     echo "sw_timing $(sed -n 's/^ABT_SW_TIMING:BOOL=//p' "build/${preset}/CMakeCache.txt")"
     echo "hlog $(sed -n 's/^log_file *= *"\([^"]*\)".*/\1/p' config/dut.toml)  start_epoch $(date +%s)"
 } > "${out}/versions.txt"

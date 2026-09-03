@@ -26,13 +26,17 @@ echo "Backends (one exchange_sim + one dut binary per backend):"
 echo "1) socket only            -> exchange_sim, dut                                (no NIC deps)"
 echo "2) socket + dpdk          -> + exchange_sim_dpdk, dut_dpdk                    (libdpdk)"
 echo "3) socket + dpdk + verbs  -> + exchange_sim_verbs, dut_verbs                  (libdpdk + rdma-core)"
-read -rp "Backend tier [1/2/3] (default 1): " backend_choice
+echo "4) socket + ef_vi         -> + exchange_sim_ef_vi, dut_ef_vi                  (Onload libciul)"
+echo "5) all                    -> socket + dpdk + verbs + ef_vi                     (rig: sim on verbs, DUT on ef_vi)"
+read -rp "Backend tier [1/2/3/4/5] (default 1): " backend_choice
 backend_choice="${backend_choice:-1}"
 
 case "${backend_choice}" in
     1) backend="socket" ;;
     2) backend="dpdk"   ;;
     3) backend="verbs"  ;;
+    4) backend="ef_vi"  ;;
+    5) backend="all"    ;;
     *) echo "Invalid backend tier"; exit 1 ;;
 esac
 

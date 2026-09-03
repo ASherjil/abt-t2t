@@ -65,6 +65,18 @@ void testTemplate() {
     CHECK_EQ(byteAt(h, 37), 0x28);
 }
 
+void testUdpPayloadLen() {
+    const net::UdpFramer                             fr{makeEndpoints()};
+    std::array<std::byte, net::kL2L3L4Overhead + 64> slot{};
+    std::memcpy(slot.data(), fr.header().data(), net::kL2L3L4Overhead);
+    fr.patch(slot.data(), 18);
+    CHECK_EQ(net::udpPayloadLen(slot.data(), slot.size()), 18u);
+    CHECK_EQ(net::udpPayloadLen(slot.data(), net::kL2L3L4Overhead + 10), 10u);
+    CHECK_EQ(net::udpPayloadLen(slot.data(), net::kL2L3L4Overhead), 0u);
+    std::array<std::byte, net::kL2L3L4Overhead + 8> zero{};
+    CHECK_EQ(net::udpPayloadLen(zero.data(), zero.size()), 0u);
+}
+
 void testPatch() {
     const net::UdpFramer fr{makeEndpoints()};
 
@@ -88,5 +100,6 @@ int main() {
     testChecksum();
     testTemplate();
     testPatch();
+    testUdpPayloadLen();
     return abt::test::summary("net");
 }

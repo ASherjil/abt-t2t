@@ -134,6 +134,8 @@ void testLoginHandshake() {
     std::array<std::byte, 64> soupBuf{};
     const auto                login = soup::packLoginRequest(soupBuf.data(), "DUT001", "SIM0000001");
     std::vector<std::uint8_t> frame(net::kL2L3L4Overhead + login.size(), 0);
+    frame[16] = static_cast<std::uint8_t>((frame.size() - net::kEthHeaderSize) >> 8);
+    frame[17] = static_cast<std::uint8_t>((frame.size() - net::kEthHeaderSize) & 0xff);
     std::memcpy(frame.data() + net::kL2L3L4Overhead, login.data(), login.size());
     tx.inbound.push_back(frame);
 
@@ -174,6 +176,8 @@ void testOrderEntryRx() {
     o.appendageLength    = 0;
 
     std::vector<std::uint8_t> frame(net::kL2L3L4Overhead + sizeof o, 0);
+    frame[16] = static_cast<std::uint8_t>((frame.size() - net::kEthHeaderSize) >> 8);
+    frame[17] = static_cast<std::uint8_t>((frame.size() - net::kEthHeaderSize) & 0xff);
     std::memcpy(frame.data() + net::kL2L3L4Overhead, &o, sizeof o);
     tx.inbound.push_back(frame);
 
