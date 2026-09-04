@@ -59,7 +59,8 @@ void printOpenTraces(Session& sess) {
 }
 
 template <class Session>
-void printDutReport(Session& sess, util::ThreadCounters atStart, util::ThreadCounters now) {
+void printDutReport(Session& sess, util::ThreadCounters atStart, util::ThreadCounters now, int core,
+                    util::CoreInterrupts irqAtStart, util::CoreInterrupts irqNow) {
     const util::ProcessMemory mem = util::processMemory();
     fmt::print("[mem] rss={} MB peak={} MB hugetlb={} MB\n", mem.rssMb, mem.peakRssMb, mem.hugetlbMb);
     fmt::print("[mem] hot-thread page faults during run: minor={} major={}\n",
@@ -67,6 +68,11 @@ void printDutReport(Session& sess, util::ThreadCounters atStart, util::ThreadCou
     fmt::print("[sched] hot-thread context switches during run: involuntary={} voluntary={}\n",
                now.involuntarySwitches - atStart.involuntarySwitches,
                now.voluntarySwitches - atStart.voluntarySwitches);
+    fmt::print(
+        "[irq] core {} interrupts during run: tlb-shootdown={} function-call={} reschedule={} timer={}\n",
+        core, irqNow.tlbShootdowns - irqAtStart.tlbShootdowns,
+        irqNow.functionCalls - irqAtStart.functionCalls, irqNow.reschedules - irqAtStart.reschedules,
+        irqNow.timerTicks - irqAtStart.timerTicks);
     sess.t2t().summary();
     if constexpr (build::kSwTiming) {
         sess.t2tSw().summary();
@@ -163,6 +169,7 @@ int runDut(const DutAppConfig& cfg, typename T::Type& backend, volatile std::sig
         sess.startCold();
         (void)util::pinThread(cfg.transport.cpuCore);
         const util::ThreadCounters countersAtStart = util::threadCounters();
+        const util::CoreInterrupts irqAtStart      = util::coreInterrupts(cfg.transport.cpuCore);
         sess.run(stop, [&] {
             const std::uint64_t now = monotonicNs();
             if (now >= nextLog) {
@@ -171,10 +178,11 @@ int runDut(const DutAppConfig& cfg, typename T::Type& backend, volatile std::sig
             }
         });
         const util::ThreadCounters countersAtEnd = util::threadCounters();
+        const util::CoreInterrupts irqAtEnd      = util::coreInterrupts(cfg.transport.cpuCore);
         sess.stopCold();
         consumer.stop();
         printDutStatus(sess.status(monotonicNs() - start));
-        printDutReport(sess, countersAtStart, countersAtEnd);
+        printDutReport(sess, countersAtStart, countersAtEnd, cfg.transport.cpuCore, irqAtStart, irqAtEnd);
         return 0;
     } else {
         DutSession<IoMode::Transport, QuoterStrategy, typename T::Type> sess(cfg.session,
@@ -196,6 +204,7 @@ int runDut(const DutAppConfig& cfg, typename T::Type& backend, volatile std::sig
             return 1;
         }
         const util::ThreadCounters countersAtStart = util::threadCounters();
+        const util::CoreInterrupts irqAtStart      = util::coreInterrupts(cfg.transport.cpuCore);
         sess.sendLogin(cfg.socket.session, cfg.socket.username);
         std::uint64_t nextLogin = monotonicNs() + kDutLogPeriodNs;
         std::uint64_t nextWarm  = nextLogin;
@@ -229,10 +238,11 @@ int runDut(const DutAppConfig& cfg, typename T::Type& backend, volatile std::sig
             }
         }
         const util::ThreadCounters countersAtEnd = util::threadCounters();
+        const util::CoreInterrupts irqAtEnd      = util::coreInterrupts(cfg.transport.cpuCore);
         sess.stopCold();
         consumer.stop();
         printDutStatus(sess.status(monotonicNs() - start));
-        printDutReport(sess, countersAtStart, countersAtEnd);
+        printDutReport(sess, countersAtStart, countersAtEnd, cfg.transport.cpuCore, irqAtStart, irqAtEnd);
         return 0;
     }
 }

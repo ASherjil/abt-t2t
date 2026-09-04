@@ -16,6 +16,13 @@ struct ThreadCounters {
     long voluntarySwitches   = 0;
 };
 
+struct CoreInterrupts {
+    long tlbShootdowns = 0;
+    long functionCalls = 0;
+    long reschedules   = 0;
+    long timerTicks    = 0;
+};
+
 struct ProcessMemory {
     std::size_t rssMb     = 0;
     std::size_t peakRssMb = 0;
@@ -24,6 +31,7 @@ struct ProcessMemory {
 
 [[nodiscard]] MemLockResult  lockAndPrefaultMemory() noexcept;
 [[nodiscard]] ThreadCounters threadCounters() noexcept;
+[[nodiscard]] CoreInterrupts coreInterrupts(int cpu);
 [[nodiscard]] ProcessMemory  processMemory();
 
 }   // namespace abt::util

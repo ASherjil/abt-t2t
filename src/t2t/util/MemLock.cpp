@@ -3,6 +3,7 @@
 #include <cerrno>
 #include <cstddef>
 #include <fstream>
+#include <sstream>
 #include <string>
 
 #include <malloc.h>
@@ -55,6 +56,47 @@ ProcessMemory processMemory() {
         status.ignore(4096, '\n');
     }
     return m;
+}
+
+CoreInterrupts coreInterrupts(int cpu) {
+    CoreInterrupts c{};
+    std::ifstream  in("/proc/interrupts");
+    std::string    line;
+    int            column = -1;
+    if (std::getline(in, line)) {
+        std::istringstream head(line);
+        std::string        cell;
+        for (int i = 0; head >> cell; ++i) {
+            if (cell == "CPU" + std::to_string(cpu)) {
+                column = i;
+            }
+        }
+    }
+    if (column < 0) {
+        return c;
+    }
+    while (std::getline(in, line)) {
+        std::istringstream row(line);
+        std::string        label;
+        row >> label;
+        long value = 0;
+        for (int i = 0; i <= column; ++i) {
+            if (!(row >> value)) {
+                value = 0;
+                break;
+            }
+        }
+        if (label == "TLB:") {
+            c.tlbShootdowns = value;
+        } else if (label == "CAL:") {
+            c.functionCalls = value;
+        } else if (label == "RES:") {
+            c.reschedules = value;
+        } else if (label == "LOC:") {
+            c.timerTicks = value;
+        }
+    }
+    return c;
 }
 
 ThreadCounters threadCounters() noexcept {
