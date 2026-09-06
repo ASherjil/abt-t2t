@@ -69,7 +69,7 @@ void testUdpPayloadLen() {
     const net::UdpFramer                             fr{makeEndpoints()};
     std::array<std::byte, net::kL2L3L4Overhead + 64> slot{};
     std::memcpy(slot.data(), fr.header().data(), net::kL2L3L4Overhead);
-    fr.patch(slot.data(), 18);
+    abt::net::UdpFramer::patch(slot.data(), 18);
     CHECK_EQ(net::udpPayloadLen(slot.data(), slot.size()), 18u);
     CHECK_EQ(net::udpPayloadLen(slot.data(), net::kL2L3L4Overhead + 10), 10u);
     CHECK_EQ(net::udpPayloadLen(slot.data(), net::kL2L3L4Overhead), 0u);
@@ -83,7 +83,7 @@ void testPatch() {
     constexpr std::size_t                                    payloadLen = 18;
     std::array<std::byte, net::kL2L3L4Overhead + payloadLen> frame{};
     std::memcpy(frame.data(), fr.header().data(), net::kL2L3L4Overhead);
-    fr.patch(frame.data(), payloadLen);
+    abt::net::UdpFramer::patch(frame.data(), payloadLen);
 
     CHECK_EQ(byteAt(frame, 16), 0x00);
     CHECK_EQ(byteAt(frame, 17), 0x2E);

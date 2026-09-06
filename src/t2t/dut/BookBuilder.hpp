@@ -78,7 +78,8 @@ private:
 
         [[nodiscard]] static Resting make(Price price, Quantity shares, Side side, bool own) noexcept {
             const std::uint32_t sh = shares > kSharesMask ? kSharesMask : shares;
-            return Resting{price, sh | (side == Side::Sell ? kSell : 0u) | (own ? kOwn : 0u)};
+            return Resting{.price = price,
+                           .bits  = sh | (side == Side::Sell ? kSell : 0u) | (own ? kOwn : 0u)};
         }
 
         [[nodiscard]] Quantity shares() const noexcept {

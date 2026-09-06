@@ -66,9 +66,7 @@ void ColdShard::loop(const std::stop_token& stop) noexcept {
         if (++sinceDepth == kDepthSampleEvery) {
             sinceDepth              = 0;
             const std::size_t depth = m_queue.size();
-            if (depth > m_maxDepth) {
-                m_maxDepth = depth;
-            }
+            m_maxDepth              = std::max(depth, m_maxDepth);
         }
     }
     while (const FrameRef* f = m_queue.front()) {

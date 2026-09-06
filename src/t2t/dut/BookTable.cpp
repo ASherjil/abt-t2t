@@ -60,7 +60,7 @@ int BookTable::apply(std::span<const std::byte> msg) {
         onDirectory(msg, locate);
         return m_books[locate].hot;
     }
-    Entry& e = m_books[locate];
+    const Entry& e = m_books[locate];
     if (e.book == nullptr) [[unlikely]] {
         if (m_cfg.scope == BookScope::HotOnly && e.hot == kCold) {
             return kCold;

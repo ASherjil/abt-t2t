@@ -38,6 +38,8 @@ BookBuilder::BookBuilder(const BookConfig& cfg)
       m_baseTick(cfg.tickWire),
       m_subDollarTick(cfg.subDollarTickWire),
       m_anchored(false),
+      m_reanchorsOut(cfg.reanchors),
+      m_rescansOut(cfg.rescans),
       m_bidSize(cfg.memory == nullptr ? std::pmr::get_default_resource() : cfg.memory),
       m_askSize(cfg.memory == nullptr ? std::pmr::get_default_resource() : cfg.memory),
       m_bidBits(cfg.memory == nullptr ? std::pmr::get_default_resource() : cfg.memory),
@@ -46,8 +48,7 @@ BookBuilder::BookBuilder(const BookConfig& cfg)
     m_bidBits.reset(1);
     m_askBits.reset(1);
     m_orders.countGrowsIn(cfg.rehashes);
-    m_reanchorsOut = cfg.reanchors;
-    m_rescansOut   = cfg.rescans;
+
     if (cfg.anchorPrice != kNoPrice) {
         anchor(cfg.anchorPrice, true);
     }
@@ -69,10 +70,8 @@ void BookBuilder::anchor(Price price, bool trusted) {
     const Price span    = static_cast<Price>(band) * tick;
     const Price aligned = price - price % tick;
     Price       newMin  = aligned - span;
-    if (newMin < 0) {
-        newMin = 0;
-    }
-    const Price newMax = newMin + 2 * span;
+    newMin              = std::max(newMin, 0);
+    const Price newMax  = newMin + 2 * span;
 
     const bool shiftable = m_anchored && tick == m_tickWire &&
                            (m_parkedShares == 0 || newMax < m_parkedLo || newMin > m_parkedHi);

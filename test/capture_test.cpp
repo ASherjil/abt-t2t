@@ -27,7 +27,7 @@ void test_keeps_slowest() {
     for (std::uint32_t i = 1; i <= 20; ++i) {
         const auto pkt = payloadOf(i);
         if (static_cast<std::uint64_t>(i) > cap.floor()) {
-            cap.offer(i, i * 100, i, pkt);
+            cap.offer(i, static_cast<std::uint64_t>(i * 100), i, pkt);
         }
     }
     const auto sorted = cap.sorted();

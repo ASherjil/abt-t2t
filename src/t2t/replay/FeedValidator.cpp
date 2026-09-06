@@ -1,5 +1,7 @@
 #include "t2t/replay/FeedValidator.hpp"
 
+#include <algorithm>
+
 #include <fmt/core.h>
 
 #include "t2t/protocol/Itch50.hpp"
@@ -177,16 +179,12 @@ void FeedValidator::onMessage(std::span<const std::byte> msg) {
                     ++st.locked;
                 }
             }
-            if (b->liveOrders() > st.maxLive) {
-                st.maxLive = b->liveOrders();
-            }
+            st.maxLive = std::max(b->liveOrders(), st.maxLive);
         }
     }
     if ((m_messages & 0xffffu) == 0) {
         const std::size_t live = m_books.liveOrders();
-        if (live > m_maxLive) {
-            m_maxLive = live;
-        }
+        m_maxLive              = std::max(live, m_maxLive);
     }
 }
 

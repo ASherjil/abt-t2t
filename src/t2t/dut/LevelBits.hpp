@@ -48,7 +48,7 @@ public:
     }
 
     [[nodiscard]] std::size_t prev(std::size_t i) const noexcept {
-        std::size_t         w = i >> 6;
+        const std::size_t   w = i >> 6;
         const std::size_t   b = i & 63;
         const std::uint64_t m = m_l0[w] & (b == 63 ? ~std::uint64_t{0} : ((std::uint64_t{1} << (b + 1)) - 1));
         if (m != 0) {

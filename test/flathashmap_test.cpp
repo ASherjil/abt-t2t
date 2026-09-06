@@ -92,7 +92,7 @@ void test_erase_at() {
         map.insertOrAssign(k, static_cast<std::uint32_t>(k * 10));
     }
     for (std::uint64_t k = 1; k <= 9; k += 2) {
-        std::uint32_t* v = map.find(k);
+        const std::uint32_t* v = map.find(k);
         CHECK(v != nullptr);
         if (v != nullptr) {
             map.eraseAt(map.indexOf(v));
@@ -115,7 +115,7 @@ void test_erase_at() {
         x ^= x << 17;
         const std::uint64_t key = 1 + (x % 700);
         if ((x >> 20) % 3 == 0) {
-            std::uint32_t* v = big.find(key);
+            const std::uint32_t* v = big.find(key);
             if (v != nullptr) {
                 big.eraseAt(big.indexOf(v));
             }
