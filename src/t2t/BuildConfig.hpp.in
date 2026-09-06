@@ -2,6 +2,7 @@
 
 namespace abt::build {
 
-inline constexpr bool kSwTiming = @ABT_SW_TIMING_VALUE@;
+inline constexpr bool kSwTiming     = @ABT_SW_TIMING_VALUE@;
+inline constexpr bool kHwTimestamps = @ABT_HW_TIMESTAMPS_VALUE@;
 
 }   // namespace abt::build

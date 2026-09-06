@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: 2026 Areeb Sherjil
+
 //
 // Created by asherjil on 3/2/26.
 //
@@ -7,8 +10,6 @@
 
 #include <cstdint>
 #include <span>
-
-#include "RxFrame.hpp"
 
 template <typename T>
 concept TxRing = requires (T t, std::span<const std::uint8_t> frame, std::uint32_t len) {
@@ -30,7 +31,7 @@ template <typename T>
 concept RxRing = requires (T t) {
     {
         t.tryReceive()
-    } noexcept -> std::same_as<RxFrame>;
+    } noexcept -> std::same_as<std::span<const std::uint8_t>>;
     {
         t.release()
     } noexcept;

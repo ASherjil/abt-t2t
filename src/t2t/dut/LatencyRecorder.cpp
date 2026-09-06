@@ -91,7 +91,16 @@ bool LatencyRecorder::drainOne() noexcept {
     }
     const Sample sample = *head;
     m_queue.pop();
-    const auto v = static_cast<std::int64_t>(static_cast<double>(sample.raw) * m_nsPerUnit);
+    std::int64_t v = 0;
+    if (m_convert != nullptr) {
+        v = m_convert(sample.raw, m_convertParam);
+        if (v < 0) {
+            ++m_rejected;
+            return true;
+        }
+    } else {
+        v = static_cast<std::int64_t>(static_cast<double>(sample.raw) * m_nsPerUnit);
+    }
     m_hist.record(v);
     m_interval.record(v);
     std::uint64_t stagesNs = 0;
@@ -112,13 +121,22 @@ void LatencyRecorder::setStageNames(const StageNames& names) noexcept {
     m_stageNames = names;
 }
 
+void LatencyRecorder::setConverter(Converter convert, std::uint64_t param) noexcept {
+    m_convert      = convert;
+    m_convertParam = param;
+}
+
+std::uint64_t LatencyRecorder::rejected() const noexcept {
+    return m_rejected;
+}
+
 const StageNames& LatencyRecorder::stageNames() const noexcept {
     return m_stageNames;
 }
 
 void LatencyRecorder::Worst::offer(std::int64_t ns, std::uint64_t ctx, std::uint64_t stages) noexcept {
     if (n < kWorst) {
-        items[n++] = Outlier{ns, ctx, stages};
+        items[n++] = Outlier{.ns = ns, .ctx = ctx, .stages = stages};
         return;
     }
     std::size_t lowest = 0;
@@ -128,7 +146,7 @@ void LatencyRecorder::Worst::offer(std::int64_t ns, std::uint64_t ctx, std::uint
         }
     }
     if (ns > items[lowest].ns) {
-        items[lowest] = Outlier{ns, ctx, stages};
+        items[lowest] = Outlier{.ns = ns, .ctx = ctx, .stages = stages};
     }
 }
 
@@ -218,6 +236,9 @@ void LatencyRecorder::summary() {
     fmt::print("[{}] ns: n={} dropped={} min={} p50={} p90={} p99={} p99.9={} p99.99={} p99.999={} max={}\n",
                m_name, count(), dropped(), min(), percentile(50.0), percentile(90.0), percentile(99.0),
                percentile(99.9), percentile(99.99), percentile(99.999), max());
+    if (m_rejected > 0) {
+        fmt::print("[{}] rejected={} (invalid hardware stamps)\n", m_name, m_rejected);
+    }
     if (m_worstRun.n > 0) {
         fmt::print("[{} worst] {}\n", m_name, describeWorst(worstRun(), m_stageNames));
     }

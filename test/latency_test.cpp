@@ -88,11 +88,29 @@ void test_consumer_thread() {
 
 }   // namespace
 
+void test_converter_rejects_invalid() {
+    dut::LatencyRecorder rec("hw", 64, 1.0, 3);
+    rec.setConverter(
+        +[](std::uint64_t raw, std::uint64_t floor) noexcept -> std::int64_t {
+            return raw < floor ? -1 : static_cast<std::int64_t>(raw - floor);
+        },
+        100);
+    rec.record(50);
+    rec.record(150);
+    rec.record(400);
+    CHECK_EQ(rec.drain(), 3u);
+    CHECK_EQ(rec.count(), 2);
+    CHECK_EQ(rec.rejected(), 1u);
+    CHECK_EQ(rec.min(), 50);
+    CHECK_EQ(rec.max(), 300);
+}
+
 int main() {
     test_worst_samples_keep_context();
     test_drain_and_percentiles();
     test_unit_conversion();
     test_overflow_counts_drops();
     test_consumer_thread();
+    test_converter_rejects_invalid();
     return abt::test::summary("latency");
 }

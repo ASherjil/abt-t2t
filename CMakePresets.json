@@ -11,10 +11,10 @@
     },
     {
       "name": "release-hw",
-      "displayName": "Release, hardware timestamps only (ABT_SW_TIMING=OFF)",
+      "displayName": "Release, hardware timestamps only (ABT_HW_TIMESTAMPS=ON, ABT_SW_TIMING=OFF)",
       "generator": "Ninja",
       "binaryDir": "${sourceDir}/build/release-hw",
-      "cacheVariables": { "CMAKE_BUILD_TYPE": "Release", "ABT_SW_TIMING": "OFF" }
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Release", "ABT_SW_TIMING": "OFF", "ABT_HW_TIMESTAMPS": "ON" }
     },
     {
       "name": "relwithdebinfo",

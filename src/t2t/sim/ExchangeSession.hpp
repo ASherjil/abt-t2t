@@ -577,9 +577,8 @@ template <IoMode Mode, class Tx>
 bool ExchangeSession<Mode, Tx>::pollOrderEntry(std::uint64_t ts)
     requires (Mode == IoMode::Transport && RxRing<Tx>)
 {
-    for (auto f = m_io.tx->tryReceive(); f.status != 0; f = m_io.tx->tryReceive()) {
+    for (auto raw = m_io.tx->tryReceive(); !raw.empty(); raw = m_io.tx->tryReceive()) {
         ++m_stats.oePackets;
-        const auto        raw = f.data;
         const auto*       p   = reinterpret_cast<const std::byte*>(raw.data());
         const std::size_t len = net::udpPayloadLen(p, raw.size());
         if (len > 0) {
@@ -649,7 +648,7 @@ void ExchangeSession<Mode, Tx>::sendFrame(const net::UdpFramer& fr, std::span<co
     std::uint8_t* buf = m_io.frame.data();
     std::memcpy(buf, fr.header().data(), net::kL2L3L4Overhead);
     std::memcpy(buf + net::kL2L3L4Overhead, payload.data(), payload.size());
-    fr.patch(reinterpret_cast<std::byte*>(buf), payload.size());
+    abt::net::UdpFramer::patch(reinterpret_cast<std::byte*>(buf), payload.size());
     if (!m_io.tx->send(std::span<const std::uint8_t>{buf, frameLen})) [[unlikely]] {
         ++m_stats.txDropped;
     }

@@ -4,13 +4,14 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <optional>
 #include <span>
 #include <string_view>
 #include <vector>
 
 #include "t2t/dut/DutSession.hpp"
+#include "t2t/dut/HwStamps.hpp"
 #include "t2t/dut/Strategy.hpp"
-#include "t2t/dut/TxStamp.hpp"
 #include "t2t/protocol/EthIpUdp.hpp"
 #include "t2t/protocol/Itch50.hpp"
 #include "t2t/protocol/MoldUdp64.hpp"
@@ -71,21 +72,8 @@ struct TakeOnce {
     }
 };
 
-struct FakeStampSource {
-    std::vector<dut::TxCompletion> queue;
-    std::size_t                    idx = 0;
-
-    dut::TxCompletion pollTxTimestamp() noexcept {
-        if (idx < queue.size()) {
-            return queue[idx++];
-        }
-        return dut::TxCompletion{.userRef = 0, .sec = 0, .nsec = 0, .status = 0};
-    }
-};
-
 static_assert(dut::Strategy<JoinBid>);
 static_assert(dut::Strategy<TakeOnce>);
-static_assert(dut::TxStampSource<FakeStampSource>);
 
 dut::DutConfig baseCfg() {
     dut::DutConfig cfg{};
@@ -184,20 +172,6 @@ void test_take_and_t2t() {
 
     (void)sess.t2t().drain();
     CHECK_EQ(sess.t2t().count(), 0);
-
-    FakeStampSource src{};
-    src.queue.push_back(dut::TxCompletion{.userRef = 1u, .sec = 0u, .nsec = 1850u, .status = 1u});
-    sess.pollTxCompletions(src);
-    (void)sess.t2t().drain();
-    CHECK_EQ(sess.t2t().count(), 1);
-    CHECK_EQ(sess.t2t().min(), 850);
-    CHECK_EQ(sess.t2t().percentile(50.0), 850);
-
-    FakeStampSource stale{};
-    stale.queue.push_back(dut::TxCompletion{.userRef = 999u, .sec = 0u, .nsec = 5000u, .status = 1u});
-    sess.pollTxCompletions(stale);
-    (void)sess.t2t().drain();
-    CHECK_EQ(sess.t2t().count(), 1);
 }
 
 void test_sequence_gap_and_stale() {
@@ -464,18 +438,93 @@ struct MockIo {
     std::vector<std::uint8_t>              rxCur;
     std::size_t                            rxIdx = 0;
 
-    RxFrame tryReceive() noexcept {
+    std::span<const std::uint8_t> tryReceive() noexcept {
         if (rxIdx >= inbound.size()) {
-            return RxFrame{.data = {}, .sec = 0, .nsec = 0, .status = 0};
+            return {};
         }
         rxCur = inbound[rxIdx];
-        return RxFrame{.data = {rxCur.data(), rxCur.size()}, .sec = 0, .nsec = 0, .status = 1};
+        return {rxCur.data(), rxCur.size()};
     }
 
     void release() noexcept {
         ++rxIdx;
     }
 };
+
+struct MockHwIo : MockIo {
+    struct TxStamp {
+        std::uint32_t seq;
+        std::uint32_t minor;
+    };
+
+    static constexpr std::uint32_t kOneSecQns = 4000000000u;
+    static constexpr std::uint32_t kNone      = 0xFFFFFFFFu;
+
+    std::uint32_t        rxRaw      = 0;
+    std::uint32_t        correction = 8;
+    std::uint32_t        seq        = 0;
+    std::vector<TxStamp> stamps;
+    std::size_t          stampIdx = 0;
+
+    void commit() noexcept {
+        MockIo::commit();
+        ++seq;
+    }
+
+    [[nodiscard]] std::uint32_t hwRxTimestamp() const noexcept {
+        return rxRaw;
+    }
+
+    [[nodiscard]] std::uint32_t hwRxTimestampCorrection() const noexcept {
+        return correction;
+    }
+
+    [[nodiscard]] std::uint32_t txSequence() const noexcept {
+        return seq;
+    }
+
+    static bool rxFrameComplete() noexcept {
+        return true;
+    }
+
+    std::optional<TxStamp> pollTxTimestamp() noexcept {
+        if (stampIdx < stamps.size()) {
+            return stamps[stampIdx++];
+        }
+        return std::nullopt;
+    }
+
+    static std::optional<std::uint64_t> hwTurnaround(std::uint64_t packed, std::uint32_t corr) noexcept {
+        const std::uint32_t rx = static_cast<std::uint32_t>(packed >> 32) + corr;
+        const std::uint32_t tx = static_cast<std::uint32_t>(packed);
+        if (tx == kNone) {
+            return std::nullopt;
+        }
+        std::int64_t d = static_cast<std::int64_t>(tx) - static_cast<std::int64_t>(rx);
+        if (d < 0) {
+            d += kOneSecQns;
+        }
+        return static_cast<std::uint64_t>(d);
+    }
+};
+
+static_assert(dut::HwStampSource<MockHwIo>);
+static_assert(!dut::HwStampSource<MockIo>);
+
+std::vector<std::uint8_t> udpFrame(std::span<const std::byte> payload, std::uint16_t dstPort) {
+    std::vector<std::uint8_t> frame(net::kL2L3L4Overhead + payload.size(), 0);
+    frame[16] = static_cast<std::uint8_t>((frame.size() - net::kEthHeaderSize) >> 8);
+    frame[17] = static_cast<std::uint8_t>((frame.size() - net::kEthHeaderSize) & 0xff);
+    frame[36] = static_cast<std::uint8_t>(dstPort >> 8);
+    frame[37] = static_cast<std::uint8_t>(dstPort & 0xff);
+    std::memcpy(frame.data() + net::kL2L3L4Overhead, payload.data(), payload.size());
+    return frame;
+}
+
+std::vector<std::uint8_t> loginAcceptedFrame(std::uint16_t ackPort) {
+    std::array<std::byte, 64> soupBuf{};
+    return udpFrame(soup::packLoginAccepted(soupBuf.data(), "SIM0000001", 1), ackPort);
+}
 
 void test_cold_shard_routes_unquoted_symbols() {
     mold::Packer                packer("SESSION01", 1);
@@ -551,6 +600,57 @@ void test_transport_login_roundtrip() {
     CHECK_EQ(sess.packetsReceived(), 0u);
 }
 
+void test_hw_stamps_join_by_send_sequence() {
+    dut::DutConfig cfg = baseCfg();
+    cfg.firstUserRef   = 1;
+    dut::DutSession<dut::IoMode::Transport, TakeOnce, MockHwIo> sess(cfg,
+                                                                     TakeOnce{.trigger = 101, .qty = 5u});
+    MockHwIo                                                    io;
+    net::Endpoints                                              oeEp{};
+    oeEp.srcPort = 41001;
+    oeEp.dstPort = 40001;
+    CHECK(sess.prepareTransport(io, oeEp));
+    sess.sendLogin("SIM0000001", "DUT001");
+    CHECK_EQ(io.seq, 1u);
+    io.inbound.push_back(loginAcceptedFrame(41001));
+    sess.poll();
+    CHECK(sess.sessionEstablished());
+
+    mold::Packer                packer("SESSION01", 1);
+    std::array<std::byte, 2048> buf{};
+    packer.reset(buf.data(), buf.size());
+    (void)packer.append(bytesOf(mkAdd(1u, 'B', 500u, 100)));
+    (void)packer.append(bytesOf(mkAdd(2u, 'S', 300u, 102)));
+    io.rxRaw = 500u;
+    io.inbound.push_back(udpFrame(packer.finalize(), 41000));
+    sess.poll();
+    CHECK_EQ(sess.packetsReceived(), 1u);
+    CHECK_EQ(sess.ordersSent(), 0u);
+
+    packer.reset(buf.data(), buf.size());
+    (void)packer.append(bytesOf(mkAdd(3u, 'S', 200u, 101)));
+    io.rxRaw = 1000u;
+    io.inbound.push_back(udpFrame(packer.finalize(), 41000));
+    sess.poll();
+    CHECK_EQ(sess.ordersSent(), 1u);
+    CHECK_EQ(io.seq, 2u);
+
+    io.stamps.push_back({.seq = 0u, .minor = 7000u});
+    io.stamps.push_back({.seq = 1u, .minor = 1000u + io.correction + 3400u});
+    sess.poll();
+    (void)sess.t2t().drain();
+    CHECK_EQ(sess.t2t().count(), 1);
+    CHECK_EQ(sess.t2t().min(), 850);
+
+    io.stamps.push_back({.seq = 1u, .minor = 9000u});
+    sess.poll();
+    (void)sess.t2t().drain();
+    CHECK_EQ(sess.t2t().count(), 1);
+
+    CHECK_EQ(dut::hwStampsToNs<MockHwIo>(dut::packHwStamps(3999999000u, 3000u + 8u), 8u), 1000);
+    CHECK_EQ(dut::hwStampsToNs<MockHwIo>(dut::packHwStamps(10u, MockHwIo::kNone), 8u), -1);
+}
+
 int main() {
     test_locate_filter_session_gating_and_reset();
     test_cold_shard_routes_unquoted_symbols();
@@ -560,5 +660,6 @@ int main() {
     test_sequence_gap_and_stale();
     test_gap_pulls_live_quote();
     test_two_hot_symbols_resolved_from_directory();
+    test_hw_stamps_join_by_send_sequence();
     return abt::test::summary("dutsession");
 }

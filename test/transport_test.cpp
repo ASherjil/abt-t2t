@@ -14,8 +14,6 @@
 #include <string_view>
 #include <vector>
 
-#include "third_party/abtrda3/RxFrame.hpp"
-
 #include "t2t/protocol/Checksum.hpp"
 #include "t2t/protocol/EthIpUdp.hpp"
 #include "t2t/protocol/MoldUdp64.hpp"
@@ -57,12 +55,12 @@ struct MockTx {
     std::vector<std::uint8_t>              rxCur;
     std::size_t                            rxIdx = 0;
 
-    RxFrame tryReceive() noexcept {
+    std::span<const std::uint8_t> tryReceive() noexcept {
         if (rxIdx >= inbound.size()) {
-            return RxFrame{.data = {}, .sec = 0, .nsec = 0, .status = 0};
+            return {};
         }
         rxCur = inbound[rxIdx];
-        return RxFrame{.data = {rxCur.data(), rxCur.size()}, .sec = 0, .nsec = 0, .status = 1};
+        return {rxCur.data(), rxCur.size()};
     }
 
     void release() noexcept {

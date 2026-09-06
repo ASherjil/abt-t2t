@@ -32,10 +32,13 @@ class LatencyRecorder {
 public:
     static constexpr std::size_t kWorst = 8;
 
+    using Converter = std::int64_t (*)(std::uint64_t raw, std::uint64_t param) noexcept;
+
     LatencyRecorder(std::string name, std::size_t queueCapacity, double nsPerUnit, int sigFigs = 3);
 
     void record(std::uint64_t raw, std::uint64_t ctx = 0, std::uint64_t stages = 0) noexcept;
     void setStageNames(const StageNames& names) noexcept;
+    void setConverter(Converter convert, std::uint64_t param) noexcept;
 
     bool        drainOne() noexcept;
     std::size_t drain() noexcept;
@@ -52,6 +55,7 @@ public:
     [[nodiscard]] std::int64_t             max() const noexcept;
     [[nodiscard]] std::int64_t             percentile(double p) const noexcept;
     [[nodiscard]] std::uint64_t            dropped() const noexcept;
+    [[nodiscard]] std::uint64_t            rejected() const noexcept;
 
     void reset() noexcept;
     void summary();
@@ -77,6 +81,9 @@ private:
     util::Histogram            m_hist;
     util::Histogram            m_interval;
     double                     m_nsPerUnit;
+    Converter                  m_convert      = nullptr;
+    std::uint64_t              m_convertParam = 0;
+    std::uint64_t              m_rejected     = 0;
     std::atomic<std::uint64_t> m_dropped{0};
     Worst                      m_worstRun;
     Worst                      m_worstInterval;
@@ -108,7 +115,7 @@ private:
 };
 
 inline void LatencyRecorder::record(std::uint64_t raw, std::uint64_t ctx, std::uint64_t stages) noexcept {
-    if (!m_queue.try_push(Sample{raw, ctx, stages})) [[unlikely]] {
+    if (!m_queue.try_push(Sample{.raw = raw, .ctx = ctx, .stages = stages})) [[unlikely]] {
         m_dropped.fetch_add(1, std::memory_order_relaxed);
     }
 }

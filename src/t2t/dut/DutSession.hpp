@@ -31,6 +31,7 @@
 #include "t2t/dut/BookTable.hpp"
 #include "t2t/dut/ColdShard.hpp"
 #include "t2t/dut/DutStatus.hpp"
+#include "t2t/dut/HwStamps.hpp"
 #include "t2t/dut/LatencyRecorder.hpp"
 #include "t2t/dut/OrderManager.hpp"
 #include "t2t/dut/PacketCapture.hpp"
@@ -38,7 +39,6 @@
 #include "t2t/dut/SequenceTracker.hpp"
 #include "t2t/dut/Strategy.hpp"
 #include "t2t/dut/TxSignal.hpp"
-#include "t2t/dut/TxStamp.hpp"
 #include "t2t/lob/Types.hpp"
 #include "t2t/protocol/EthIpUdp.hpp"
 #include "t2t/protocol/MoldUdp64.hpp"
@@ -123,7 +123,7 @@ public:
 
     DutSession(const DutConfig& cfg, Strat strat);
 
-    void onMarketData(std::span<const std::byte> moldPacket, std::uint64_t rxHwts, std::uint64_t rxTsc = 0)
+    void onMarketData(std::span<const std::byte> moldPacket, std::uint64_t rxStamp, std::uint64_t rxTsc = 0)
         requires (Mode == IoMode::Loopback || Mode == IoMode::Socket);
     void onAck(std::span<const std::byte> ouch) noexcept;
 
@@ -151,9 +151,9 @@ public:
     [[nodiscard]] bool sessionEstablished() const noexcept
         requires (Mode == IoMode::Transport);
 
-    template <TxStampSource Src>
-    void pollTxCompletions(Src& src);
-    void completeTx(std::uint32_t userRef, std::uint64_t txHwts) noexcept;
+    void drainTxStamps() noexcept
+        requires (Mode == IoMode::Transport && HwStampSource<Io>);
+    void completeTx(std::uint32_t userRef, std::uint32_t txMinor) noexcept;
 
     [[nodiscard]] const BookBuilder&     book(std::size_t hot = 0) const noexcept;
     [[nodiscard]] const BookTable&       books() const noexcept;
@@ -197,14 +197,22 @@ public:
 
 private:
     static constexpr std::uint32_t  kInFlight      = 1024;
+    static constexpr std::uint32_t  kTxRefs        = 256;
+    static constexpr std::uint32_t  kNoRef         = 0xFFFFFFFFu;
+    static constexpr bool           kHwStamps      = Mode == IoMode::Transport && HwStampSource<Io>;
     static constexpr std::uint32_t  kIdleWarmEvery = 512;
     static constexpr std::uint16_t  kPrefetchAhead = 4;
     static constexpr std::size_t    kIoPrefetchMax = 8192;
     static constexpr std::ptrdiff_t kTxStrideMax   = 1 << 16;
 
+    struct TxRef {
+        std::uint32_t seq     = 0;
+        std::uint32_t userRef = kNoRef;
+    };
+
     struct InFlight {
         std::uint32_t userRef = 0;
-        std::uint64_t rxHwts  = 0;
+        std::uint64_t rxStamp = 0;
         std::uint64_t ctx     = 0;
         std::uint64_t sendTsc = 0;
         bool          live    = false;
@@ -248,12 +256,12 @@ private:
         bool                       loggedIn = false;
     };
 
-    void applyPacket(std::span<const std::byte> moldPacket, std::uint64_t rxHwts, std::uint64_t rxTsc);
+    void applyPacket(std::span<const std::byte> moldPacket, std::uint64_t rxStamp, std::uint64_t rxTsc);
     void applyMessage(std::span<const std::byte> msg);
     void onSystemEvent(std::span<const std::byte> msg) noexcept;
     void invalidateFeed(std::uint64_t seq) noexcept;
     [[nodiscard]] bool sendOrder(std::span<const std::byte> ouch);
-    void               recordSend(std::uint32_t userRef, std::uint64_t rxHwts, std::uint64_t ctx,
+    void               recordSend(std::uint32_t userRef, std::uint64_t rxStamp, std::uint64_t ctx,
                                   std::uint64_t sendTsc) noexcept;
     void               recordAck(std::span<const std::byte> ouch) noexcept;
     [[nodiscard]] static std::uint16_t   udpDstPort(const std::uint8_t* frame) noexcept;
@@ -302,6 +310,9 @@ private:
     std::vector<std::uint16_t>      m_touched;
     std::vector<std::uint32_t>      m_touchGen;
     std::array<InFlight, kInFlight> m_inflight{};
+    std::uint32_t                   m_txSeq = 0;
+
+    [[no_unique_address]] std::conditional_t<kHwStamps, std::array<TxRef, kTxRefs>, Empty> m_txRefs{};
 
     [[no_unique_address]] std::conditional_t<build::kSwTiming, PacketCapture, Empty>           m_capture{};
     [[no_unique_address]] std::conditional_t<build::kSwTiming, OpenTraces, Empty>              m_open{};
@@ -369,11 +380,11 @@ void DutSession<Mode, Strat, Io>::touch(int hot) noexcept {
 }
 
 template <IoMode Mode, Strategy Strat, class Io>
-void DutSession<Mode, Strat, Io>::onMarketData(std::span<const std::byte> moldPacket, std::uint64_t rxHwts,
+void DutSession<Mode, Strat, Io>::onMarketData(std::span<const std::byte> moldPacket, std::uint64_t rxStamp,
                                                std::uint64_t rxTsc)
     requires (Mode == IoMode::Loopback || Mode == IoMode::Socket)
 {
-    applyPacket(moldPacket, rxHwts, rxTsc == 0 ? swNow() : rxTsc);
+    applyPacket(moldPacket, rxStamp, rxTsc == 0 ? swNow() : rxTsc);
 }
 
 template <IoMode Mode, Strategy Strat, class Io>
@@ -528,6 +539,9 @@ bool DutSession<Mode, Strat, Io>::prepareTransport(Io& io, const net::Endpoints&
         net::UdpFramer::patch(m_io.oeHeaders[k].data(), kHeaderPayload[k]);
     }
     m_io.ackPort = oeEp.srcPort;
+    if constexpr (kHwStamps) {
+        m_t2t.setConverter(&hwStampsToNs<Io>, io.hwRxTimestampCorrection());
+    }
     return true;
 }
 
@@ -562,17 +576,23 @@ void DutSession<Mode, Strat, Io>::poll()
 {
     for (;;) {
         const std::uint64_t rxTsc = swNow();
-        const auto          f     = m_io.io->tryReceive();
-        if (f.status == 0) {
+        const auto          raw   = m_io.io->tryReceive();
+        if (raw.empty()) {
             m_idleSince = true;
+            if constexpr (kHwStamps) {
+                drainTxStamps();
+            }
             if (++m_idlePolls == kIdleWarmEvery) [[unlikely]] {
                 m_idlePolls = 0;
                 idleWarm();
             }
             break;
         }
-        const auto        raw   = f.data;
-        const auto*       frame = reinterpret_cast<const std::uint8_t*>(raw.data());
+        std::uint64_t rxStamp = 0;
+        if constexpr (kHwStamps) {
+            rxStamp = m_io.io->hwRxTimestamp();
+        }
+        const auto*       frame = raw.data();
         const auto*       p     = reinterpret_cast<const std::byte*>(raw.data());
         const std::size_t len   = net::udpPayloadLen(p, raw.size());
         if (len > 0) {
@@ -588,12 +608,26 @@ void DutSession<Mode, Strat, Io>::poll()
                     m_oms.onAck(payload);
                 }
             } else {
+                if constexpr (kHwStamps) {
+                    if (raw.size() >= net::kL2L3L4Overhead + mold::kHeaderSize) {
+                        const volatile std::uint16_t* guard = reinterpret_cast<const volatile std::uint16_t*>(
+                            p + net::kL2L3L4Overhead + mold::kHeaderSize - sizeof(std::uint16_t));
+                        while (*guard == 0 && !m_io.io->rxFrameComplete()) {
+                        }
+                    }
+                }
                 const std::byte* const end = p + net::kL2L3L4Overhead + len;
                 for (const std::byte* q = p + util::kCacheLineBytes; q < end; q += util::kCacheLineBytes) {
                     __builtin_prefetch(q);
                 }
-                const std::uint64_t rxHwts = static_cast<std::uint64_t>(f.sec) * 1'000'000'000ull + f.nsec;
-                applyPacket(payload, rxHwts, rxTsc);
+                applyPacket(payload, rxStamp, rxTsc);
+            }
+        }
+        if constexpr (kHwStamps) {
+            if (raw.size() >= net::kL2L3L4Overhead + mold::kHeaderSize) {
+                std::memset(const_cast<std::uint8_t*>(frame) + net::kL2L3L4Overhead + mold::kHeaderSize -
+                                sizeof(std::uint16_t),
+                            0, sizeof(std::uint16_t));
             }
         }
         m_io.io->release();
@@ -601,24 +635,25 @@ void DutSession<Mode, Strat, Io>::poll()
 }
 
 template <IoMode Mode, Strategy Strat, class Io>
-template <TxStampSource Src>
-void DutSession<Mode, Strat, Io>::pollTxCompletions(Src& src) {
-    for (auto c = src.pollTxTimestamp(); c.status != 0; c = src.pollTxTimestamp()) {
-        const std::uint64_t txHwts = static_cast<std::uint64_t>(c.sec) * 1'000'000'000ull + c.nsec;
-        completeTx(c.userRef, txHwts);
+void DutSession<Mode, Strat, Io>::drainTxStamps() noexcept
+    requires (Mode == IoMode::Transport && HwStampSource<Io>)
+{
+    for (auto stamp = m_io.io->pollTxTimestamp(); stamp; stamp = m_io.io->pollTxTimestamp()) {
+        const TxRef& ref = m_txRefs[stamp->seq & (kTxRefs - 1)];
+        if (ref.seq == stamp->seq && ref.userRef != kNoRef) {
+            completeTx(ref.userRef, stamp->minor);
+        }
     }
 }
 
 template <IoMode Mode, Strategy Strat, class Io>
-void DutSession<Mode, Strat, Io>::completeTx(std::uint32_t userRef, std::uint64_t txHwts) noexcept {
+void DutSession<Mode, Strat, Io>::completeTx(std::uint32_t userRef, std::uint32_t txMinor) noexcept {
     InFlight& slot = m_inflight[userRef % kInFlight];
     if (!slot.live || slot.userRef != userRef) {
         return;
     }
     slot.live = false;
-    if (txHwts >= slot.rxHwts) {
-        m_t2t.record(txHwts - slot.rxHwts, slot.ctx);
-    }
+    m_t2t.record(packHwStamps(static_cast<std::uint32_t>(slot.rxStamp), txMinor), slot.ctx);
 }
 
 template <IoMode Mode, Strategy Strat, class Io>
@@ -722,7 +757,7 @@ const std::vector<std::vector<std::byte>>& DutSession<Mode, Strat, Io>::captured
 }
 
 template <IoMode Mode, Strategy Strat, class Io>
-void DutSession<Mode, Strat, Io>::applyPacket(std::span<const std::byte> moldPacket, std::uint64_t rxHwts,
+void DutSession<Mode, Strat, Io>::applyPacket(std::span<const std::byte> moldPacket, std::uint64_t rxStamp,
                                               std::uint64_t rxTsc) {
     if (moldPacket.size() < mold::kHeaderSize) [[unlikely]] {
         return;
@@ -877,7 +912,7 @@ void DutSession<Mode, Strat, Io>::applyPacket(std::span<const std::byte> moldPac
                     sendCtx    = ctx;
                     sendStages = stages;
                 }
-                recordSend(m_out[i].userRef, rxHwts, ctx, now);
+                recordSend(m_out[i].userRef, rxStamp, ctx, now);
             }
         }
         const std::uint64_t q2 = swMark();
@@ -1130,6 +1165,10 @@ bool DutSession<Mode, Strat, Io>::sendOrder(std::span<const std::byte> ouch) {
             std::memcpy(buf + net::kL2L3L4Overhead, ouch.data(), ouch.size());
             m_io.oeFramer->patch(reinterpret_cast<std::byte*>(buf), ouch.size());
         }
+        if constexpr (kHwStamps) {
+            m_txSeq                           = m_io.io->txSequence();
+            m_txRefs[m_txSeq & (kTxRefs - 1)] = TxRef{.seq = m_txSeq, .userRef = kNoRef};
+        }
         m_io.io->commit();
         if ((++m_commits & (kTxSignalEvery - 1)) == 0) [[unlikely]] {
             m_reapHit = true;
@@ -1140,10 +1179,13 @@ bool DutSession<Mode, Strat, Io>::sendOrder(std::span<const std::byte> ouch) {
 }
 
 template <IoMode Mode, Strategy Strat, class Io>
-void DutSession<Mode, Strat, Io>::recordSend(std::uint32_t userRef, std::uint64_t rxHwts, std::uint64_t ctx,
+void DutSession<Mode, Strat, Io>::recordSend(std::uint32_t userRef, std::uint64_t rxStamp, std::uint64_t ctx,
                                              std::uint64_t sendTsc) noexcept {
     m_inflight[userRef % kInFlight] =
-        InFlight{.userRef = userRef, .rxHwts = rxHwts, .ctx = ctx, .sendTsc = sendTsc, .live = true};
+        InFlight{.userRef = userRef, .rxStamp = rxStamp, .ctx = ctx, .sendTsc = sendTsc, .live = true};
+    if constexpr (kHwStamps) {
+        m_txRefs[m_txSeq & (kTxRefs - 1)].userRef = userRef;
+    }
 }
 
 template <IoMode Mode, Strategy Strat, class Io>
