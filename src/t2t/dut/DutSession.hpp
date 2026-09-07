@@ -288,7 +288,6 @@ private:
                                                         double nsPerUnit = 0.0);
     [[nodiscard]] static BookTableConfig tableConfigOf(const DutConfig& cfg, std::pmr::memory_resource* mr,
                                                        BookScope scope);
-    void                                 touch(int hot) noexcept;
     void                                 idleWarm() noexcept;
 
     DutConfig                           m_cfg;
@@ -324,17 +323,12 @@ private:
     bool          m_marketOpen                               = false;
     bool          m_feedValid                                = true;
     bool          m_reconcileAll                             = false;
-    std::uint32_t m_gen                                      = 0;
-    std::size_t   m_touchedCount                             = 0;
     std::uint32_t m_idlePolls                                = 0;
     std::size_t   m_warmNext                                 = 0;
 
     std::vector<Outbound>           m_out;
     QuoteTargets                    m_warm{};
     Outbound                        m_warmOut{};
-    std::vector<std::uint16_t>      m_touched;
-    std::vector<std::uint32_t>      m_touchGen;
-    std::vector<std::uint32_t>      m_quoteGen;
     std::vector<std::uint32_t>      m_topSeen;
     std::array<InFlight, kInFlight> m_inflight{};
     std::uint32_t                   m_txSeq = 0;
@@ -370,9 +364,6 @@ DutSession<Mode, Strat, Io>::DutSession(const DutConfig& cfg, Strat strat)
       m_stageCost{makeSwRecorder("stage_book", cfg), makeSwRecorder("stage_quote", cfg),
                   makeSwRecorder("stage_tx", cfg)},
       m_out(OrderManager::kMaxOutbound),
-      m_touched(m_books.hotCount()),
-      m_touchGen(m_books.hotCount(), 0),
-      m_quoteGen(m_books.hotCount(), 0),
       m_topSeen(m_books.hotCount(), 0) {
     if constexpr (build::kSwTiming) {
         m_t2tSw.setStageNames({"rx", "book", "quote", "tx"});
@@ -403,15 +394,6 @@ BookTableConfig DutSession<Mode, Strat, Io>::tableConfigOf(const DutConfig&     
     t.hotLocates    = cfg.locates;
     t.memory        = mr;
     return t;
-}
-
-template <IoMode Mode, Strategy Strat, class Io>
-void DutSession<Mode, Strat, Io>::touch(int hot) noexcept {
-    const auto h = static_cast<std::size_t>(hot);
-    if (m_touchGen[h] != m_gen) {
-        m_touchGen[h]               = m_gen;
-        m_touched[m_touchedCount++] = static_cast<std::uint16_t>(h);
-    }
 }
 
 template <IoMode Mode, Strategy Strat, class Io>
@@ -878,9 +860,7 @@ void DutSession<Mode, Strat, Io>::applyPacket(std::span<const std::byte> moldPac
     const std::uint64_t createdBefore  = m_books.created();
     const std::uint64_t rescanBefore   = m_books.rescans();
     m_reapHit                          = false;
-    ++m_gen;
-    m_touchedCount      = 0;
-    const auto flagsNow = [&]() -> unsigned {
+    const auto flagsNow                = [&]() -> unsigned {
         unsigned f = 0;
         f |= m_books.rehashes() != rehashBefore ? SampleContext::kRehash : 0u;
         f |= m_books.reanchors() != reanchorBefore ? SampleContext::kReanchor : 0u;
@@ -900,12 +880,19 @@ void DutSession<Mode, Strat, Io>::applyPacket(std::span<const std::byte> moldPac
     std::uint64_t sendStages = 0;
     const auto    quote      = [&](std::size_t h, bool early) {
         m_earlyQuotes += early ? 1u : 0u;
-        const std::uint64_t q0      = swMark();
-        const QuoteTargets  targets = tradingAllowed(h)
-                                                  ? m_strats[h].onBook(m_books.hotBook(h), m_oms.account(h))
-                                                  : QuoteTargets{};
-        m_topSeen[h]                = m_books.hotBook(h).topVersion();
-        const std::size_t n         = m_oms.reconcile(
+        const std::uint64_t q0   = swMark();
+        const BookBuilder&  book = m_books.hotBook(h);
+        QuoteTargets        targets{};
+        if (tradingAllowed(h)) {
+            if (!m_strats[h].onBook(book, m_oms.account(h), targets)) {
+                m_topSeen[h] = book.topVersion();
+                return;
+            }
+        } else {
+            m_strats[h].forget();
+        }
+        m_topSeen[h]        = book.topVersion();
+        const std::size_t n = m_oms.reconcile(
             h, targets,
             std::span<Outbound, OrderManager::kMaxOutbound>{m_out.data(), OrderManager::kMaxOutbound});
         extra |= n >= 2 ? SampleContext::kMulti : 0u;
@@ -958,11 +945,14 @@ void DutSession<Mode, Strat, Io>::applyPacket(std::span<const std::byte> moldPac
             prefetchAhead();
             const int hot = applyMessage(msg, seq, i);
             if (hot != BookTable::kCold) {
-                const auto h = static_cast<std::size_t>(hot);
-                if (m_books.hotBook(h).topVersion() != m_topSeen[h]) {
+                const auto          h    = static_cast<std::size_t>(hot);
+                const BookBuilder&  book = m_books.hotBook(h);
+                const std::uint32_t top  = book.topVersion();
+                if (top != m_topSeen[h]) {
+                    if (m_topSeen[h] == kDirtyTop) {
+                        m_strats[h].forget();
+                    }
                     quote(h, true);
-                } else {
-                    touch(hot);
                 }
             }
         }
@@ -973,9 +963,6 @@ void DutSession<Mode, Strat, Io>::applyPacket(std::span<const std::byte> moldPac
         std::uint64_t tA = 0;
         if constexpr (build::kSwTiming) {
             tA = swMark();
-        }
-        for (std::size_t h = 0; h < m_books.hotCount(); ++h) {
-            touch(static_cast<int>(h));
         }
         if constexpr (build::kSwTiming) {
             trace        = &m_open.next();
@@ -993,8 +980,10 @@ void DutSession<Mode, Strat, Io>::applyPacket(std::span<const std::byte> moldPac
             trace->flags = static_cast<std::uint32_t>(applied - begin - trace->apply - trace->touch);
         }
     }
-    for (std::size_t k = 0; k < m_touchedCount; ++k) {
-        quote(m_touched[k], false);
+    if (tracing) [[unlikely]] {
+        for (std::size_t h = 0; h < m_books.hotCount(); ++h) {
+            quote(h, false);
+        }
     }
     if (m_cold) {
         (void)m_cold->push(moldPacket);
@@ -1135,7 +1124,8 @@ template <IoMode Mode, Strategy Strat, class Io>
 void DutSession<Mode, Strat, Io>::warmQuotePath() noexcept {
     for (std::size_t h = 0; h < m_books.hotCount(); ++h) {
         prefetchQuotePath(h);
-        m_warm = m_strats[h].onBook(m_books.hotBook(h), m_oms.account(h));
+        (void)m_strats[h].onBook(m_books.hotBook(h), m_oms.account(h), m_warm);
+        m_strats[h].forget();
         m_oms.warmEncode(h, m_warmOut);
         m_oms.warmReconcile(h, m_warmOut);
     }

@@ -52,15 +52,24 @@ itch::OrderDelete mkDelete(OrderId ref) {
 }
 
 struct NeverSend {
-    static dut::QuoteTargets onBook(const dut::BookBuilder&, const dut::Account&) noexcept {
+    static dut::QuoteTargets targetsOf(const dut::BookBuilder&, const dut::Account&) noexcept {
         return {};
+    }
+
+    [[nodiscard]] bool onBook(const dut::BookBuilder& book, const dut::Account& acct,
+                              dut::QuoteTargets& out) noexcept {
+        out = targetsOf(book, acct);
+        return true;
+    }
+
+    static void forget() noexcept {
     }
 };
 
 struct BidOnce {
     bool armed = true;
 
-    dut::QuoteTargets onBook(const dut::BookBuilder& book, const dut::Account&) noexcept {
+    dut::QuoteTargets targetsOf(const dut::BookBuilder& book, const dut::Account&) noexcept {
         dut::QuoteTargets t{};
         if (!armed || book.bestAsk() == kNoPrice) {
             return t;
@@ -70,6 +79,15 @@ struct BidOnce {
         t.bidPrice = book.bestAsk();
         t.bidQty   = 5u;
         return t;
+    }
+
+    [[nodiscard]] bool onBook(const dut::BookBuilder& book, const dut::Account& acct,
+                              dut::QuoteTargets& out) noexcept {
+        out = targetsOf(book, acct);
+        return true;
+    }
+
+    static void forget() noexcept {
     }
 };
 

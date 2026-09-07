@@ -28,7 +28,7 @@ struct TakeOnce {
     Quantity qty;
     bool     armed = true;
 
-    dut::QuoteTargets onBook(const dut::BookBuilder& book, const dut::Account&) noexcept {
+    dut::QuoteTargets targetsOf(const dut::BookBuilder& book, const dut::Account&) noexcept {
         dut::QuoteTargets t{};
         const Price       ask = book.bestAsk();
         if (ask == kNoPrice || ask > trigger || !armed) {
@@ -39,6 +39,15 @@ struct TakeOnce {
         t.bidPrice = ask;
         t.bidQty   = qty;
         return t;
+    }
+
+    [[nodiscard]] bool onBook(const dut::BookBuilder& book, const dut::Account& acct,
+                              dut::QuoteTargets& out) noexcept {
+        out = targetsOf(book, acct);
+        return true;
+    }
+
+    static void forget() noexcept {
     }
 };
 

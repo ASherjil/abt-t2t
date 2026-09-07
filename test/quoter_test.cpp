@@ -46,8 +46,9 @@ void test_symmetric() {
     addOrder(book, 1, 'B', 100, 10000);
     addOrder(book, 2, 'S', 100, 10100);
 
-    dut::QuoterStrategy     q(baseCfg());
-    const dut::QuoteTargets t = q.onBook(book, dut::Account{0});
+    dut::QuoterStrategy q(baseCfg());
+    dut::QuoteTargets   t{};
+    CHECK(q.onBook(book, dut::Account{0}, t));
 
     // Equal sizes -> fair = mid = 10050; +/- 5 tick half-spread.
     CHECK(t.quoteBid);
@@ -63,8 +64,9 @@ void test_imbalance_lifts_fair() {
     addOrder(book, 1, 'B', 300, 10000);   // heavier bid -> micro-price leans up
     addOrder(book, 2, 'S', 100, 10100);
 
-    dut::QuoterStrategy     q(baseCfg());
-    const dut::QuoteTargets t = q.onBook(book, dut::Account{0});
+    dut::QuoterStrategy q(baseCfg());
+    dut::QuoteTargets   t{};
+    CHECK(q.onBook(book, dut::Account{0}, t));
 
     // micro = (10000*100 + 10100*300)/400 = 10075; quotes 10070 / 10080.
     CHECK_EQ(t.bidPrice, 10070);
@@ -80,11 +82,13 @@ void test_inventory_skew() {
     cfg.skewTicksPerUnit  = 0.001;   // 1000 shares -> 1 tick of skew
     dut::QuoterStrategy q(cfg);
 
-    const dut::QuoteTargets longT = q.onBook(book, dut::Account{1000});   // long -> shift down 1
+    dut::QuoteTargets longT{};
+    CHECK(q.onBook(book, dut::Account{1000}, longT));   // long -> shift down 1
     CHECK_EQ(longT.bidPrice, 10044);
     CHECK_EQ(longT.askPrice, 10054);
 
-    const dut::QuoteTargets shortT = q.onBook(book, dut::Account{-1000});   // short -> shift up 1
+    dut::QuoteTargets shortT{};
+    CHECK(q.onBook(book, dut::Account{-1000}, shortT));   // short -> shift up 1
     CHECK_EQ(shortT.bidPrice, 10046);
     CHECK_EQ(shortT.askPrice, 10056);
 }
@@ -93,8 +97,9 @@ void test_no_market_pulls_quotes() {
     dut::BookBuilder book(0, 100000, 1);
     addOrder(book, 1, 'B', 100, 10000);   // one-sided: no ask
 
-    dut::QuoterStrategy     q(baseCfg());
-    const dut::QuoteTargets t = q.onBook(book, dut::Account{0});
+    dut::QuoterStrategy q(baseCfg());
+    dut::QuoteTargets   t{};
+    CHECK(q.onBook(book, dut::Account{0}, t));
     CHECK(!t.quoteBid);
     CHECK(!t.quoteAsk);
 }

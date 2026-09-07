@@ -4,6 +4,7 @@
 
 #include "t2t/dut/QuoterStrategy.hpp"
 
+#include <algorithm>
 #include <cmath>
 #include <cstdint>
 
@@ -13,50 +14,60 @@ QuoterStrategy::QuoterStrategy(const QuoterConfig& cfg) noexcept
     : m_cfg(cfg) {
 }
 
-QuoteTargets QuoterStrategy::onBook(const BookBuilder& book, const Account& acct) noexcept {
-    QuoteTargets q{};
-    const Price  bb = book.bestBid();
-    const Price  ba = book.bestAsk();
+bool QuoterStrategy::onBook(const BookBuilder& book, const Account& acct, QuoteTargets& out) noexcept {
+    const Price bb = book.bestBid();
+    const Price ba = book.bestAsk();
     if (bb == kNoPrice || ba == kNoPrice) {
-        return q;   // no two-sided market to anchor to -> pull quotes
+        forget();
+        out = QuoteTargets{};
+        return true;
     }
-
-    const Quantity bidSz = book.sizeAt(Side::Buy, bb);
-    const Quantity askSz = book.sizeAt(Side::Sell, ba);
-
-    // Size-weighted micro-price: bid weighted by ask size and ask weighted by bid size, so the fair
-    // leans toward the side with the larger resting size (the side under more pressure).
-    const std::uint64_t total = static_cast<std::uint64_t>(bidSz) + static_cast<std::uint64_t>(askSz);
-    double              fair  = 0.0;
-    if (total == 0) {
-        fair = (static_cast<double>(bb) + static_cast<double>(ba)) * 0.5;
-    } else {
-        fair = (static_cast<double>(bb) * static_cast<double>(askSz) +
-                static_cast<double>(ba) * static_cast<double>(bidSz)) /
-               static_cast<double>(total);
+    const std::uint64_t bidSz = book.sizeAt(Side::Buy, bb);
+    const std::uint64_t askSz = book.sizeAt(Side::Sell, ba);
+    const std::uint64_t total = bidSz + askSz;
+    const double        num   = total == 0 ? static_cast<double>(bb) + static_cast<double>(ba)
+                                           : static_cast<double>(static_cast<std::uint64_t>(bb) * askSz +
+                                                                 static_cast<std::uint64_t>(ba) * bidSz);
+    const double        den   = total == 0 ? 2.0 : static_cast<double>(total);
+    if (num > m_fairLo * den && num < m_fairHi * den) {
+        return false;
     }
-
+    const double fair = num / den;
     const double tick = static_cast<double>(m_cfg.tickWire);
     const double half = static_cast<double>(m_cfg.halfSpreadTicks) * tick;
-    // Long inventory -> negative skew -> quotes shift down (lean net seller); short -> up.
     const double skew = -static_cast<double>(acct.position) * m_cfg.skewTicksPerUnit * tick;
 
     const Price origin   = book.bandLow();
     Price       bidPrice = roundDownToTick(fair - half + skew, origin);
     Price       askPrice = roundUpToTick(fair + half + skew, origin);
+    const bool  plain    = bidPrice > origin && askPrice > origin && bidPrice < askPrice &&
+                       bidPrice >= book.bandLow() && askPrice <= book.bandHigh();
+    if (plain) {
+        m_fairLo = std::max(static_cast<double>(bidPrice) + half - skew,
+                            static_cast<double>(askPrice - m_cfg.tickWire) - half - skew);
+        m_fairHi = std::min(static_cast<double>(bidPrice + m_cfg.tickWire) + half - skew,
+                            static_cast<double>(askPrice) - half - skew);
+    } else {
+        forget();
+    }
     if (bidPrice >= askPrice) {
         bidPrice = askPrice - m_cfg.tickWire;
     }
     bidPrice = clampToBand(bidPrice, book);
     askPrice = clampToBand(askPrice, book);
 
-    q.quoteBid = true;
-    q.bidPrice = bidPrice;
-    q.bidQty   = m_cfg.quoteQty;
-    q.quoteAsk = true;
-    q.askPrice = askPrice;
-    q.askQty   = m_cfg.quoteQty;
-    return q;
+    out.quoteBid = true;
+    out.bidPrice = bidPrice;
+    out.bidQty   = m_cfg.quoteQty;
+    out.quoteAsk = true;
+    out.askPrice = askPrice;
+    out.askQty   = m_cfg.quoteQty;
+    return true;
+}
+
+void QuoterStrategy::forget() noexcept {
+    m_fairLo = 0.0;
+    m_fairHi = -1.0;
 }
 
 Price QuoterStrategy::roundDownToTick(double price, Price origin) const noexcept {

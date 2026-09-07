@@ -9,6 +9,8 @@
 // Stoikov-style), minus hard position limits. Split .hpp/.cpp per project style.
 //
 
+#include <limits>
+
 #include "t2t/dut/BookBuilder.hpp"
 #include "t2t/dut/Quote.hpp"
 #include "t2t/lob/Types.hpp"
@@ -26,7 +28,8 @@ class QuoterStrategy {
 public:
     explicit QuoterStrategy(const QuoterConfig& cfg) noexcept;
 
-    [[nodiscard]] QuoteTargets onBook(const BookBuilder& book, const Account& acct) noexcept;
+    [[nodiscard]] bool onBook(const BookBuilder& book, const Account& acct, QuoteTargets& out) noexcept;
+    void               forget() noexcept;
 
 private:
     [[nodiscard]] Price        roundDownToTick(double price, Price origin) const noexcept;
@@ -34,6 +37,8 @@ private:
     [[nodiscard]] static Price clampToBand(Price price, const BookBuilder& book) noexcept;
 
     QuoterConfig m_cfg;
+    double       m_fairLo = 0.0;
+    double       m_fairHi = -1.0;
 };
 
 }   // namespace abt::dut

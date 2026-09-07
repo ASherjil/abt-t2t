@@ -8,10 +8,13 @@
 namespace abt::dut {
 
 template <typename S>
-concept Strategy = requires (S s, const BookBuilder& book, const Account& acct) {
+concept Strategy = requires (S s, const BookBuilder& book, const Account& acct, QuoteTargets& out) {
     {
-        s.onBook(book, acct)
-    } noexcept -> std::same_as<QuoteTargets>;
+        s.onBook(book, acct, out)
+    } noexcept -> std::same_as<bool>;
+    {
+        s.forget()
+    } noexcept;
 };
 
 }   // namespace abt::dut
