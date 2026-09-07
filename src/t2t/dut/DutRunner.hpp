@@ -80,6 +80,13 @@ void printDutReport(Session& sess, util::ThreadCounters atStart, util::ThreadCou
         sess.proc().summary();
         sess.ackRtt().summary();
         sess.rxStage().summary();
+        for (auto& r : sess.applyCost()) {
+            r.summary();
+        }
+        sess.refAge().summary();
+        for (auto& r : sess.stageCost()) {
+            r.summary();
+        }
         printCaptures(sess);
         printOpenTraces(sess);
     }
@@ -140,6 +147,13 @@ std::vector<LatencyRecorder*> recordersOf(Session& sess) {
         recs.push_back(&sess.t2tHol());
         recs.push_back(&sess.ackRtt());
         recs.push_back(&sess.rxStage());
+        for (auto& r : sess.applyCost()) {
+            recs.push_back(&r);
+        }
+        recs.push_back(&sess.refAge());
+        for (auto& r : sess.stageCost()) {
+            recs.push_back(&r);
+        }
     }
     return recs;
 }
