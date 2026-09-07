@@ -206,14 +206,16 @@ int runDut(const DutAppConfig& cfg, typename T::Type& backend, volatile std::sig
         const util::ThreadCounters countersAtStart = util::threadCounters();
         const util::CoreInterrupts irqAtStart      = util::coreInterrupts(cfg.transport.cpuCore);
         sess.sendLogin(cfg.socket.session, cfg.socket.username);
-        std::uint64_t nextLogin = monotonicNs() + kDutLogPeriodNs;
-        std::uint64_t nextWarm  = nextLogin;
-        std::uint64_t nextTest  = nextLogin;
-        std::uint64_t polls     = 0;
+        std::uint64_t nextLogin  = monotonicNs() + kDutLogPeriodNs;
+        std::uint64_t nextWarm   = nextLogin;
+        std::uint64_t nextTest   = nextLogin;
+        std::uint64_t polls      = 0;
+        std::uint64_t totalPolls = 0;
         while (stop == 0) {
             sess.poll();
             if (++polls == kDutPollsPerClockRead) {
-                polls                   = 0;
+                polls = 0;
+                totalPolls += kDutPollsPerClockRead;
                 const std::uint64_t now = monotonicNs();
                 if (!sess.sessionEstablished() && now >= nextLogin) {
                     sess.sendLogin(cfg.socket.session, cfg.socket.username);
@@ -239,9 +241,14 @@ int runDut(const DutAppConfig& cfg, typename T::Type& backend, volatile std::sig
         }
         const util::ThreadCounters countersAtEnd = util::threadCounters();
         const util::CoreInterrupts irqAtEnd      = util::coreInterrupts(cfg.transport.cpuCore);
+        const std::uint64_t        runNs         = monotonicNs() - start;
         sess.stopCold();
         consumer.stop();
-        printDutStatus(sess.status(monotonicNs() - start));
+        printDutStatus(sess.status(runNs));
+        fmt::print("[dut] polls={} ns_per_poll={:.2f}\n", totalPolls,
+                   static_cast<double>(runNs) / static_cast<double>(totalPolls));
+        fmt::print("[dut] early quotes={} early sends={} late sends={}\n", sess.earlyQuotes(),
+                   sess.earlySends(), sess.lateSends());
         printDutReport(sess, countersAtStart, countersAtEnd, cfg.transport.cpuCore, irqAtStart, irqAtEnd);
         return 0;
     }

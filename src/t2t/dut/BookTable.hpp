@@ -14,6 +14,7 @@
 #include "t2t/dut/BookBuilder.hpp"
 #include "t2t/dut/SymbolProfile.hpp"
 #include "t2t/lob/Types.hpp"
+#include "t2t/protocol/Itch50.hpp"
 
 namespace abt::dut {
 
@@ -133,8 +134,8 @@ private:
 };
 
 inline std::uint16_t BookTable::locateOf(std::span<const std::byte> msg) noexcept {
-    return static_cast<std::uint16_t>((std::to_integer<unsigned>(msg[1]) << 8) |
-                                      std::to_integer<unsigned>(msg[2]));
+    return static_cast<std::uint16_t>((std::to_integer<unsigned>(msg[itch::kLocateOffset]) << 8) |
+                                      std::to_integer<unsigned>(msg[itch::kLocateOffset + 1]));
 }
 
 }   // namespace abt::dut

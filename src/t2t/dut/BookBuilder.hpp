@@ -49,6 +49,7 @@ public:
 
     [[nodiscard]] Price         bestBid() const noexcept;
     [[nodiscard]] Price         bestAsk() const noexcept;
+    [[nodiscard]] std::uint32_t topVersion() const noexcept;
     [[nodiscard]] Quantity      sizeAt(Side side, Price price) const noexcept;
     [[nodiscard]] Quantity      restingShares(OrderId ref) const noexcept;
     [[nodiscard]] Price         restingPrice(OrderId ref) const noexcept;
@@ -133,6 +134,7 @@ private:
     util::DivBy    m_tickDiv;   // price-offset / tickWire without a hardware divide
     Price          m_bestBid       = kNoPrice;
     Price          m_bestAsk       = kNoPrice;
+    std::uint32_t  m_topVersion    = 0;
     std::size_t    m_bandTicks     = 0;
     std::size_t    m_maxBandTicks  = 0;
     double         m_bandFraction  = 0.0;

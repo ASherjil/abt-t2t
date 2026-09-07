@@ -70,7 +70,7 @@ public:
 
     std::size_t reconcile(std::size_t sym, const QuoteTargets& t,
                           std::span<Outbound, kMaxOutbound> out) noexcept;
-    void        onAck(std::span<const std::byte> ouch) noexcept;
+    int         onAck(std::span<const std::byte> ouch) noexcept;
     void        encodeTestOrder(Outbound& out) noexcept;
     void        warmEncode(std::size_t sym, Outbound& out) const noexcept;
     void        warmReconcile(std::size_t sym, Outbound& out) noexcept;
@@ -132,6 +132,7 @@ private:
     OmsStats                      m_stats{};
     std::uint32_t                 m_nextUserRef;
     std::vector<Pair>             m_slots;
+    int                           m_ackSym = -1;
     std::vector<Account>          m_acct;
     std::array<RefSide, kRefRing> m_refs{};
     std::vector<EnterTemplates>   m_enter;

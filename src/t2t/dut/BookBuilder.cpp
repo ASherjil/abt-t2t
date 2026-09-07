@@ -55,6 +55,7 @@ BookBuilder::BookBuilder(const BookConfig& cfg)
 }
 
 void BookBuilder::anchor(Price price, bool trusted) {
+    ++m_topVersion;
     const Price tick = m_anchored ? std::min(tickFor(price), m_tickWire) : tickFor(price);
     std::size_t band = m_bandTicks;
     if (trusted && m_bandFraction > 0.0) {
@@ -315,6 +316,7 @@ void BookBuilder::apply(std::span<const std::byte> itchMessage) {
 }
 
 void BookBuilder::clear() noexcept {
+    ++m_topVersion;
     if (m_orders.size() == 0 && m_own == 0 && m_parkedShares == 0) {
         m_bestBid = kNoPrice;
         m_bestAsk = kNoPrice;
@@ -339,6 +341,10 @@ Price BookBuilder::bestBid() const noexcept {
 
 Price BookBuilder::bestAsk() const noexcept {
     return m_bestAsk;
+}
+
+std::uint32_t BookBuilder::topVersion() const noexcept {
+    return m_topVersion;
 }
 
 Quantity BookBuilder::sizeAt(Side side, Price price) const noexcept {
@@ -471,7 +477,9 @@ void BookBuilder::addLevel(Side side, Price price, Quantity shares) noexcept {
             m_bidBits.set(i);
         }
         m_bidSize[i] += shares;
-        if (m_bestBid == kNoPrice || price > m_bestBid) {
+        const bool top = m_bestBid == kNoPrice || price >= m_bestBid;
+        m_topVersion += top ? 1u : 0u;
+        if (top) {
             m_bestBid = price;
         }
     } else {
@@ -479,7 +487,9 @@ void BookBuilder::addLevel(Side side, Price price, Quantity shares) noexcept {
             m_askBits.set(i);
         }
         m_askSize[i] += shares;
-        if (m_bestAsk == kNoPrice || price < m_bestAsk) {
+        const bool top = m_bestAsk == kNoPrice || price <= m_bestAsk;
+        m_topVersion += top ? 1u : 0u;
+        if (top) {
             m_bestAsk = price;
         }
     }
@@ -491,6 +501,7 @@ void BookBuilder::removeShares(Side side, Price price, Quantity shares) noexcept
         return;
     }
     const std::size_t i = index(price);
+    m_topVersion += price == (side == Side::Buy ? m_bestBid : m_bestAsk) ? 1u : 0u;
     if (side == Side::Buy) {
         if (shares >= m_bidSize[i]) {
             m_bidSize[i] = 0;

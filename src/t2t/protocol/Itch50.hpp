@@ -17,7 +17,9 @@ using wire::u64be;
 using wire::Uint48;
 using stock_t = wire::Alpha<8>;
 
-inline constexpr std::uint32_t kPriceScale = 10000;
+inline constexpr std::uint32_t kPriceScale   = 10000;
+inline constexpr std::size_t   kLocateOffset = 1;
+inline constexpr std::size_t   kLocateBytes  = 2;
 
 enum class MessageType : char {
     SystemEvent            = 'S',

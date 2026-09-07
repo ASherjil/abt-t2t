@@ -13,10 +13,13 @@
 
 namespace abt::mold {
 
-inline constexpr std::size_t   kHeaderSize   = 20;
-inline constexpr std::size_t   kSessionLen   = 10;
-inline constexpr std::uint16_t kHeartbeat    = 0x0000;
-inline constexpr std::uint16_t kEndOfSession = 0xFFFF;
+inline constexpr std::size_t   kHeaderSize     = 20;
+inline constexpr std::size_t   kSessionLen     = 10;
+inline constexpr std::size_t   kSequenceOffset = kSessionLen;
+inline constexpr std::size_t   kCountOffset    = kSequenceOffset + sizeof(std::uint64_t);
+inline constexpr std::size_t   kLengthPrefix   = sizeof(std::uint16_t);
+inline constexpr std::uint16_t kHeartbeat      = 0x0000;
+inline constexpr std::uint16_t kEndOfSession   = 0xFFFF;
 
 struct Header {
     wire::Alpha<kSessionLen> session;
@@ -95,11 +98,25 @@ private:
 }
 
 [[nodiscard]] inline std::uint64_t sequenceOf(std::span<const std::byte> pkt) noexcept {
-    return getU64(pkt.data() + 10);
+    return getU64(pkt.data() + kSequenceOffset);
 }
 
 [[nodiscard]] inline std::uint16_t countOf(std::span<const std::byte> pkt) noexcept {
-    return getU16(pkt.data() + 18);
+    return getU16(pkt.data() + kCountOffset);
+}
+
+[[nodiscard]] inline bool nextMessage(const std::byte* base, std::size_t total, std::size_t& off,
+                                      std::span<const std::byte>& msg) noexcept {
+    if (off + kLengthPrefix > total) {
+        return false;
+    }
+    const std::uint16_t mlen = getU16(base + off);
+    if (off + kLengthPrefix + mlen > total) {
+        return false;
+    }
+    msg = {base + off + kLengthPrefix, mlen};
+    off += kLengthPrefix + mlen;
+    return true;
 }
 
 template <class Fn>
@@ -113,19 +130,11 @@ std::size_t forEachMessage(std::span<const std::byte> pkt, Fn fn) {
         return 0;
     }
 
-    std::size_t off = kHeaderSize;
-    std::size_t n   = 0;
-    for (std::uint16_t i = 0; i < count; ++i) {
-        if (off + 2 > pkt.size()) {
-            break;
-        }
-        const std::uint16_t mlen = getU16(pkt.data() + off);
-        off += 2;
-        if (off + mlen > pkt.size()) {
-            break;
-        }
-        fn(seq + i, pkt.subspan(off, mlen));
-        off += mlen;
+    std::size_t                off = kHeaderSize;
+    std::size_t                n   = 0;
+    std::span<const std::byte> msg;
+    for (std::uint16_t i = 0; i < count && nextMessage(pkt.data(), pkt.size(), off, msg); ++i) {
+        fn(seq + i, msg);
         ++n;
     }
     return n;

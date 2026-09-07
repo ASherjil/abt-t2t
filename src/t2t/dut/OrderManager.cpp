@@ -83,7 +83,7 @@ void OrderManager::prefetch(std::size_t sym) const noexcept {
     __builtin_prefetch(&m_enter[sym].ask);
     __builtin_prefetch(&m_replace);
     __builtin_prefetch(&m_stats);
-    __builtin_prefetch(&m_refs[m_nextUserRef % kRefRing]);
+    __builtin_prefetch(&m_refs[m_nextUserRef & (kRefRing - 1)]);
 }
 
 std::size_t OrderManager::reconcile(std::size_t sym, const QuoteTargets& t,
@@ -172,9 +172,10 @@ std::size_t OrderManager::reconcileSlot(QuoteSlot& s, std::size_t sym, Side side
     }
 }
 
-void OrderManager::onAck(std::span<const std::byte> ouch) noexcept {
+int OrderManager::onAck(std::span<const std::byte> ouch) noexcept {
+    m_ackSym = -1;
     if (ouch.empty()) {
-        return;
+        return m_ackSym;
     }
     switch (static_cast<ouch::OutType>(static_cast<char>(ouch[0]))) {
         case ouch::OutType::Accepted: {
@@ -223,6 +224,7 @@ void OrderManager::onAck(std::span<const std::byte> ouch) noexcept {
             break;
         }
     }
+    return m_ackSym;
 }
 
 std::size_t OrderManager::symbolCount() const noexcept {
@@ -262,7 +264,8 @@ std::uint32_t OrderManager::allocRef(std::size_t sym, Side side) noexcept {
     if (m_nextUserRef == 0) {
         m_nextUserRef = 1;
     }
-    m_refs[ref % kRefRing] = RefSide{.userRef = ref, .sym = static_cast<std::uint16_t>(sym), .side = side};
+    m_refs[ref & (kRefRing - 1)] =
+        RefSide{.userRef = ref, .sym = static_cast<std::uint16_t>(sym), .side = side};
     return ref;
 }
 
@@ -313,14 +316,16 @@ QuoteSlot* OrderManager::slotByRef(std::uint32_t userRef, std::size_t& sym) noex
     if (std::size_t hint = 0; lookupRef(userRef, hint, side) && hint < m_slots.size()) {
         QuoteSlot& s = m_slots[hint][idx(side)];
         if (s.state != QuoteState::Idle && s.userRef == userRef) {
-            sym = hint;
+            sym      = hint;
+            m_ackSym = static_cast<int>(hint);
             return &s;
         }
     }
     for (std::size_t i = 0; i < m_slots.size(); ++i) {
         for (QuoteSlot& s : m_slots[i]) {
             if (s.state != QuoteState::Idle && s.userRef == userRef) {
-                sym = i;
+                sym      = i;
+                m_ackSym = static_cast<int>(i);
                 return &s;
             }
         }
