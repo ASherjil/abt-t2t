@@ -17,7 +17,6 @@
 namespace abt {
 
 struct ReplayConfig {
-    bool          enabled = false;
     std::string   file;
     double        speed         = 1.0;
     std::uint32_t loops         = 0;

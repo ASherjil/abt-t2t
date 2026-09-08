@@ -25,13 +25,6 @@ max_tick = 90000
 wire_per_tick = 50
 md_max_payload = 300
 
-[flow]
-mid_tick = 4200
-cancel_pct = 40
-seed = 123456789
-warmup_steps = 111
-tick_interval_ns = 250000
-
 [transport]
 interface = "cx1"
 driver = "af_xdp"
@@ -83,12 +76,6 @@ void test_load() {
     CHECK_EQ(c.venue.maxTick, 90000);
     CHECK_EQ(c.venue.wirePerTick, 50u);
     CHECK_EQ(c.venue.mdMaxPayload, 300u);
-
-    CHECK_EQ(c.flow.midTick, 4200);
-    CHECK_EQ(c.flow.cancelPct, 40u);
-    CHECK_EQ(c.flow.seed, 123456789u);
-    CHECK_EQ(c.warmupSteps, 111u);
-    CHECK_EQ(c.tickIntervalNs, 250000u);
 
     CHECK(c.transport.interface == "cx1");
     CHECK(c.transport.driver == "af_xdp");

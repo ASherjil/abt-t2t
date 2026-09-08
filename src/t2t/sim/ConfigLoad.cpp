@@ -45,7 +45,6 @@ SimConfig loadConfig(const std::string& path) {
     c.venue.mdMaxPayload = t["venue"]["md_max_payload"].value_or(c.venue.mdMaxPayload);
     c.venue.liveReserve  = t["venue"]["order_reserve"].value_or(c.venue.liveReserve);
 
-    c.replay.enabled       = t["replay"]["enabled"].value_or(c.replay.enabled);
     c.replay.file          = t["replay"]["file"].value_or(c.replay.file);
     c.replay.speed         = t["replay"]["speed"].value_or(c.replay.speed);
     c.replay.loops         = t["replay"]["loops"].value_or(c.replay.loops);
@@ -55,20 +54,8 @@ SimConfig loadConfig(const std::string& path) {
     c.replay.afapMaxPerSec = t["replay"]["afap_max_msg_per_s"].value_or(c.replay.afapMaxPerSec);
     c.replay.skipToNs      = replay::parseTimeOfDay(t["replay"]["skip_to"].value_or(std::string{}));
     c.replay.stopAtNs      = replay::parseTimeOfDay(t["replay"]["stop_at"].value_or(std::string{}));
-    const std::int64_t defaultFirstRef = c.replay.enabled ? (std::int64_t{1} << 62) : 1;
-    c.venue.firstOrderRef = static_cast<OrderId>(t["venue"]["first_order_ref"].value_or(defaultFirstRef));
-
-    c.flow.midTick    = t["flow"]["mid_tick"].value_or(c.flow.midTick);
-    c.flow.halfSpread = t["flow"]["half_spread"].value_or(c.flow.halfSpread);
-    c.flow.depthTicks = t["flow"]["depth_ticks"].value_or(c.flow.depthTicks);
-    c.flow.minQty     = t["flow"]["min_qty"].value_or(c.flow.minQty);
-    c.flow.maxQty     = t["flow"]["max_qty"].value_or(c.flow.maxQty);
-    c.flow.cancelPct  = t["flow"]["cancel_pct"].value_or(c.flow.cancelPct);
-    c.flow.crossPct   = t["flow"]["cross_pct"].value_or(c.flow.crossPct);
-    c.flow.maxLive    = t["flow"]["max_live"].value_or(c.flow.maxLive);
-    c.flow.seed       = t["flow"]["seed"].value_or(c.flow.seed);
-    c.warmupSteps     = t["flow"]["warmup_steps"].value_or(c.warmupSteps);
-    c.tickIntervalNs  = t["flow"]["tick_interval_ns"].value_or(c.tickIntervalNs);
+    c.venue.firstOrderRef  = static_cast<OrderId>(
+        t["venue"]["first_order_ref"].value_or(std::int64_t{1} << 62));
 
     c.transport.interface = t["transport"]["interface"].value_or(c.transport.interface);
     c.transport.driver    = t["transport"]["driver"].value_or(c.transport.driver);

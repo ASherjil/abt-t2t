@@ -1,6 +1,6 @@
 #pragma once
 //
-// Standalone value configs for the matching venue and the synthetic flow generator.
+// Standalone value config for the matching venue.
 //
 
 #include <cstddef>
@@ -22,18 +22,6 @@ struct ExchangeConfig {
     std::size_t                mdMaxPayload  = 1400;
     OrderId                    firstOrderRef = 1;
     std::size_t                liveReserve   = 1u << 12;
-};
-
-struct FlowConfig {
-    Price         midTick    = 5200;
-    Price         halfSpread = 1;
-    Price         depthTicks = 20;
-    Quantity      minQty     = 10;
-    Quantity      maxQty     = 500;
-    std::uint32_t cancelPct  = 30;
-    std::uint32_t crossPct   = 15;
-    std::size_t   maxLive    = 4096;
-    std::uint64_t seed       = 0x9E3779B97F4A7C15ull;
 };
 
 }   // namespace abt

@@ -9,7 +9,6 @@
 #include "t2t/protocol/Itch50.hpp"
 #include "t2t/replay/SymbolFilter.hpp"
 #include "t2t/sim/ExchangeSession.hpp"
-#include "t2t/sim/FlowGenerator.hpp"
 #include "t2t/sim/SimConfig.hpp"
 #include "t2t/util/Affinity.hpp"
 #include "t2t/util/Clock.hpp"
@@ -90,31 +89,6 @@ int runReplay(Session& ex, const SimConfig& cfg, volatile std::sig_atomic_t& sto
     return 0;
 }
 
-template <class Session>
-int runVenue(Session& ex, const SimConfig& cfg, volatile std::sig_atomic_t& stop) {
-    if (cfg.replay.enabled) {
-        return runReplay(ex, cfg, stop);
-    }
-    FlowGenerator<Session> gen(ex, cfg.flow);
-    ex.sessionEvent(itch::SystemEventCode::StartOfMessages, nsSinceMidnightUtc());
-    ex.publishDirectory(nsSinceMidnightUtc());
-    ex.sessionEvent(itch::SystemEventCode::StartOfMarketHours, nsSinceMidnightUtc());
-    gen.run(cfg.warmupSteps, nsSinceMidnightUtc(), 0);
-    const std::uint64_t start   = monotonicNs();
-    std::uint64_t       nextLog = start + kSimLogPeriodNs;
-    ex.run(stop, cfg.tickIntervalNs, [&](std::uint64_t ts) {
-        gen.step(ts);
-        const std::uint64_t now = monotonicNs();
-        if (now >= nextLog) {
-            logSim(ex, now - start);
-            nextLog += kSimLogPeriodNs;
-        }
-    });
-    ex.sessionEvent(itch::SystemEventCode::EndOfMarketHours, nsSinceMidnightUtc());
-    logSim(ex, monotonicNs() - start);
-    return 0;
-}
-
 template <BackendTraits T>
 int runSim(const SimConfig& cfg, typename T::Type& backend, volatile std::sig_atomic_t& stop) {
     if constexpr (kIsSocketBackend<T>) {
@@ -125,7 +99,7 @@ int runSim(const SimConfig& cfg, typename T::Type& backend, volatile std::sig_at
         }
         fmt::print(stderr, "exchange-sim: publishing market data to udp/{}:{}\n", cfg.socket.mdHost,
                    cfg.socket.mdPort);
-        return runVenue(ex, cfg, stop);
+        return runReplay(ex, cfg, stop);
     } else {
         if (!util::pinThread(cfg.transport.cpuCore)) {
             fmt::print(stderr, "exchange-sim: cannot pin to core {}\n", cfg.transport.cpuCore);
@@ -137,7 +111,7 @@ int runSim(const SimConfig& cfg, typename T::Type& backend, volatile std::sig_at
                    cfg.transport.interface, cfg.transport.cpuCore, cfg.transport.marketData.srcPort,
                    cfg.transport.marketData.dstPort, cfg.transport.orderEntry.srcPort,
                    cfg.transport.orderEntry.dstPort);
-        return runVenue(ex, cfg, stop);
+        return runReplay(ex, cfg, stop);
     }
 }
 

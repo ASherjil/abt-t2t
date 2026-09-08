@@ -6,6 +6,13 @@
 [venue]
 symbols       = ["AAPL", "MSFT", "AMD", "INTC", "QQQ", "SPY", "TQQQ", "GOOGL"]   # venues the DUT can trade
 locates       = []            # stock-locate per symbol; empty = bind from the replayed stock directory
+                              # (synthetic [transport]/[network]/[market_data]/[order_entry] describe the ring
+# datapath (exchange_sim_verbs / exchange_sim_dpdk); [socket] is the kernel path (exchange_sim).
+# Rig loopback: sim on cx0 <-DAC-> DUT on cx1 (both ConnectX-4 Lx ports).
+
+[venue]
+symbols       = ["AAPL", "MSFT", "AMD", "INTC", "QQQ", "SPY", "TQQQ", "GOOGL"]   # venues the DUT can trade
+locates       = []            # stock-locate per symbol; empty = bind from the replayed stock directory
                               # (synthetic [flow] mode uses 1, 2, ... and publishes its own directory)
 order_reserve = 65536         # initial live-order map capacity (real AAPL day peaks ~30k resting)
 session       = "SIM0000001"  # SoupBinTCP session id (10 chars)
@@ -15,11 +22,10 @@ wire_per_tick = 100           # tick -> wire price scale (100 = 4-decimal dollar
 md_max_payload = 400          # max MoldUDP64 payload per packet; verbs backend posts frames inline, so
                               # keep payload + 42 B headers under the QP's inline limit (512 requested)
 
-# Real-data replay (replaces the synthetic [flow] generator when enabled). Every message in the
+# Real-data replay. Every message in the
 # file is forwarded to the DUT byte-for-byte; the venue mirrors the configured symbol's book so the
 # DUT's orders trade against real liquidity (fills are shadowed on top of the recorded history).
 [replay]
-enabled        = true
 file           = "data/itch/01302020.NASDAQ_ITCH50.itch"   # full day (gunzip -k of the NASDAQ file) or an extract
 speed          = 1.0          # 1.0 = real time-of-day pacing, 10.0 = 10x faster, 0 = as fast as possible
 loops          = 0            # replays of the file before exiting (0 = until stopped)

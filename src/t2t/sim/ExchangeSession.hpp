@@ -105,15 +105,9 @@ public:
     void prepareTransport(Tx& tx, const net::Endpoints& mdEp, const net::Endpoints& oeEp,
                           std::uint32_t maxTxFrame = 0)
         requires (Mode == IoMode::Transport && TxRing<Tx>);
-    template <class TickFn>
-    void run(volatile std::sig_atomic_t& stop, std::uint64_t tickIntervalNs, TickFn onTick)
-        requires (Mode == IoMode::Socket);
     [[nodiscard]] bool pollOrderEntry(std::uint64_t ts)
         requires (Mode == IoMode::Socket);
     [[nodiscard]] bool pollOrderEntry(std::uint64_t ts)
-        requires (Mode == IoMode::Transport && RxRing<Tx>);
-    template <class TickFn>
-    void run(volatile std::sig_atomic_t& stop, std::uint64_t tickIntervalNs, TickFn onTick)
         requires (Mode == IoMode::Transport && RxRing<Tx>);
 
     [[nodiscard]] const std::vector<std::vector<std::byte>>& capturedMarketData() const
@@ -531,32 +525,6 @@ void ExchangeSession<Mode, Tx>::prepareTransport(Tx& tx, const net::Endpoints& m
 }
 
 template <IoMode Mode, class Tx>
-template <class TickFn>
-void ExchangeSession<Mode, Tx>::run(volatile std::sig_atomic_t& stop, std::uint64_t tickIntervalNs,
-                                    TickFn onTick)
-    requires (Mode == IoMode::Socket)
-{
-    std::array<std::byte, 8192> rx{};
-    std::uint64_t               lastTick = monotonicNs();
-    while (stop == 0) {
-        pollfd pfd{m_sock.oeFd.get(), POLLIN, 0};
-        if (::poll(&pfd, 1, 1) > 0 && (pfd.revents & POLLIN) != 0) {
-            const ssize_t n = ::recv(m_sock.oeFd.get(), rx.data(), rx.size(), 0);
-            if (n <= 0) {
-                fmt::print(stderr, "exchange-sim: client disconnected\n");
-                break;
-            }
-            onOrderEntryBytes({rx.data(), static_cast<std::size_t>(n)}, nsSinceMidnightUtc());
-        }
-        const std::uint64_t now = monotonicNs();
-        if (now - lastTick > tickIntervalNs) {
-            onTick(nsSinceMidnightUtc());
-            lastTick = now;
-        }
-    }
-}
-
-template <IoMode Mode, class Tx>
 bool ExchangeSession<Mode, Tx>::pollOrderEntry(std::uint64_t ts)
     requires (Mode == IoMode::Socket)
 {
@@ -597,23 +565,6 @@ bool ExchangeSession<Mode, Tx>::pollOrderEntry(std::uint64_t ts)
         m_io.tx->release();
     }
     return true;
-}
-
-template <IoMode Mode, class Tx>
-template <class TickFn>
-void ExchangeSession<Mode, Tx>::run(volatile std::sig_atomic_t& stop, std::uint64_t tickIntervalNs,
-                                    TickFn onTick)
-    requires (Mode == IoMode::Transport && RxRing<Tx>)
-{
-    std::uint64_t lastTick = monotonicNs();
-    while (stop == 0) {
-        (void)pollOrderEntry(nsSinceMidnightUtc());
-        const std::uint64_t now = monotonicNs();
-        if (now - lastTick > tickIntervalNs) {
-            onTick(nsSinceMidnightUtc());
-            lastTick = now;
-        }
-    }
 }
 
 template <IoMode Mode, class Tx>
