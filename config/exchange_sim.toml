@@ -1,14 +1,11 @@
 # abt-t2t exchange simulator — single hardcoded config (the binary takes NO command-line args).
 # Edit values in place. [transport]/[network]/[market_data]/[order_entry] describe the ring
 # datapath (exchange_sim_verbs / exchange_sim_dpdk); [socket] is the kernel path (exchange_sim).
-# Rig loopback: sim on cx0 <-DAC-> DUT on cx1 (both ConnectX-4 Lx ports).
+# Rig loopback: sim on cx0 (ConnectX-4 Lx, verbs) <-DAC-> DUT on enp1s0f1 (X2522-Plus, ef_vi).
 
 [venue]
 symbols       = ["AAPL", "MSFT", "AMD", "INTC", "QQQ", "SPY", "TQQQ", "GOOGL"]   # venues the DUT can trade
 locates       = []            # stock-locate per symbol; empty = bind from the replayed stock directory
-                              # (synthetic [transport]/[network]/[market_data]/[order_entry] describe the ring
-# datapath (exchange_sim_verbs / exchange_sim_dpdk); [socket] is the kernel path (exchange_sim).
-# Rig loopback: sim on cx0 <-DAC-> DUT on cx1 (both ConnectX-4 Lx ports).
 
 [venue]
 symbols       = ["AAPL", "MSFT", "AMD", "INTC", "QQQ", "SPY", "TQQQ", "GOOGL"]   # venues the DUT can trade
@@ -29,8 +26,8 @@ md_max_payload = 400          # max MoldUDP64 payload per packet; verbs backend 
 file           = "data/itch/01302020.NASDAQ_ITCH50.itch"   # full day (gunzip -k of the NASDAQ file) or an extract
 speed          = 1.0          # 1.0 = real time-of-day pacing, 10.0 = 10x faster, 0 = as fast as possible
 loops          = 0            # replays of the file before exiting (0 = until stopped)
-skip_to        = "09:25:00"   # replayed AFAP up to here (builds the book), paced from here on ("" = none)
-stop_at        = ""           # end the loop at this time-of-day ("" = end of file)
+skip_to        = "09:29:50"   # replayed AFAP up to here (builds the book), paced from here on ("" = none)
+stop_at        = "09:59:50"   # end the loop at this time-of-day ("" = end of file); 30 min keeps long benchmarks loop-free
 preload_max_mb = 1024         # files up to this size are held in RAM; larger ones are streamed
 max_batch      = 64           # messages sent per pump before order entry is polled again
 wait_for_dut   = true         # hold the replay until the DUT's hello arrives on order entry
@@ -53,13 +50,13 @@ tick_interval_ns = 100000               # run() pumps one generator step per thi
 [transport]
 interface = "cx0"             # NIC the sim drives (ConnectX-4 Lx port 0)
 driver    = "mlx5_core"       # "mlx5_core" | "sfc" | "i40e" (dpdk backend devargs policy)
-cpu_core  = 5                 # isolated core the sim hot loop pins to
+cpu_core  = 4                 # isolated core the sim hot loop pins to
 
 # Shared L2/L3 addressing. local = this sim's NIC; peer = the DUT. No ARP — both hardcoded.
 [network]
 local_mac = "b8:83:03:9c:d4:5c"   # cx0
 local_ip  = "10.0.0.1"
-peer_mac  = "b8:83:03:9c:d4:5d"   # cx1 (DUT on verbs); 00:0f:53:ad:3c:90 when the DUT is on the X2522 enp1s0f0
+peer_mac  = "00:0f:53:ad:3c:91"   # enp1s0f1 (DUT on the X2522, ef_vi); b8:83:03:9c:d4:5d = cx1 (DUT on verbs)
 peer_ip   = "10.0.0.2"
 
 # Market-data feed: sim -> DUT (ITCH / MoldUDP64).
