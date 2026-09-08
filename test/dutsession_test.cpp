@@ -54,7 +54,7 @@ struct JoinBid {
     }
 
     [[nodiscard]] bool onBook(const dut::BookBuilder& book, const dut::Account& acct,
-                              dut::QuoteTargets& out) noexcept {
+                              dut::QuoteTargets& out) const noexcept {
         out = targetsOf(book, acct);
         return true;
     }

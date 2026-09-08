@@ -6,6 +6,7 @@
 
 #include <pthread.h>
 #include <sched.h>
+
 #include <x86intrin.h>
 
 namespace abt::util {

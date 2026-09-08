@@ -10,8 +10,8 @@
 #include "t2t/replay/SymbolFilter.hpp"
 #include "t2t/sim/ExchangeSession.hpp"
 #include "t2t/sim/SimConfig.hpp"
-#include "t2t/util/Platform.hpp"
 #include "t2t/util/Memory.hpp"
+#include "t2t/util/Platform.hpp"
 
 namespace abt {
 

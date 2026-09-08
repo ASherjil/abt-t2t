@@ -22,8 +22,8 @@
 #include "t2t/dut/DutSession.hpp"
 #include "t2t/protocol/Itch50.hpp"
 #include "t2t/protocol/MoldUdp64.hpp"
-#include "t2t/util/Scan.hpp"
 #include "t2t/util/Platform.hpp"
+#include "t2t/util/Scan.hpp"
 
 using namespace abt;
 
@@ -56,8 +56,8 @@ struct NeverSend {
         return {};
     }
 
-    [[nodiscard]] bool onBook(const dut::BookBuilder& book, const dut::Account& acct,
-                              dut::QuoteTargets& out) noexcept {
+    [[nodiscard]] static bool onBook(const dut::BookBuilder& book, const dut::Account& acct,
+                                     dut::QuoteTargets& out) noexcept {
         out = targetsOf(book, acct);
         return true;
     }

@@ -14,8 +14,8 @@
 #include "t2t/dut/QuoterStrategy.hpp"
 #include "t2t/protocol/Itch50Text.hpp"
 #include "t2t/protocol/MoldUdp64.hpp"
-#include "t2t/util/Platform.hpp"
 #include "t2t/util/Memory.hpp"
+#include "t2t/util/Platform.hpp"
 
 namespace abt::dut {
 
