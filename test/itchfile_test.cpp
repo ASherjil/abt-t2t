@@ -186,7 +186,6 @@ void test_roundtrip_and_replay(const std::string& path, const Fixture& f) {
     CHECK(filter.resolved());
     CHECK_EQ(filter.stockLocate(), 1u);
     CHECK_EQ(kept, f.aaplMessages + 5u);
-
 }
 
 void test_extract_then_replay(const std::string& src) {

@@ -45,20 +45,6 @@ void printCaptures(Session& sess) {
 }
 
 template <class Session>
-void printOpenTraces(Session& sess) {
-    const auto& traces = sess.openTraces();
-    for (std::size_t i = 0; i < traces.n && i < traces.slots.size(); ++i) {
-        const auto& t = traces.slots[i];
-        std::string syms;
-        for (std::size_t k = 0; k < t.n; ++k) {
-            syms += fmt::format("{}{}/{}", k == 0 ? "" : " ", tsc::toNs(t.quote[k]), tsc::toNs(t.tx[k]));
-        }
-        fmt::print("[reconcile-all] seq={} msgs={} apply={} touch={} flags={} quote/tx ns per symbol: {}\n",
-                   t.seq, t.msgs, tsc::toNs(t.apply), tsc::toNs(t.touch), tsc::toNs(t.flags), syms);
-    }
-}
-
-template <class Session>
 void printDutReport(Session& sess, util::ThreadCounters atStart, util::ThreadCounters now, int core,
                     util::CoreInterrupts irqAtStart, util::CoreInterrupts irqNow) {
     const util::ProcessMemory mem = util::processMemory();
@@ -80,15 +66,10 @@ void printDutReport(Session& sess, util::ThreadCounters atStart, util::ThreadCou
         sess.proc().summary();
         sess.ackRtt().summary();
         sess.rxStage().summary();
-        for (auto& r : sess.applyCost()) {
-            r.summary();
-        }
-        sess.refAge().summary();
         for (auto& r : sess.stageCost()) {
             r.summary();
         }
         printCaptures(sess);
-        printOpenTraces(sess);
     }
     const OmsStats& s = sess.oms().stats();
     fmt::print("[oms] orders sent={} enters={} replaces={} cancels={} accepts={} fills={} rejects={} "
@@ -147,10 +128,6 @@ std::vector<LatencyRecorder*> recordersOf(Session& sess) {
         recs.push_back(&sess.t2tHol());
         recs.push_back(&sess.ackRtt());
         recs.push_back(&sess.rxStage());
-        for (auto& r : sess.applyCost()) {
-            recs.push_back(&r);
-        }
-        recs.push_back(&sess.refAge());
         for (auto& r : sess.stageCost()) {
             recs.push_back(&r);
         }
