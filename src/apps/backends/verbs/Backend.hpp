@@ -3,7 +3,7 @@
 #include <cstdint>
 #include <string_view>
 
-#include "t2t/config/BackendTraits.hpp"
+#include "t2t/config/Config.hpp"
 #include "t2t/dut/TxSignal.hpp"
 
 #include "Verbs.hpp"

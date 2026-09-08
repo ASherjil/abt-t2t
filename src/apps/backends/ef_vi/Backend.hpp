@@ -4,7 +4,7 @@
 #include <string_view>
 
 #include "t2t/BuildConfig.hpp"
-#include "t2t/config/BackendTraits.hpp"
+#include "t2t/config/Config.hpp"
 
 #include "EtherFabricVirtualInterface.hpp"
 

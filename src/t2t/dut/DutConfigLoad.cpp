@@ -5,7 +5,7 @@
 #include <fmt/core.h>
 #include <toml++/toml.hpp>
 
-#include "t2t/config/NetParse.hpp"
+#include "t2t/config/Config.hpp"
 #include "t2t/dut/DutAppConfig.hpp"
 #include "t2t/dut/SymbolProfile.hpp"
 

@@ -77,7 +77,7 @@ target_link_libraries(abt_sim INTERFACE abt_protocol abt_lob abt_replay fmt::fmt
 # abt_config : TOML-driven runtime configuration loaders (toml++) for sim and DUT.
 # ---------------------------------------------------------------------------
 add_library(abt_config STATIC
-    config/NetParse.cpp
+    config/Config.cpp
     dut/DutConfigLoad.cpp
     sim/ConfigLoad.cpp)
 add_library(abt::config ALIAS abt_config)

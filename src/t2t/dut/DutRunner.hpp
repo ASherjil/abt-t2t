@@ -7,7 +7,7 @@
 #include <fmt/core.h>
 
 #include "t2t/BuildConfig.hpp"
-#include "t2t/config/BackendTraits.hpp"
+#include "t2t/config/Config.hpp"
 #include "t2t/dut/DutAppConfig.hpp"
 #include "t2t/dut/DutSession.hpp"
 #include "t2t/dut/LatencyRecorder.hpp"

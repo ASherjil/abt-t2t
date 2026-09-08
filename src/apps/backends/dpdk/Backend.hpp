@@ -4,7 +4,7 @@
 #include <string>
 #include <string_view>
 
-#include "t2t/config/BackendTraits.hpp"
+#include "t2t/config/Config.hpp"
 
 #include "DPDK.hpp"
 

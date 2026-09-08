@@ -1,4 +1,4 @@
-#include "t2t/config/NetParse.hpp"
+#include "t2t/config/Config.hpp"
 
 #include <array>
 #include <cstddef>

@@ -5,7 +5,7 @@
 
 #include <fmt/core.h>
 
-#include "t2t/config/BackendTraits.hpp"
+#include "t2t/config/Config.hpp"
 #include "t2t/protocol/Itch50.hpp"
 #include "t2t/replay/SymbolFilter.hpp"
 #include "t2t/sim/ExchangeSession.hpp"

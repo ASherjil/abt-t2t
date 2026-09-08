@@ -2,13 +2,20 @@
 
 #include <concepts>
 #include <cstdint>
+#include <string>
 #include <string_view>
 
 #include "third_party/abtrda3/RingConcepts.hpp"
 
-#include "t2t/config/NicSpec.hpp"
+#include "t2t/protocol/EthIpUdp.hpp"
 
 namespace abt {
+
+struct NicSpec {
+    std::string interface = "eth0";
+    std::string driver;
+    int         cpuCore = -1;
+};
 
 struct SocketBackend {};
 
@@ -35,3 +42,10 @@ template <class T>
 inline constexpr bool kIsSocketBackend = std::same_as<typename T::Type, SocketBackend>;
 
 }   // namespace abt
+
+namespace abt::config {
+
+[[nodiscard]] net::MacAddr  parseMac(std::string_view s) noexcept;
+[[nodiscard]] std::uint32_t parseIp(std::string_view s) noexcept;
+
+}   // namespace abt::config
