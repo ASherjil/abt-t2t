@@ -58,7 +58,6 @@ target_link_libraries(abt_dut
 # abt_replay : NASDAQ ITCH file replay (BinaryFILE format, gz-transparent via zlib).
 # ---------------------------------------------------------------------------
 add_library(abt_replay STATIC
-    replay/BookReplay.cpp
     replay/FeedValidator.cpp
     replay/ItchFile.cpp
     replay/SymbolFilter.cpp)

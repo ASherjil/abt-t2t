@@ -12,7 +12,6 @@
 
 #include "t2t/protocol/Itch50.hpp"
 #include "t2t/protocol/Ouch50.hpp"
-#include "t2t/replay/BookReplay.hpp"
 #include "t2t/replay/ItchFile.hpp"
 #include "t2t/replay/SymbolFilter.hpp"
 #include "t2t/sim/Venue.hpp"
@@ -172,7 +171,6 @@ void test_roundtrip_and_replay(const std::string& path, const Fixture& f) {
     replay::ItchFileReader r(path);
     CHECK(r.ok());
     replay::SymbolFilter       filter("AAPL");
-    replay::BookReplay         book(1, 0, 20'000'000, 100);
     std::span<const std::byte> msg;
     std::size_t                kept = 0;
     std::size_t                idx  = 0;
@@ -181,27 +179,14 @@ void test_roundtrip_and_replay(const std::string& path, const Fixture& f) {
         ++idx;
         if (filter.accept(msg)) {
             ++kept;
-            book.onMessage(msg);
         }
     }
-    book.finish();
     CHECK(!r.truncated());
     CHECK_EQ(r.messages(), f.messages.size());
     CHECK(filter.resolved());
     CHECK_EQ(filter.stockLocate(), 1u);
     CHECK_EQ(kept, f.aaplMessages + 5u);
 
-    const replay::ReplayStats& s = book.stats();
-    CHECK_EQ(s.messages, f.aaplMessages);
-    CHECK(s.adds > 0 && s.executes > 0 && s.deletes > 0);
-    CHECK_EQ(s.unknownRef, 0u);
-    CHECK_EQ(s.overReduce, 0u);
-    CHECK_EQ(s.crossed, 0u);
-    CHECK_EQ(s.outOfBand, 0u);
-    CHECK(s.maxLive > 0);
-    CHECK(s.marketOpenTs > 0 && s.marketCloseTs > s.marketOpenTs);
-    CHECK(s.peakPerMs >= 1);
-    CHECK(book.interArrivalNs().count() > 0);
 }
 
 void test_extract_then_replay(const std::string& src) {
@@ -219,7 +204,6 @@ void test_extract_then_replay(const std::string& src) {
     }
     replay::ItchFileReader     r(out);
     replay::SymbolFilter       filter("AAPL");
-    replay::BookReplay         book(1, 0, 20'000'000, 100);
     std::span<const std::byte> msg;
     std::size_t                msftSeen = 0;
     while (r.next(msg)) {
@@ -227,10 +211,8 @@ void test_extract_then_replay(const std::string& src) {
             ++msftSeen;
         }
         CHECK(filter.accept(msg));
-        book.onMessage(msg);
     }
     CHECK_EQ(msftSeen, 0u);
-    CHECK_EQ(book.stats().unknownRef, 0u);
     std::remove(out.c_str());
 }
 
