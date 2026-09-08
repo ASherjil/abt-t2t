@@ -6,8 +6,7 @@
 
 #include <fmt/format.h>
 
-#include "t2t/util/Affinity.hpp"
-#include "t2t/util/Clock.hpp"
+#include "t2t/util/Platform.hpp"
 
 #ifdef __x86_64__
 #include <immintrin.h>

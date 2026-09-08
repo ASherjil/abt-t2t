@@ -36,7 +36,7 @@
 #include "t2t/protocol/UdpFramer.hpp"
 #include "t2t/sim/EngineConfig.hpp"
 #include "t2t/sim/Venue.hpp"
-#include "t2t/util/Clock.hpp"
+#include "t2t/util/Platform.hpp"
 #include "t2t/util/UniqueFd.hpp"
 
 namespace abt {

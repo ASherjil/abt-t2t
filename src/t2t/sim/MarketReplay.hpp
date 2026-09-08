@@ -12,7 +12,7 @@
 
 #include "t2t/replay/ItchFile.hpp"
 #include "t2t/replay/SymbolFilter.hpp"
-#include "t2t/util/Clock.hpp"
+#include "t2t/util/Platform.hpp"
 
 namespace abt {
 

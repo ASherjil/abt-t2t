@@ -16,8 +16,8 @@
 #include "t2t/replay/FeedValidator.hpp"
 #include "t2t/replay/ItchFile.hpp"
 #include "t2t/replay/SymbolFilter.hpp"
-#include "t2t/util/Clock.hpp"
-#include "t2t/util/HugePageArena.hpp"
+#include "t2t/util/Platform.hpp"
+#include "t2t/util/Memory.hpp"
 
 using namespace abt;
 

@@ -3,6 +3,7 @@
 #include <array>
 #include <atomic>
 #include <cstddef>
+#include <cstdint>
 #include <span>
 #include <stop_token>
 #include <string>
@@ -11,7 +12,6 @@
 #include <vector>
 
 #include <rigtorp/SPSCQueue.h>
-#include <cstdint>
 
 #include "t2t/lob/Types.hpp"
 #include "t2t/util/Histogram.hpp"

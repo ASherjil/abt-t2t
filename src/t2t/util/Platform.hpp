@@ -1,18 +1,45 @@
 #pragma once
-//
-// Low-overhead cycle-counter timestamp for measuring sub-microsecond compute paths. clock_gettime
-// costs ~15-25 ns per call, which would dominate (and perturb) a ~100 ns hot path; rdtscp is a
-// handful of cycles. The counter is runtime-calibrated to nanoseconds against CLOCK_MONOTONIC once
-// (the invariant-TSC frequency is not the core frequency, so it must be measured, not assumed).
-// This measures pure on-CPU work — no NIC / hardware timestamps involved.
-//
 
+#include <cstddef>
 #include <cstdint>
 #include <ctime>
 
-#ifdef __x86_64__
+#include <pthread.h>
+#include <sched.h>
 #include <x86intrin.h>
-#endif
+
+namespace abt::util {
+
+inline constexpr std::size_t kCacheLineBytes = 64;
+
+inline bool pinThread(int core) noexcept {
+    if (core < 0) {
+        return true;
+    }
+    cpu_set_t set;
+    CPU_ZERO(&set);
+    CPU_SET(static_cast<unsigned>(core), &set);
+    return pthread_setaffinity_np(pthread_self(), sizeof set, &set) == 0;
+}
+
+}   // namespace abt::util
+
+namespace abt {
+
+inline std::uint64_t monotonicNs() noexcept {
+    timespec ts{};
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return static_cast<std::uint64_t>(ts.tv_sec) * 1'000'000'000ull + static_cast<std::uint64_t>(ts.tv_nsec);
+}
+
+inline std::uint64_t nsSinceMidnightUtc() noexcept {
+    timespec ts{};
+    clock_gettime(CLOCK_REALTIME, &ts);
+    const std::uint64_t secOfDay = static_cast<std::uint64_t>(ts.tv_sec) % 86'400ull;
+    return secOfDay * 1'000'000'000ull + static_cast<std::uint64_t>(ts.tv_nsec);
+}
+
+}   // namespace abt
 
 namespace abt::tsc {
 

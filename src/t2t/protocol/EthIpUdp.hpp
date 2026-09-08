@@ -6,6 +6,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <span>
 #include <type_traits>
 
 #include "t2t/protocol/Endian.hpp"
@@ -83,6 +84,21 @@ inline std::size_t udpPayloadLen(const std::byte* frame, std::size_t frameLen) n
     const std::size_t declared = total - kIpv4HeaderSize - kUdpHeaderSize;
     const std::size_t present  = frameLen - kL2L3L4Overhead;
     return declared < present ? declared : present;
+}
+
+[[nodiscard]] constexpr std::uint16_t computeChecksum(std::span<const std::byte> data) noexcept {
+    std::uint32_t sum = 0;
+    std::size_t   i   = 0;
+    for (/* i declared above */; (i + 1) < data.size(); i += 2) {
+        sum += (std::to_integer<std::uint32_t>(data[i]) << 8) | std::to_integer<std::uint32_t>(data[i + 1]);
+    }
+    if (i < data.size()) {
+        sum += std::to_integer<std::uint32_t>(data[i]) << 8;
+    }
+    while (sum >> 16) {
+        sum = (sum & 0xFFFF) + (sum >> 16);
+    }
+    return static_cast<std::uint16_t>(~sum);
 }
 
 }   // namespace abt::net

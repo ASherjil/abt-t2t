@@ -25,20 +25,15 @@ target_include_directories(quoter_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(quoter_test PRIVATE abt::dut abt::flags fmt::fmt)
 add_test(NAME quoter_test COMMAND quoter_test)
 
-add_executable(arena_test arena_test.cpp)
-target_include_directories(arena_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-target_link_libraries(arena_test PRIVATE abt::util abt::flags fmt::fmt)
-add_test(NAME arena_test COMMAND arena_test)
+add_executable(memory_test memory_test.cpp)
+target_include_directories(memory_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(memory_test PRIVATE abt::util abt::flags fmt::fmt)
+add_test(NAME memory_test COMMAND memory_test)
 
 add_executable(uniquefd_test uniquefd_test.cpp)
 target_include_directories(uniquefd_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(uniquefd_test PRIVATE abt::util abt::flags fmt::fmt)
 add_test(NAME uniquefd_test COMMAND uniquefd_test)
-
-add_executable(memlock_test memlock_test.cpp)
-target_include_directories(memlock_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-target_link_libraries(memlock_test PRIVATE abt::util abt::flags fmt::fmt)
-add_test(NAME memlock_test COMMAND memlock_test)
 
 # histogram_test smoke-tests the vendored HdrHistogram binding.
 add_executable(histogram_test histogram_test.cpp)

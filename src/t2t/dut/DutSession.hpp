@@ -44,10 +44,8 @@
 #include "t2t/protocol/Ouch50.hpp"
 #include "t2t/protocol/SoupBinTcp.hpp"
 #include "t2t/protocol/UdpFramer.hpp"
-#include "t2t/util/CacheLine.hpp"
-#include "t2t/util/Clock.hpp"
-#include "t2t/util/HugePageArena.hpp"
-#include "t2t/util/Tsc.hpp"
+#include "t2t/util/Platform.hpp"
+#include "t2t/util/Memory.hpp"
 #include "t2t/util/UniqueFd.hpp"
 
 namespace abt::dut {

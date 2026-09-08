@@ -12,7 +12,7 @@
 #include "t2t/dut/SymbolProfile.hpp"
 #include "t2t/protocol/Itch50.hpp"
 #include "t2t/replay/FeedValidator.hpp"
-#include "t2t/util/HugePageArena.hpp"
+#include "t2t/util/Memory.hpp"
 
 using namespace abt;
 

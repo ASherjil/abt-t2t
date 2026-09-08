@@ -6,7 +6,7 @@
 
 #include "t2t/protocol/Itch50.hpp"
 #include "t2t/protocol/MoldUdp64.hpp"
-#include "t2t/util/Affinity.hpp"
+#include "t2t/util/Platform.hpp"
 
 namespace abt::dut {
 

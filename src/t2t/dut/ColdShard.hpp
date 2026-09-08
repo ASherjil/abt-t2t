@@ -10,7 +10,7 @@
 #include <rigtorp/SPSCQueue.h>
 
 #include "t2t/dut/BookTable.hpp"
-#include "t2t/util/CacheLine.hpp"
+#include "t2t/util/Platform.hpp"
 
 namespace abt::dut {
 

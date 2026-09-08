@@ -14,7 +14,6 @@
 #include <string_view>
 #include <vector>
 
-#include "t2t/protocol/Checksum.hpp"
 #include "t2t/protocol/EthIpUdp.hpp"
 #include "t2t/protocol/MoldUdp64.hpp"
 #include "t2t/protocol/Ouch50.hpp"

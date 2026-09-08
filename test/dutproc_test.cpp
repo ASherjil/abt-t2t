@@ -23,7 +23,7 @@
 #include "t2t/protocol/Itch50.hpp"
 #include "t2t/protocol/MoldUdp64.hpp"
 #include "t2t/util/Scan.hpp"
-#include "t2t/util/Tsc.hpp"
+#include "t2t/util/Platform.hpp"
 
 using namespace abt;
 

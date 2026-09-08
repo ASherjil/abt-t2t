@@ -8,8 +8,8 @@
 #include "t2t/BuildConfig.hpp"
 #include "t2t/dut/DutAppConfig.hpp"
 #include "t2t/dut/DutRunner.hpp"
-#include "t2t/util/MemLock.hpp"
-#include "t2t/util/Tsc.hpp"
+#include "t2t/util/Memory.hpp"
+#include "t2t/util/Platform.hpp"
 
 using namespace abt;
 

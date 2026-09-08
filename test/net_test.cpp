@@ -10,7 +10,6 @@
 #include <cstring>
 #include <span>
 
-#include "t2t/protocol/Checksum.hpp"
 #include "t2t/protocol/EthIpUdp.hpp"
 #include "t2t/protocol/UdpFramer.hpp"
 
