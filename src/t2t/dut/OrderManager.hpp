@@ -8,11 +8,26 @@
 #include <string_view>
 #include <vector>
 
-#include "t2t/dut/Quote.hpp"
 #include "t2t/lob/Types.hpp"
 #include "t2t/protocol/Ouch50.hpp"
 
 namespace abt::dut {
+
+// The DUT's own trading state, as the strategy sees it.
+struct Account {
+    std::int64_t position = 0;   // signed inventory in shares (+ long, - short)
+};
+
+// The quotes the strategy wants resting after a market-data update. A side with quote == false
+// means "pull that side". Prices are wire prices already on the tick grid.
+struct QuoteTargets {
+    bool     quoteBid = false;
+    Price    bidPrice = 0;
+    Quantity bidQty   = 0;
+    bool     quoteAsk = false;
+    Price    askPrice = 0;
+    Quantity askQty   = 0;
+};
 
 struct OmsConfig {
     std::vector<std::string> symbols;

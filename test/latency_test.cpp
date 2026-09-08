@@ -3,7 +3,6 @@
 #include <cstdint>
 
 #include "t2t/dut/LatencyRecorder.hpp"
-#include "t2t/dut/SampleContext.hpp"
 
 using namespace abt;
 

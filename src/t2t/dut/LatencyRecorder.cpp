@@ -6,7 +6,6 @@
 
 #include <fmt/format.h>
 
-#include "t2t/dut/SampleContext.hpp"
 #include "t2t/util/Affinity.hpp"
 #include "t2t/util/Clock.hpp"
 

@@ -12,7 +12,6 @@
 #include "t2t/dut/DutSession.hpp"
 #include "t2t/dut/LatencyRecorder.hpp"
 #include "t2t/dut/QuoterStrategy.hpp"
-#include "t2t/dut/SampleContext.hpp"
 #include "t2t/protocol/Itch50Text.hpp"
 #include "t2t/protocol/MoldUdp64.hpp"
 #include "t2t/util/Affinity.hpp"

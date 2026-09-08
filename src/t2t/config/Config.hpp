@@ -17,6 +17,8 @@ struct NicSpec {
     int         cpuCore = -1;
 };
 
+inline constexpr std::uint32_t kTxSignalEvery = 64;
+
 struct SocketBackend {};
 
 template <class B>

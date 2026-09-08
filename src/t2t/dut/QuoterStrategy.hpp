@@ -12,7 +12,7 @@
 #include <limits>
 
 #include "t2t/dut/BookBuilder.hpp"
-#include "t2t/dut/Quote.hpp"
+#include "t2t/dut/OrderManager.hpp"
 #include "t2t/lob/Types.hpp"
 
 namespace abt::dut {
