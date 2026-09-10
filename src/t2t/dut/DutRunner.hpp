@@ -253,8 +253,6 @@ int runDut(const DutAppConfig& cfg, typename T::Type& backend, volatile std::sig
         printDutStatus(sess.status(runNs));
         fmt::print("[dut] polls={} ns_per_poll={:.2f}\n", totalPolls,
                    static_cast<double>(runNs) / static_cast<double>(totalPolls));
-        fmt::print("[dut] early quotes={} early sends={} late sends={}\n", sess.earlyQuotes(),
-                   sess.earlySends(), sess.lateSends());
         printDutReport(sess, countersAtStart, countersAtEnd, cfg.transport.cpuCore, irqAtStart, irqAtEnd);
         return 0;
     }

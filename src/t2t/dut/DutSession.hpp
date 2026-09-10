@@ -171,9 +171,6 @@ public:
     [[nodiscard]] const PacketCapture& captures() const noexcept
         requires (build::kSwTiming);
     [[nodiscard]] std::uint32_t    ordersSent() const noexcept;
-    [[nodiscard]] std::uint64_t    earlyQuotes() const noexcept;
-    [[nodiscard]] std::uint64_t    earlySends() const noexcept;
-    [[nodiscard]] std::uint64_t    lateSends() const noexcept;
     [[nodiscard]] std::uint64_t    packetsReceived() const noexcept;
     [[nodiscard]] std::uint64_t    foreignMessages() const noexcept;
     [[nodiscard]] std::uint32_t    sessionResets() const noexcept;
@@ -376,9 +373,6 @@ private:
     alignas(util::kCacheLineBytes) std::uint64_t m_lastRxTsc = 0;
     bool          m_idleSince                                = true;
     std::uint32_t m_ordersSent                               = 0;
-    std::uint64_t m_earlyQuotes                              = 0;
-    std::uint64_t m_earlySends                               = 0;
-    std::uint64_t m_lateSends                                = 0;
     std::uint32_t m_commits                                  = 0;
     bool          m_reapHit                                  = false;
     std::uint64_t m_packets                                  = 0;
@@ -1150,21 +1144,6 @@ std::uint32_t DutSession<Mode, Strat, Io>::ordersSent() const noexcept {
 }
 
 template <IoMode Mode, Strategy Strat, class Io>
-std::uint64_t DutSession<Mode, Strat, Io>::earlyQuotes() const noexcept {
-    return m_earlyQuotes;
-}
-
-template <IoMode Mode, Strategy Strat, class Io>
-std::uint64_t DutSession<Mode, Strat, Io>::earlySends() const noexcept {
-    return m_earlySends;
-}
-
-template <IoMode Mode, Strategy Strat, class Io>
-std::uint64_t DutSession<Mode, Strat, Io>::lateSends() const noexcept {
-    return m_lateSends;
-}
-
-template <IoMode Mode, Strategy Strat, class Io>
 std::uint64_t DutSession<Mode, Strat, Io>::packetsReceived() const noexcept {
     return m_packets;
 }
@@ -1234,8 +1213,7 @@ void DutSession<Mode, Strat, Io>::applyPacket(std::span<const std::byte> moldPac
     std::uint64_t t2tTicks   = 0;
     std::uint64_t sendCtx    = 0;
     std::uint64_t sendStages = 0;
-    const auto    quote      = [&](std::size_t h, bool early) {
-        m_earlyQuotes += early ? 1u : 0u;
+    const auto    quote      = [&](std::size_t h) {
         const std::uint64_t q0   = swMark();
         const BookBuilder&  book = m_books.hotBook(h);
         QuoteTargets        targets{};
@@ -1268,9 +1246,7 @@ void DutSession<Mode, Strat, Io>::applyPacket(std::span<const std::byte> moldPac
                 ok = sendOrder({m_out[i].buf.data(), m_out[i].len});
             }
             if (ok && first) {
-                sent = true;
-                m_earlySends += early ? 1u : 0u;
-                m_lateSends += early ? 0u : 1u;
+                sent              = true;
                 std::uint64_t now = 0;
                 if constexpr (build::kSwTiming) {
                     now = tsc::now();
@@ -1308,7 +1284,7 @@ void DutSession<Mode, Strat, Io>::applyPacket(std::span<const std::byte> moldPac
                     if (m_topSeen[h] == kDirtyTop) {
                         m_strats[h].forget();
                     }
-                    quote(h, true);
+                    quote(h);
                 }
             }
         }
@@ -1318,7 +1294,7 @@ void DutSession<Mode, Strat, Io>::applyPacket(std::span<const std::byte> moldPac
     if (m_reconcileAll) [[unlikely]] {
         m_reconcileAll = false;
         for (std::size_t h = 0; h < m_books.hotCount(); ++h) {
-            quote(h, false);
+            quote(h);
         }
     }
     if (m_cold) {
