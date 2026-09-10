@@ -36,12 +36,12 @@ void logReplay(const Session& ex, const ReplayProgress& p, std::uint64_t elapsed
                "[sim +{:>5}s] loop={} t={} sent={} mir={} late_max={}us late>1ms={} md_pkts={} oe_pkts={} "
                "tx_drop={} "
                "enter={} replace={} cancel={} shadow={}/{} cross={} impact={} self={} unk={} over={} oob={} "
-               "bid={} ask={} live={} clients={}\n",
+               "rehash={} bid={} ask={} live={} clients={}\n",
                elapsedNs / 1'000'000'000ull, p.loop, replay::formatTimeOfDay(p.virtualTs), p.sent, s.mirrored,
                p.maxLateNs / 1000, p.lateOver1ms, s.mdPackets, s.oePackets, s.txDropped, s.enters, s.replaces,
                s.cancels, m.shadowFills, m.shadowShares, m.crossFills, m.impactFills, m.selfTrades,
-               m.unknownRef, m.overReduce, m.outOfBand, ex.bestBid(), ex.bestAsk(), ex.liveOrders(),
-               ex.clientOrders());
+               m.unknownRef, m.overReduce, m.outOfBand, m.rehashes, ex.bestBid(), ex.bestAsk(),
+               ex.liveOrders(), ex.clientOrders());
 }
 
 template <class Session>

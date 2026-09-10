@@ -30,7 +30,7 @@ quote_qty           = 100     # shares per side
 skew_ticks_per_unit = 0.001   # quote shift per share of inventory (1000 shares = 1 tick)
 
 [measure]
-histogram_core = 7           # core the SPSC->HdrHistogram consumer thread pins to (-1 = unpinned)
+histogram_core = 3           # core the SPSC->HdrHistogram consumer thread pins to (-1 = unpinned)
 queue_capacity = 65536       # SPSC ring depth per recorder
 sig_figs       = 3           # HdrHistogram significant figures
 log_file       = "results/dut.hlog"   # HdrHistogram interval log, appended across runs ("" = off)
@@ -49,6 +49,7 @@ interface = "enp1s0f1"       # NIC the DUT drives: enp1s0f1 = X2522-Plus port 1 
 driver    = "sfc"            # "sfc" with the X2522 | "mlx5_core" with the ConnectX-4 Lx
 backend   = "ef_vi"            # loopback_test.sh only: socket | onload | verbs | dpdk | ef_vi (onload = socket binary under Onload)
 cpu_core  = 6                # isolated core the DUT hot loop pins to
+order_core = 7                # socket/onload DUT only: isolated core of the order-entry thread (TCP send, acks, tx stamps); -1 = unpinned
 
 [network]
 local_mac = "00:0f:53:ad:3c:91"   # enp1s0f1 (cx1 = b8:83:03:9c:d4:5d, enp1s0f0 = 00:0f:53:ad:3c:90)

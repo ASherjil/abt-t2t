@@ -240,8 +240,8 @@ void printDutStatus(const DutStatus& s) {
 }
 
 void LatencyRecorder::summary() {
-    LatencyRecorder* self = this;
-    printSummary(std::span<LatencyRecorder* const>(&self, 1));
+    const std::array<LatencyRecorder*, 1> one{this};
+    printSummary(one);
 }
 
 void LatencyRecorder::printSummary(std::span<LatencyRecorder* const> recorders) {
@@ -249,7 +249,7 @@ void LatencyRecorder::printSummary(std::span<LatencyRecorder* const> recorders) 
         "[latency] ns; clock hw = NIC rx/tx hardware timestamps, rdtscp = DUT core timestamp counter\n");
     fmt::print("{:<12}{:<8}{:>10}{:>8}{:>8}{:>8}{:>8}{:>8}{:>9}{:>9}\n", "recorder", "clock", "samples",
                "min", "p50", "p99", "p99.9", "p99.99", "p99.999", "max");
-    for (LatencyRecorder* r : recorders) {
+    for (const LatencyRecorder* r : recorders) {
         if (r->count() == 0) {
             fmt::print("{:<12}{:<8}{:>10}\n", r->name(), r->clockName(), "none");
             continue;

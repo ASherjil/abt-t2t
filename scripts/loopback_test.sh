@@ -160,13 +160,17 @@ if uses_ip_stack "${dut_backend}"; then
     ip addr replace "${dut_ip}/24" dev "${dut_if}"
 fi
 
-onload_env=(EF_POLL_USEC=-1 EF_INT_DRIVEN=0 EF_RX_TIMESTAMPING=1 EF_TX_TIMESTAMPING=1 EF_TIMESTAMPING_REPORTING=0 EF_CTPIO_MODE=sf EF_RXQ_SIZE=4096 EF_MAX_PACKETS=65536 EF_UDP_RCVBUF=33554432)
+onload_env=(EF_POLL_USEC=-1 EF_INT_DRIVEN=0 EF_STACK_PER_THREAD=1 EF_RX_TIMESTAMPING=1 EF_TX_TIMESTAMPING=1 EF_TIMESTAMPING_REPORTING=0 EF_CTPIO_MODE=sf EF_RXQ_SIZE=4096 EF_MAX_PACKETS=65536 EF_PREFAULT_PACKETS=65536 EF_UDP_RCVBUF=33554432 EF_USE_HUGE_PAGES=2 EF_EVS_PER_POLL=8)
 dut_launch=()
 if [[ "${dut_backend}" == "onload" ]]; then
     if ! command -v onload >/dev/null; then
         echo "onload not installed"; exit 1
     fi
     dut_launch=(env "${onload_env[@]}" onload --profile=latency-best)
+    hp=/sys/kernel/mm/hugepages/hugepages-2048kB/nr_hugepages
+    if (( $(cat "${hp}") < 192 )); then
+        echo 192 > "${hp}"
+    fi
 fi
 
 out="results/loopback_$(date +%Y%m%d_%H%M%S)"

@@ -28,6 +28,7 @@ struct MirrorStats {
     std::uint64_t crossFills   = 0;
     std::uint64_t impactFills  = 0;
     std::uint64_t selfTrades   = 0;
+    std::uint64_t rehashes     = 0;
 };
 
 template <class Sink>
@@ -155,6 +156,8 @@ Venue<Sink>::Venue(Sink& sink, std::string_view symbol, std::uint16_t stockLocat
       m_live(liveReserve),
       m_byUserRef(1u << 12) {
     m_clientRefs.reserve(16);
+    m_live.countGrowsIn(&m_mirror.rehashes);
+    m_byUserRef.countGrowsIn(&m_mirror.rehashes);
 }
 
 template <class Sink>

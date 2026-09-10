@@ -31,6 +31,7 @@ struct DutTransportConfig {
     std::string    interface = "sfc0";
     std::string    driver    = "sfc";
     int            cpuCore   = 5;
+    int            orderCore = -1;
     net::Endpoints marketData{};
     net::Endpoints orderEntry{};
 };

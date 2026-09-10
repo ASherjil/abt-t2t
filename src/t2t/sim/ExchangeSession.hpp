@@ -435,6 +435,7 @@ MirrorStats ExchangeSession<Mode, Tx>::mirrorStats() const noexcept {
         total.crossFills += m.crossFills;
         total.impactFills += m.impactFills;
         total.selfTrades += m.selfTrades;
+        total.rehashes += m.rehashes;
     }
     return total;
 }

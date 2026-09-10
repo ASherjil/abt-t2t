@@ -1,6 +1,7 @@
 #pragma once
 
 #include <array>
+#include <atomic>
 #include <cerrno>
 #include <concepts>
 #include <csignal>
@@ -11,6 +12,7 @@
 #include <span>
 #include <string>
 #include <string_view>
+#include <thread>
 #include <type_traits>
 #include <utility>
 #include <vector>
@@ -25,6 +27,7 @@
 #include <unistd.h>
 
 #include <fmt/format.h>
+#include <rigtorp/SPSCQueue.h>
 
 #include "third_party/abtrda3/RingConcepts.hpp"
 
@@ -127,8 +130,8 @@ public:
     [[nodiscard]] const SocketStampStats& socketStamps() const noexcept
         requires (Mode == IoMode::Socket);
     template <class Periodic>
-    void run(volatile std::sig_atomic_t& stop, std::string_view session, std::string_view user,
-             Periodic periodic)
+    [[nodiscard]] bool run(volatile std::sig_atomic_t& stop, std::string_view session, std::string_view user,
+                           int orderCore, Periodic periodic)
         requires (Mode == IoMode::Socket);
 
     [[nodiscard]] bool prepareTransport(Io& io, const net::Endpoints& oeEp, std::uint32_t maxTxFrame = 0)
@@ -160,6 +163,8 @@ public:
     [[nodiscard]] SwRecorder& t2tHol() noexcept
         requires (build::kSwTiming);
     [[nodiscard]] SwRecorder& ackRtt() noexcept
+        requires (build::kSwTiming);
+    [[nodiscard]] SwRecorder& oeSend() noexcept
         requires (build::kSwTiming);
     [[nodiscard]] SwRecorder& rxStage() noexcept
         requires (build::kSwTiming);
@@ -249,28 +254,77 @@ private:
         std::uint32_t userRef = kNoRef;
     };
 
+    struct SendRequest {
+        std::array<std::byte, Outbound::kSize> ouch{};
+        std::uint16_t                          len     = 0;
+        std::uint32_t                          userRef = kNoRef;
+        std::uint64_t                          rxStamp = 0;
+        std::uint64_t                          ctx     = 0;
+        std::uint64_t                          sendTsc = 0;
+    };
+
+    struct AckMsg {
+        std::array<std::byte, 128> payload{};
+        std::uint16_t              len = 0;
+    };
+
+    static constexpr std::size_t kRxBatch     = 16;
+    static constexpr std::size_t kSocketQueue = 4096;
+    static constexpr std::size_t kCmsgBytes   = 128;
+
     struct SocketState {
-        util::UniqueFd                   mdFd;
-        util::UniqueFd                   oeFd;
-        std::vector<std::byte>           rx;
-        std::array<std::byte, 256>       soupBuf{};
-        std::array<SocketTxRef, kTxRefs> txRefs{};
-        std::array<std::byte, 512>       cmsg{};
-        std::uint64_t                    txBytes   = 0;
-        std::uint32_t                    txSeq     = 0;
-        std::uint32_t                    txRead    = 0;
-        std::uint32_t                    emptyErrq = 0;
-        SocketStampStats                 stamps;
-        bool                             loggedIn = false;
+        util::UniqueFd                                          mdFd;
+        util::UniqueFd                                          oeFd;
+        std::string                                             oeHost;
+        std::uint16_t                                           oePort = 0;
+        std::vector<std::byte>                                  rx;
+        std::array<std::byte, 256>                              soupBuf{};
+        std::array<mmsghdr, kRxBatch>                           msgs{};
+        std::array<iovec, kRxBatch>                             iov{};
+        std::array<std::array<std::byte, kCmsgBytes>, kRxBatch> cmsg{};
+        rigtorp::SPSCQueue<SendRequest>                         sendQ{kSocketQueue};
+        rigtorp::SPSCQueue<AckMsg>                              ackQ{kSocketQueue};
+        std::atomic<int>                                        orderStatus{0};
+        std::atomic<bool>                                       go{false};
+        std::atomic<bool>                                       loggedIn{false};
+        std::jthread                                            orderThread;
+        std::uint64_t                                           txBytes  = 0;
+        bool                                                    threaded = false;
+        alignas(util::kCacheLineBytes) SocketStampStats stamps;
+    };
+
+    struct OrderThreadState {
+        util::UniqueFd                    fd;
+        std::array<SocketTxRef, kTxRefs>  txRefs{};
+        std::vector<InFlight>             inflight;
+        std::vector<std::byte>            stream;
+        std::array<std::byte, 8192>       rxBuf{};
+        std::array<std::byte, 256>        soupBuf{};
+        std::array<std::byte, kCmsgBytes> cmsg{};
+        std::uint64_t                     txBytes = 0;
+        std::uint32_t                     txSeq   = 0;
+        std::uint32_t                     txRead  = 0;
     };
 
     void socketSend(std::span<const std::byte> pkt) noexcept
         requires (Mode == IoMode::Socket);
-    std::uint64_t socketRecvMd(std::span<std::byte> buf, std::size_t& len) noexcept
+    bool socketQueueOrder(const Outbound& out, bool record, std::uint64_t rxStamp, std::uint64_t ctx) noexcept
         requires (Mode == IoMode::Socket);
-    void socketDrainTxStamps() noexcept
+    unsigned socketRecvBatch(std::span<std::array<std::byte, 2048>> ring, std::size_t at) noexcept
         requires (Mode == IoMode::Socket);
-    void socketCompleteTx(std::uint32_t key, std::uint64_t txNs) noexcept
+    void orderLoop(const std::stop_token& st, const std::string& session, const std::string& user,
+                   int core) noexcept
+        requires (Mode == IoMode::Socket);
+    bool orderConnect(OrderThreadState& o) noexcept
+        requires (Mode == IoMode::Socket);
+    void orderSend(OrderThreadState& o, std::span<const std::byte> pkt, std::uint32_t userRef,
+                   std::uint64_t rxStamp, std::uint64_t ctx, std::uint64_t sendTsc) noexcept
+        requires (Mode == IoMode::Socket);
+    void orderDrainTxStamps(OrderThreadState& o) noexcept
+        requires (Mode == IoMode::Socket);
+    void orderCompleteTx(OrderThreadState& o, std::uint32_t key, std::uint64_t txNs) noexcept
+        requires (Mode == IoMode::Socket);
+    bool orderReadAcks(OrderThreadState& o) noexcept
         requires (Mode == IoMode::Socket);
     [[nodiscard]] static std::uint64_t cmsgHwNs(msghdr& msg, std::uint32_t* key) noexcept;
 
@@ -283,11 +337,22 @@ private:
                                   std::uint64_t sendTsc) noexcept;
     void               recordAck(std::span<const std::byte> ouch) noexcept;
     void               applyAck(std::span<const std::byte> ouch) noexcept;
-    [[nodiscard]] static std::uint16_t   udpDstPort(const std::uint8_t* frame) noexcept;
-    static void                          prefetchFrame(const std::uint8_t* frame, std::size_t bytes) noexcept;
-    [[nodiscard]] static std::uint64_t   swNow() noexcept;
-    [[nodiscard]] static std::uint64_t   swMark() noexcept;
-    [[nodiscard]] static SwRecorder      makeSwRecorder(const char* name, const DutConfig& cfg);
+    [[nodiscard]] static std::uint16_t udpDstPort(const std::uint8_t* frame) noexcept;
+    static void                        prefetchFrame(const std::uint8_t* frame, std::size_t bytes) noexcept;
+    [[nodiscard]] static std::uint64_t swNow() noexcept;
+    [[nodiscard]] static std::uint64_t swMark() noexcept;
+    [[nodiscard]] static SwRecorder    makeSwRecorder(const char* name, const DutConfig& cfg);
+
+    [[nodiscard]] static LatencyRecorder makeRecorder(std::type_identity<LatencyRecorder>, const char* name,
+                                                      const DutConfig& cfg) {
+        return LatencyRecorder(name, cfg.queueCapacity, tsc::nsPerTick(), cfg.sigFigs);
+    }
+
+    [[nodiscard]] static NoRecorder makeRecorder(std::type_identity<NoRecorder>, const char*,
+                                                 const DutConfig&) {
+        return NoRecorder{};
+    }
+
     [[nodiscard]] static BookTableConfig tableConfigOf(const DutConfig& cfg, std::pmr::memory_resource* mr,
                                                        BookScope scope);
     void                                 idleWarm() noexcept;
@@ -305,6 +370,7 @@ private:
     SwRecorder                      m_proc;
     SwRecorder                      m_t2tHol;
     SwRecorder                      m_ackRtt;
+    SwRecorder                      m_oeSend;
     SwRecorder                      m_rxStage;
     std::array<SwRecorder, kStages> m_stageCost;
     alignas(util::kCacheLineBytes) std::uint64_t m_lastRxTsc = 0;
@@ -354,6 +420,7 @@ DutSession<Mode, Strat, Io>::DutSession(const DutConfig& cfg, Strat strat)
       m_proc(makeSwRecorder("proc", cfg)),
       m_t2tHol(makeSwRecorder("t2t_sw_hol", cfg)),
       m_ackRtt(makeSwRecorder("ack_rtt", cfg)),
+      m_oeSend(makeSwRecorder("oe_send", cfg)),
       m_rxStage(makeSwRecorder("rx_stage", cfg)),
       m_stageCost{makeSwRecorder("stage_book", cfg), makeSwRecorder("stage_quote", cfg),
                   makeSwRecorder("stage_tx", cfg)},
@@ -416,32 +483,8 @@ bool DutSession<Mode, Strat, Io>::connectVenue(const char* oeHost, std::uint16_t
                                                const char* mdBindHost, std::uint16_t mdPort)
     requires (Mode == IoMode::Socket)
 {
-    m_sock.oeFd.reset(::socket(AF_INET, SOCK_STREAM, 0));
-    if (!m_sock.oeFd) {
-        fmt::print(stderr, "dut: socket(tcp): {}\n", std::strerror(errno));
-        return false;
-    }
-    sockaddr_in oe{};
-    oe.sin_family = AF_INET;
-    oe.sin_port   = htons(oePort);
-    if (::inet_pton(AF_INET, oeHost, &oe.sin_addr) != 1) {
-        fmt::print(stderr, "dut: bad order-entry host {}\n", oeHost);
-        return false;
-    }
-    if (::connect(m_sock.oeFd.get(), reinterpret_cast<sockaddr*>(&oe), sizeof oe) < 0) {
-        fmt::print(stderr, "dut: connect({}:{}): {}\n", oeHost, oePort, std::strerror(errno));
-        return false;
-    }
-    int nodelay = 1;
-    ::setsockopt(m_sock.oeFd.get(), IPPROTO_TCP, TCP_NODELAY, &nodelay, sizeof nodelay);
-    unsigned txTs = SOF_TIMESTAMPING_TX_HARDWARE | SOF_TIMESTAMPING_RAW_HARDWARE | SOF_TIMESTAMPING_OPT_ID |
-                    SOF_TIMESTAMPING_OPT_TSONLY;
-#ifdef SOF_TIMESTAMPING_OPT_ID_TCP
-    txTs |= SOF_TIMESTAMPING_OPT_ID_TCP;
-#endif
-    m_sock.stamps.txEnabled = ::setsockopt(m_sock.oeFd.get(), SOL_SOCKET, SO_TIMESTAMPING, &txTs,
-                                           sizeof txTs) == 0;
-
+    m_sock.oeHost = oeHost;
+    m_sock.oePort = oePort;
     m_sock.mdFd.reset(::socket(AF_INET, SOCK_DGRAM, 0));
     if (!m_sock.mdFd) {
         fmt::print(stderr, "dut: socket(udp): {}\n", std::strerror(errno));
@@ -465,9 +508,6 @@ bool DutSession<Mode, Strat, Io>::connectVenue(const char* oeHost, std::uint16_t
     const unsigned rxTs     = SOF_TIMESTAMPING_RX_HARDWARE | SOF_TIMESTAMPING_RAW_HARDWARE;
     m_sock.stamps.rxEnabled = ::setsockopt(m_sock.mdFd.get(), SOL_SOCKET, SO_TIMESTAMPING, &rxTs,
                                            sizeof rxTs) == 0;
-    if (m_sock.stamps.rxEnabled && m_sock.stamps.txEnabled) {
-        m_t2t.setHardwareClock();
-    }
     return true;
 }
 
@@ -503,8 +543,9 @@ void DutSession<Mode, Strat, Io>::onOrderEntry(std::span<const std::byte> data)
             break;
         }
         if (p.type == soup::Type::LoginAccepted) {
-            m_sock.loggedIn = true;
+            m_sock.loggedIn.store(true, std::memory_order_relaxed);
         } else if (p.type == soup::Type::SequencedData) {
+            recordAck(p.payload);
             applyAck(p.payload);
         }
         off += c;
@@ -518,7 +559,7 @@ template <IoMode Mode, Strategy Strat, class Io>
 bool DutSession<Mode, Strat, Io>::sessionEstablished() const noexcept
     requires (Mode == IoMode::Socket)
 {
-    return m_sock.loggedIn;
+    return m_sock.loggedIn.load(std::memory_order_relaxed);
 }
 
 template <IoMode Mode, Strategy Strat, class Io>
@@ -532,16 +573,34 @@ template <IoMode Mode, Strategy Strat, class Io>
 void DutSession<Mode, Strat, Io>::socketSend(std::span<const std::byte> pkt) noexcept
     requires (Mode == IoMode::Socket)
 {
-    if (::send(m_sock.oeFd.get(), pkt.data(), pkt.size(), MSG_NOSIGNAL) <= 0) {
-        return;
+    if (::send(m_sock.oeFd.get(), pkt.data(), pkt.size(), MSG_NOSIGNAL) > 0) {
+        m_sock.txBytes += pkt.size();
     }
-    m_sock.txBytes += pkt.size();
-    if (m_sock.txSeq - m_sock.txRead == kTxRefs) {
-        ++m_sock.txRead;
+}
+
+template <IoMode Mode, Strategy Strat, class Io>
+bool DutSession<Mode, Strat, Io>::socketQueueOrder(const Outbound& out, bool record, std::uint64_t rxStamp,
+                                                   std::uint64_t ctx) noexcept
+    requires (Mode == IoMode::Socket)
+{
+    if (!m_sock.threaded) {
+        const auto pkt = soup::packUnsequencedData(m_sock.soupBuf.data(), {out.buf.data(), out.len});
+        socketSend(pkt);
+        ++m_ordersSent;
+        return true;
     }
-    m_sock.txRefs[m_sock.txSeq & (kTxRefs - 1)] =
-        SocketTxRef{.key = static_cast<std::uint32_t>(m_sock.txBytes - 1), .userRef = kNoRef};
-    ++m_sock.txSeq;
+    SendRequest r{};
+    std::memcpy(r.ouch.data(), out.buf.data(), out.len);
+    r.len     = static_cast<std::uint16_t>(out.len);
+    r.userRef = record ? out.userRef : kNoRef;
+    r.rxStamp = rxStamp;
+    r.ctx     = ctx;
+    r.sendTsc = swNow();
+    if (!m_sock.sendQ.try_push(r)) [[unlikely]] {
+        return false;
+    }
+    ++m_ordersSent;
+    return true;
 }
 
 template <IoMode Mode, Strategy Strat, class Io>
@@ -565,32 +624,202 @@ std::uint64_t DutSession<Mode, Strat, Io>::cmsgHwNs(msghdr& msg, std::uint32_t* 
 }
 
 template <IoMode Mode, Strategy Strat, class Io>
-std::uint64_t DutSession<Mode, Strat, Io>::socketRecvMd(std::span<std::byte> buf, std::size_t& len) noexcept
+unsigned DutSession<Mode, Strat, Io>::socketRecvBatch(std::span<std::array<std::byte, 2048>> ring,
+                                                      std::size_t                            at) noexcept
     requires (Mode == IoMode::Socket)
 {
-    iovec  iov{.iov_base = buf.data(), .iov_len = buf.size()};
-    msghdr msg{};
-    msg.msg_iov        = &iov;
-    msg.msg_iovlen     = 1;
-    msg.msg_control    = m_sock.cmsg.data();
-    msg.msg_controllen = m_sock.cmsg.size();
-    const ssize_t n    = ::recvmsg(m_sock.mdFd.get(), &msg, MSG_DONTWAIT);
-    if (n <= 0) {
-        len = 0;
-        return 0;
+    for (std::size_t i = 0; i < kRxBatch; ++i) {
+        auto& slot             = ring[(at + i) & (kSocketRxRing - 1)];
+        m_sock.iov[i]          = iovec{.iov_base = slot.data(), .iov_len = slot.size()};
+        msghdr& h              = m_sock.msgs[i].msg_hdr;
+        h                      = msghdr{};
+        h.msg_iov              = &m_sock.iov[i];
+        h.msg_iovlen           = 1;
+        h.msg_control          = m_sock.cmsg[i].data();
+        h.msg_controllen       = kCmsgBytes;
+        m_sock.msgs[i].msg_len = 0;
     }
-    len                    = static_cast<std::size_t>(n);
-    const std::uint64_t ns = m_sock.stamps.rxEnabled ? cmsgHwNs(msg, nullptr) : 0;
-    if (ns != 0) {
-        ++m_sock.stamps.rxStamped;
-    } else {
-        ++m_sock.stamps.rxUnstamped;
-    }
-    return ns;
+    const int n = ::recvmmsg(m_sock.mdFd.get(), m_sock.msgs.data(), kRxBatch, MSG_DONTWAIT, nullptr);
+    return n > 0 ? static_cast<unsigned>(n) : 0u;
 }
 
 template <IoMode Mode, Strategy Strat, class Io>
-void DutSession<Mode, Strat, Io>::socketDrainTxStamps() noexcept
+template <class Periodic>
+bool DutSession<Mode, Strat, Io>::run(volatile std::sig_atomic_t& stop, std::string_view session,
+                                      std::string_view user, int orderCore, Periodic periodic)
+    requires (Mode == IoMode::Socket)
+{
+    m_sock.threaded    = true;
+    m_sock.orderThread = std::jthread(
+        [this, s = std::string(session), u = std::string(user), orderCore](const std::stop_token& st) {
+            orderLoop(st, s, u, orderCore);
+        });
+    while (m_sock.orderStatus.load(std::memory_order_acquire) == 0) {
+        if (stop != 0) {
+            m_sock.orderThread.request_stop();
+            m_sock.orderThread.join();
+            return false;
+        }
+        __builtin_ia32_pause();
+    }
+    if (m_sock.orderStatus.load(std::memory_order_acquire) < 0) {
+        m_sock.orderThread.join();
+        return false;
+    }
+    fmt::print(stderr, "dut: order entry {}:{} on core {}, market data on this thread\n", m_sock.oeHost,
+               m_sock.oePort, orderCore);
+    std::vector<std::array<std::byte, 2048>> rxRing(kSocketRxRing);
+    for (auto& slot : rxRing) {
+        std::memset(slot.data(), 0, slot.size());
+    }
+    (void)socketRecvBatch(rxRing, 0);
+    m_sock.go.store(true, std::memory_order_release);
+    std::size_t   rxAt  = 0;
+    std::uint32_t spins = 0;
+    while (stop == 0) {
+        const std::uint64_t rxTsc = swNow();
+        const unsigned      n     = socketRecvBatch(rxRing, rxAt);
+        for (unsigned i = 0; i < n; ++i) {
+            const std::size_t   len = m_sock.msgs[i].msg_len;
+            const std::uint64_t ns  = m_sock.stamps.rxEnabled ? cmsgHwNs(m_sock.msgs[i].msg_hdr, nullptr) : 0;
+            if (ns != 0) {
+                ++m_sock.stamps.rxStamped;
+            } else {
+                ++m_sock.stamps.rxUnstamped;
+            }
+            onMarketData({rxRing[(rxAt + i) & (kSocketRxRing - 1)].data(), len}, ns, rxTsc);
+        }
+        rxAt += n;
+        while (AckMsg* a = m_sock.ackQ.front()) {
+            applyAck({a->payload.data(), a->len});
+            m_sock.ackQ.pop();
+        }
+        if (m_sock.orderStatus.load(std::memory_order_relaxed) < 0) {
+            fmt::print(stderr, "dut: venue closed order-entry connection\n");
+            break;
+        }
+        if ((++spins & 255u) == 0) {
+            periodic();
+        }
+    }
+    m_sock.orderThread.request_stop();
+    m_sock.orderThread.join();
+    return true;
+}
+
+template <IoMode Mode, Strategy Strat, class Io>
+bool DutSession<Mode, Strat, Io>::orderConnect(OrderThreadState& o) noexcept
+    requires (Mode == IoMode::Socket)
+{
+    o.fd.reset(::socket(AF_INET, SOCK_STREAM, 0));
+    if (!o.fd) {
+        fmt::print(stderr, "dut: socket(tcp): {}\n", std::strerror(errno));
+        return false;
+    }
+    sockaddr_in oe{};
+    oe.sin_family = AF_INET;
+    oe.sin_port   = htons(m_sock.oePort);
+    if (::inet_pton(AF_INET, m_sock.oeHost.c_str(), &oe.sin_addr) != 1) {
+        fmt::print(stderr, "dut: bad order-entry host {}\n", m_sock.oeHost);
+        return false;
+    }
+    if (::connect(o.fd.get(), reinterpret_cast<sockaddr*>(&oe), sizeof oe) < 0) {
+        fmt::print(stderr, "dut: connect({}:{}): {}\n", m_sock.oeHost, m_sock.oePort, std::strerror(errno));
+        return false;
+    }
+    int nodelay = 1;
+    ::setsockopt(o.fd.get(), IPPROTO_TCP, TCP_NODELAY, &nodelay, sizeof nodelay);
+    unsigned txTs = SOF_TIMESTAMPING_TX_HARDWARE | SOF_TIMESTAMPING_RAW_HARDWARE | SOF_TIMESTAMPING_OPT_ID |
+                    SOF_TIMESTAMPING_OPT_TSONLY;
+#ifdef SOF_TIMESTAMPING_OPT_ID_TCP
+    txTs |= SOF_TIMESTAMPING_OPT_ID_TCP;
+#endif
+    m_sock.stamps.txEnabled = ::setsockopt(o.fd.get(), SOL_SOCKET, SO_TIMESTAMPING, &txTs, sizeof txTs) == 0;
+    if (m_sock.stamps.txEnabled && m_sock.stamps.rxEnabled) {
+        m_t2t.setHardwareClock();
+    }
+    return true;
+}
+
+template <IoMode Mode, Strategy Strat, class Io>
+void DutSession<Mode, Strat, Io>::orderLoop(const std::stop_token& st, const std::string& session,
+                                            const std::string& user, int core) noexcept
+    requires (Mode == IoMode::Socket)
+{
+    if (core >= 0) {
+        (void)util::pinThread(core);
+    }
+    OrderThreadState o;
+    o.inflight.resize(kInFlight);
+    o.stream.reserve(1u << 16);
+    if (!orderConnect(o)) {
+        m_sock.orderStatus.store(-1, std::memory_order_release);
+        return;
+    }
+    m_sock.orderStatus.store(1, std::memory_order_release);
+    while (!m_sock.go.load(std::memory_order_acquire)) {
+        if (st.stop_requested()) {
+            return;
+        }
+        __builtin_ia32_pause();
+    }
+    {
+        soup::LoginRequest lr{};
+        lr.username         = user;
+        lr.requestedSession = session;
+        const auto pkt      = soup::pack(o.soupBuf.data(), soup::Type::LoginRequest, soup::asBytes(lr));
+        orderSend(o, pkt, kNoRef, 0, 0, 0);
+    }
+    std::uint32_t idle = 0;
+    while (!st.stop_requested()) {
+        if (const SendRequest* r = m_sock.sendQ.front()) {
+            const auto pkt = soup::packUnsequencedData(o.soupBuf.data(), {r->ouch.data(), r->len});
+            orderSend(o, pkt, r->userRef, r->rxStamp, r->ctx, r->sendTsc);
+            m_sock.sendQ.pop();
+            continue;
+        }
+        ++idle;
+        if ((idle & 7u) == 0 && m_sock.stamps.txEnabled && o.txRead != o.txSeq) {
+            orderDrainTxStamps(o);
+        } else if ((idle & 7u) == 4) {
+            if (!orderReadAcks(o)) {
+                m_sock.orderStatus.store(-2, std::memory_order_release);
+                return;
+            }
+        } else {
+            __builtin_ia32_pause();
+        }
+    }
+}
+
+template <IoMode Mode, Strategy Strat, class Io>
+void DutSession<Mode, Strat, Io>::orderSend(OrderThreadState& o, std::span<const std::byte> pkt,
+                                            std::uint32_t userRef, std::uint64_t rxStamp, std::uint64_t ctx,
+                                            std::uint64_t sendTsc) noexcept
+    requires (Mode == IoMode::Socket)
+{
+    const std::uint64_t t0 = swNow();
+    if (::send(o.fd.get(), pkt.data(), pkt.size(), MSG_NOSIGNAL) <= 0) {
+        return;
+    }
+    if constexpr (build::kSwTiming) {
+        m_oeSend.record(tsc::now() - t0, ctx);
+    }
+    o.txBytes += pkt.size();
+    if (o.txSeq - o.txRead == kTxRefs) {
+        ++o.txRead;
+    }
+    o.txRefs[o.txSeq & (kTxRefs - 1)] = SocketTxRef{.key     = static_cast<std::uint32_t>(o.txBytes - 1),
+                                                    .userRef = userRef};
+    ++o.txSeq;
+    if (userRef != kNoRef) {
+        o.inflight[userRef & (kInFlight - 1)] =
+            InFlight{.userRef = userRef, .rxStamp = rxStamp, .ctx = ctx, .sendTsc = sendTsc, .live = true};
+    }
+}
+
+template <IoMode Mode, Strategy Strat, class Io>
+void DutSession<Mode, Strat, Io>::orderDrainTxStamps(OrderThreadState& o) noexcept
     requires (Mode == IoMode::Socket)
 {
     std::array<std::byte, 64> scratch{};
@@ -599,46 +828,42 @@ void DutSession<Mode, Strat, Io>::socketDrainTxStamps() noexcept
         msghdr msg{};
         msg.msg_iov        = &iov;
         msg.msg_iovlen     = 1;
-        msg.msg_control    = m_sock.cmsg.data();
-        msg.msg_controllen = m_sock.cmsg.size();
-        if (::recvmsg(m_sock.oeFd.get(), &msg, MSG_ERRQUEUE | MSG_DONTWAIT) < 0) {
-            if (++m_sock.emptyErrq == 1u << 20) {
-                m_sock.stamps.txEnabled = false;
-            }
+        msg.msg_control    = o.cmsg.data();
+        msg.msg_controllen = o.cmsg.size();
+        if (::recvmsg(o.fd.get(), &msg, MSG_ERRQUEUE | MSG_DONTWAIT) < 0) {
             return;
         }
-        m_sock.emptyErrq        = 0;
         std::uint32_t       key = 0xFFFFFFFFu;
         const std::uint64_t ns  = cmsgHwNs(msg, &key);
         if (key != 0xFFFFFFFFu) {
-            socketCompleteTx(key, ns);
+            orderCompleteTx(o, key, ns);
         }
     }
 }
 
 template <IoMode Mode, Strategy Strat, class Io>
-void DutSession<Mode, Strat, Io>::socketCompleteTx(std::uint32_t key, std::uint64_t txNs) noexcept
+void DutSession<Mode, Strat, Io>::orderCompleteTx(OrderThreadState& o, std::uint32_t key,
+                                                  std::uint64_t txNs) noexcept
     requires (Mode == IoMode::Socket)
 {
-    while (m_sock.txRead != m_sock.txSeq &&
-           static_cast<std::int32_t>(m_sock.txRefs[m_sock.txRead & (kTxRefs - 1)].key - key) < 0) {
-        ++m_sock.txRead;
+    while (o.txRead != o.txSeq &&
+           static_cast<std::int32_t>(o.txRefs[o.txRead & (kTxRefs - 1)].key - key) < 0) {
+        ++o.txRead;
         ++m_sock.stamps.txSkipped;
     }
-    if (m_sock.txRead == m_sock.txSeq || m_sock.txRefs[m_sock.txRead & (kTxRefs - 1)].key != key) {
+    if (o.txRead == o.txSeq || o.txRefs[o.txRead & (kTxRefs - 1)].key != key) {
         ++m_sock.stamps.txUnmatched;
         return;
     }
-    const std::uint32_t userRef = m_sock.txRefs[m_sock.txRead & (kTxRefs - 1)].userRef;
-    ++m_sock.txRead;
+    const std::uint32_t userRef = o.txRefs[o.txRead & (kTxRefs - 1)].userRef;
+    ++o.txRead;
     if (userRef == kNoRef || txNs == 0) {
         return;
     }
-    InFlight& slot = m_inflight[userRef & (kInFlight - 1)];
+    const InFlight& slot = o.inflight[userRef & (kInFlight - 1)];
     if (!slot.live || slot.userRef != userRef) {
         return;
     }
-    slot.live = false;
     if (slot.rxStamp != 0 && txNs > slot.rxStamp) {
         ++m_sock.stamps.txMatched;
         m_t2t.record(txNs - slot.rxStamp, slot.ctx);
@@ -646,51 +871,55 @@ void DutSession<Mode, Strat, Io>::socketCompleteTx(std::uint32_t key, std::uint6
 }
 
 template <IoMode Mode, Strategy Strat, class Io>
-template <class Periodic>
-void DutSession<Mode, Strat, Io>::run(volatile std::sig_atomic_t& stop, std::string_view session,
-                                      std::string_view user, Periodic periodic)
+bool DutSession<Mode, Strat, Io>::orderReadAcks(OrderThreadState& o) noexcept
     requires (Mode == IoMode::Socket)
 {
-    std::vector<std::array<std::byte, 2048>> rxRing(kSocketRxRing);
-    std::array<std::byte, 8192>              oeRx{};
-    std::size_t                              rxAt  = 0;
-    std::uint32_t                            spins = 0;
-    for (auto& slot : rxRing) {
-        std::memset(slot.data(), 0, slot.size());
+    const ssize_t got = ::recv(o.fd.get(), o.rxBuf.data(), o.rxBuf.size(), MSG_DONTWAIT);
+    if (got == 0) {
+        return false;
     }
-    {
-        std::size_t primed = 0;
-        (void)socketRecvMd(rxRing[0], primed);
-        (void)::recv(m_sock.oeFd.get(), oeRx.data(), oeRx.size(), MSG_DONTWAIT);
+    if (got < 0) {
+        return true;
     }
-    login(session, user);
-    while (stop == 0) {
-        auto&               rx    = rxRing[rxAt & (kSocketRxRing - 1)];
-        std::size_t         n     = 0;
-        const std::uint64_t rxTsc = swNow();
-        const std::uint64_t rxNs  = socketRecvMd(rx, n);
-        if (n != 0) {
-            ++rxAt;
-            onMarketData({rx.data(), n}, rxNs, rxTsc);
-            if (m_sock.stamps.txEnabled && m_sock.txRead != m_sock.txSeq) {
-                socketDrainTxStamps();
-            }
-            continue;
-        }
-        if (m_sock.stamps.txEnabled && m_sock.txRead != m_sock.txSeq) {
-            socketDrainTxStamps();
-        }
-        const ssize_t got = ::recv(m_sock.oeFd.get(), oeRx.data(), oeRx.size(), MSG_DONTWAIT);
-        if (got > 0) {
-            onOrderEntry({oeRx.data(), static_cast<std::size_t>(got)});
-        } else if (got == 0) {
-            fmt::print(stderr, "dut: venue closed order-entry connection\n");
+    o.stream.insert(o.stream.end(), o.rxBuf.begin(), o.rxBuf.begin() + got);
+    std::size_t  off = 0;
+    soup::Packet p{};
+    for (;;) {
+        const std::size_t c = soup::parse({o.stream.data() + off, o.stream.size() - off}, p);
+        if (c == 0) {
             break;
         }
-        if ((++spins & 255u) == 0) {
-            periodic();
+        if (p.type == soup::Type::LoginAccepted) {
+            m_sock.loggedIn.store(true, std::memory_order_release);
+        } else if (p.type == soup::Type::SequencedData && p.payload.size() <= sizeof(AckMsg::payload)) {
+            if constexpr (build::kSwTiming) {
+                const auto    t   = static_cast<ouch::OutType>(static_cast<char>(p.payload[0]));
+                std::uint32_t ref = 0;
+                if (t == ouch::OutType::Accepted && p.payload.size() >= sizeof(ouch::Accepted)) {
+                    ref = reinterpret_cast<const ouch::Accepted*>(p.payload.data())->userRefNum.value();
+                } else if (t == ouch::OutType::Replaced && p.payload.size() >= sizeof(ouch::Replaced)) {
+                    ref = reinterpret_cast<const ouch::Replaced*>(p.payload.data())->userRefNum.value();
+                }
+                if (ref != 0) {
+                    const InFlight& slot = o.inflight[ref & (kInFlight - 1)];
+                    if (slot.userRef == ref && slot.sendTsc != 0) {
+                        m_ackRtt.record(tsc::now() - slot.sendTsc, slot.ctx);
+                    }
+                }
+            }
+            AckMsg a{};
+            std::memcpy(a.payload.data(), p.payload.data(), p.payload.size());
+            a.len = static_cast<std::uint16_t>(p.payload.size());
+            while (!m_sock.ackQ.try_push(a)) {
+                __builtin_ia32_pause();
+            }
         }
+        off += c;
     }
+    if (off != 0) {
+        o.stream.erase(o.stream.begin(), o.stream.begin() + static_cast<std::ptrdiff_t>(off));
+    }
+    return true;
 }
 
 template <IoMode Mode, Strategy Strat, class Io>
@@ -895,6 +1124,13 @@ DutSession<Mode, Strat, Io>::SwRecorder& DutSession<Mode, Strat, Io>::ackRtt() n
 }
 
 template <IoMode Mode, Strategy Strat, class Io>
+DutSession<Mode, Strat, Io>::SwRecorder& DutSession<Mode, Strat, Io>::oeSend() noexcept
+    requires (build::kSwTiming)
+{
+    return m_oeSend;
+}
+
+template <IoMode Mode, Strategy Strat, class Io>
 typename DutSession<Mode, Strat, Io>::SwRecorder& DutSession<Mode, Strat, Io>::rxStage() noexcept
     requires (build::kSwTiming)
 {
@@ -1019,15 +1255,23 @@ void DutSession<Mode, Strat, Io>::applyPacket(std::span<const std::byte> moldPac
         const std::uint64_t q1 = swMark();
         quoteTicks += q1 - q0;
         for (std::size_t i = 0; i < n; ++i) {
-            const bool ok = sendOrder({m_out[i].buf.data(), m_out[i].len});
-            if (ok && !sent) {
+            const bool    first = !sent;
+            std::uint64_t ctx   = 0;
+            if (first) {
+                extra |= SampleContext::kSent | (m_reapHit ? SampleContext::kTxReap : 0u);
+                ctx = SampleContext::pack(seq, msgs, static_cast<std::uint8_t>(flagsNow() | extra));
+            }
+            bool ok = false;
+            if constexpr (Mode == IoMode::Socket) {
+                ok = socketQueueOrder(m_out[i], first, rxStamp, ctx);
+            } else {
+                ok = sendOrder({m_out[i].buf.data(), m_out[i].len});
+            }
+            if (ok && first) {
                 sent = true;
                 m_earlySends += early ? 1u : 0u;
                 m_lateSends += early ? 0u : 1u;
-                extra |= SampleContext::kSent | (m_reapHit ? SampleContext::kTxReap : 0u);
-                const std::uint64_t ctx = SampleContext::pack(seq, msgs,
-                                                                      static_cast<std::uint8_t>(flagsNow() | extra));
-                std::uint64_t       now = 0;
+                std::uint64_t now = 0;
                 if constexpr (build::kSwTiming) {
                     now = tsc::now();
                     const std::uint64_t stages = SampleContext::packStages(begin - rxTsc, q0 - begin, q1 - q0,
@@ -1333,11 +1577,6 @@ void DutSession<Mode, Strat, Io>::recordSend(std::uint32_t userRef, std::uint64_
     if constexpr (kHwStamps) {
         m_txRefs[m_txSeq & (kTxRefs - 1)].userRef = userRef;
     }
-    if constexpr (Mode == IoMode::Socket) {
-        if (m_sock.txSeq != 0) {
-            m_sock.txRefs[(m_sock.txSeq - 1) & (kTxRefs - 1)].userRef = userRef;
-        }
-    }
 }
 
 template <IoMode Mode, Strategy Strat, class Io>
@@ -1397,11 +1636,7 @@ std::uint64_t DutSession<Mode, Strat, Io>::swMark() noexcept {
 template <IoMode Mode, Strategy Strat, class Io>
 DutSession<Mode, Strat, Io>::SwRecorder DutSession<Mode, Strat, Io>::makeSwRecorder(const char*      name,
                                                                                     const DutConfig& cfg) {
-    if constexpr (build::kSwTiming) {
-        return SwRecorder(name, cfg.queueCapacity, tsc::nsPerTick(), cfg.sigFigs);
-    } else {
-        return SwRecorder{};
-    }
+    return makeRecorder(std::type_identity<SwRecorder>{}, name, cfg);
 }
 
 }   // namespace abt::dut

@@ -66,6 +66,7 @@ void printDutReport(Session& sess, util::ThreadCounters atStart, util::ThreadCou
         }
         recs.push_back(&sess.proc());
         recs.push_back(&sess.ackRtt());
+        recs.push_back(&sess.oeSend());
     }
     LatencyRecorder::printSummary(recs);
     if constexpr (requires { sess.socketStamps(); }) {
@@ -134,6 +135,7 @@ std::vector<LatencyRecorder*> recordersOf(Session& sess) {
         recs.push_back(&sess.proc());
         recs.push_back(&sess.t2tHol());
         recs.push_back(&sess.ackRtt());
+        recs.push_back(&sess.oeSend());
         recs.push_back(&sess.rxStage());
         for (auto& r : sess.stageCost()) {
             recs.push_back(&r);
@@ -159,21 +161,28 @@ int runDut(const DutAppConfig& cfg, typename T::Type& backend, volatile std::sig
                                cfg.socket.mdPort)) {
             return 1;
         }
-        fmt::print(stderr, "dut: connected to {}:{}, market data on {}:{}\n", cfg.socket.oeHost,
-                   cfg.socket.oePort, cfg.socket.mdBindHost, cfg.socket.mdPort);
+        fmt::print(stderr, "dut: market data on {}:{} (core {}), order entry to {}:{} (core {})\n",
+                   cfg.socket.mdBindHost, cfg.socket.mdPort, cfg.transport.cpuCore, cfg.socket.oeHost,
+                   cfg.socket.oePort, cfg.transport.orderCore);
 
         RecorderThread consumer(recordersOf(sess), cfg.measure.histogramCore, flushOf(cfg.measure), &statusQ);
         sess.startCold();
         (void)util::pinThread(cfg.transport.cpuCore);
         const util::ThreadCounters countersAtStart = util::threadCounters();
         const util::CoreInterrupts irqAtStart      = util::coreInterrupts(cfg.transport.cpuCore);
-        sess.run(stop, cfg.socket.session, cfg.socket.username, [&] {
-            const std::uint64_t now = monotonicNs();
-            if (now >= nextLog) {
-                (void)statusQ.try_push(sess.status(now - start));
-                nextLog += kDutLogPeriodNs;
-            }
-        });
+        const bool ran = sess.run(stop, cfg.socket.session, cfg.socket.username, cfg.transport.orderCore,
+                                  [&] {
+                                      const std::uint64_t now = monotonicNs();
+                                      if (now >= nextLog) {
+                                          (void)statusQ.try_push(sess.status(now - start));
+                                          nextLog += kDutLogPeriodNs;
+                                      }
+                                  });
+        if (!ran) {
+            sess.stopCold();
+            consumer.stop();
+            return 1;
+        }
         const util::ThreadCounters countersAtEnd = util::threadCounters();
         const util::CoreInterrupts irqAtEnd      = util::coreInterrupts(cfg.transport.cpuCore);
         sess.stopCold();
