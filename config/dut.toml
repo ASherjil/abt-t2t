@@ -37,9 +37,9 @@ log_file       = "results/dut.hlog"   # HdrHistogram interval log, appended acro
 flush_interval_s = 60        # one tagged line per recorder per interval (Tag=t2t_hw / t2t_sw / proc)
 
 [socket]
-oe_host      = "127.0.0.1"   # exchange sim order-entry TCP host
+oe_host      = "10.0.0.1"     # exchange sim order-entry TCP host
 oe_port      = 5001
-md_bind_host = "127.0.0.1"   # local address to bind for MoldUDP64 market data
+md_bind_host = "10.0.0.2"     # local address to bind for MoldUDP64 market data
 md_port      = 5002
 session      = "SIM0000001"
 username     = "DUT001"
@@ -47,6 +47,7 @@ username     = "DUT001"
 [transport]
 interface = "enp1s0f1"       # NIC the DUT drives: enp1s0f1 = X2522-Plus port 1 (ef_vi); cx1 = ConnectX-4 Lx port 1 (verbs)
 driver    = "sfc"            # "sfc" with the X2522 | "mlx5_core" with the ConnectX-4 Lx
+backend   = "ef_vi"            # loopback_test.sh only: socket | onload | verbs | dpdk | ef_vi (onload = socket binary under Onload)
 cpu_core  = 6                # isolated core the DUT hot loop pins to
 
 [network]

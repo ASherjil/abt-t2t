@@ -16,9 +16,11 @@
 #include <vector>
 
 #include <arpa/inet.h>
+#include <linux/errqueue.h>
+#include <linux/net_tstamp.h>
 #include <netinet/in.h>
+#include <netinet/ip.h>
 #include <netinet/tcp.h>
-#include <poll.h>
 #include <sys/socket.h>
 #include <unistd.h>
 
@@ -57,6 +59,16 @@ enum class IoMode {
 };
 
 inline constexpr std::size_t kSocketRxRing = 8192;
+
+struct SocketStampStats {
+    std::uint64_t rxStamped   = 0;
+    std::uint64_t rxUnstamped = 0;
+    std::uint64_t txMatched   = 0;
+    std::uint64_t txSkipped   = 0;
+    std::uint64_t txUnmatched = 0;
+    bool          txEnabled   = false;
+    bool          rxEnabled   = false;
+};
 
 struct NoTransport {};
 
@@ -112,8 +124,11 @@ public:
         requires (Mode == IoMode::Socket);
     [[nodiscard]] bool sessionEstablished() const noexcept
         requires (Mode == IoMode::Socket);
+    [[nodiscard]] const SocketStampStats& socketStamps() const noexcept
+        requires (Mode == IoMode::Socket);
     template <class Periodic>
-    void run(volatile std::sig_atomic_t& stop, Periodic periodic)
+    void run(volatile std::sig_atomic_t& stop, std::string_view session, std::string_view user,
+             Periodic periodic)
         requires (Mode == IoMode::Socket);
 
     [[nodiscard]] bool prepareTransport(Io& io, const net::Endpoints& oeEp, std::uint32_t maxTxFrame = 0)
@@ -229,13 +244,35 @@ private:
         return TransportState::kHeaderKinds;
     }
 
-    struct SocketState {
-        util::UniqueFd             mdFd;
-        util::UniqueFd             oeFd;
-        std::vector<std::byte>     rx;
-        std::array<std::byte, 256> soupBuf{};
-        bool                       loggedIn = false;
+    struct SocketTxRef {
+        std::uint32_t key     = 0;
+        std::uint32_t userRef = kNoRef;
     };
+
+    struct SocketState {
+        util::UniqueFd                   mdFd;
+        util::UniqueFd                   oeFd;
+        std::vector<std::byte>           rx;
+        std::array<std::byte, 256>       soupBuf{};
+        std::array<SocketTxRef, kTxRefs> txRefs{};
+        std::array<std::byte, 512>       cmsg{};
+        std::uint64_t                    txBytes   = 0;
+        std::uint32_t                    txSeq     = 0;
+        std::uint32_t                    txRead    = 0;
+        std::uint32_t                    emptyErrq = 0;
+        SocketStampStats                 stamps;
+        bool                             loggedIn = false;
+    };
+
+    void socketSend(std::span<const std::byte> pkt) noexcept
+        requires (Mode == IoMode::Socket);
+    std::uint64_t socketRecvMd(std::span<std::byte> buf, std::size_t& len) noexcept
+        requires (Mode == IoMode::Socket);
+    void socketDrainTxStamps() noexcept
+        requires (Mode == IoMode::Socket);
+    void socketCompleteTx(std::uint32_t key, std::uint64_t txNs) noexcept
+        requires (Mode == IoMode::Socket);
+    [[nodiscard]] static std::uint64_t cmsgHwNs(msghdr& msg, std::uint32_t* key) noexcept;
 
     void applyPacket(std::span<const std::byte> moldPacket, std::uint64_t rxStamp, std::uint64_t rxTsc);
     int  applyMessage(std::span<const std::byte> msg);
@@ -397,6 +434,13 @@ bool DutSession<Mode, Strat, Io>::connectVenue(const char* oeHost, std::uint16_t
     }
     int nodelay = 1;
     ::setsockopt(m_sock.oeFd.get(), IPPROTO_TCP, TCP_NODELAY, &nodelay, sizeof nodelay);
+    unsigned txTs = SOF_TIMESTAMPING_TX_HARDWARE | SOF_TIMESTAMPING_RAW_HARDWARE | SOF_TIMESTAMPING_OPT_ID |
+                    SOF_TIMESTAMPING_OPT_TSONLY;
+#ifdef SOF_TIMESTAMPING_OPT_ID_TCP
+    txTs |= SOF_TIMESTAMPING_OPT_ID_TCP;
+#endif
+    m_sock.stamps.txEnabled = ::setsockopt(m_sock.oeFd.get(), SOL_SOCKET, SO_TIMESTAMPING, &txTs,
+                                           sizeof txTs) == 0;
 
     m_sock.mdFd.reset(::socket(AF_INET, SOCK_DGRAM, 0));
     if (!m_sock.mdFd) {
@@ -418,6 +462,12 @@ bool DutSession<Mode, Strat, Io>::connectVenue(const char* oeHost, std::uint16_t
         fmt::print(stderr, "dut: bind({}:{}): {}\n", mdBindHost, mdPort, std::strerror(errno));
         return false;
     }
+    const unsigned rxTs     = SOF_TIMESTAMPING_RX_HARDWARE | SOF_TIMESTAMPING_RAW_HARDWARE;
+    m_sock.stamps.rxEnabled = ::setsockopt(m_sock.mdFd.get(), SOL_SOCKET, SO_TIMESTAMPING, &rxTs,
+                                           sizeof rxTs) == 0;
+    if (m_sock.stamps.rxEnabled && m_sock.stamps.txEnabled) {
+        m_t2t.setHardwareClock();
+    }
     return true;
 }
 
@@ -437,7 +487,7 @@ void DutSession<Mode, Strat, Io>::login(std::string_view session, std::string_vi
     lr.username         = user;
     lr.requestedSession = session;
     const auto pkt      = soup::pack(m_sock.soupBuf.data(), soup::Type::LoginRequest, soup::asBytes(lr));
-    (void)::send(m_sock.oeFd.get(), pkt.data(), pkt.size(), MSG_NOSIGNAL);
+    socketSend(pkt);
 }
 
 template <IoMode Mode, Strategy Strat, class Io>
@@ -472,35 +522,173 @@ bool DutSession<Mode, Strat, Io>::sessionEstablished() const noexcept
 }
 
 template <IoMode Mode, Strategy Strat, class Io>
+const SocketStampStats& DutSession<Mode, Strat, Io>::socketStamps() const noexcept
+    requires (Mode == IoMode::Socket)
+{
+    return m_sock.stamps;
+}
+
+template <IoMode Mode, Strategy Strat, class Io>
+void DutSession<Mode, Strat, Io>::socketSend(std::span<const std::byte> pkt) noexcept
+    requires (Mode == IoMode::Socket)
+{
+    if (::send(m_sock.oeFd.get(), pkt.data(), pkt.size(), MSG_NOSIGNAL) <= 0) {
+        return;
+    }
+    m_sock.txBytes += pkt.size();
+    if (m_sock.txSeq - m_sock.txRead == kTxRefs) {
+        ++m_sock.txRead;
+    }
+    m_sock.txRefs[m_sock.txSeq & (kTxRefs - 1)] =
+        SocketTxRef{.key = static_cast<std::uint32_t>(m_sock.txBytes - 1), .userRef = kNoRef};
+    ++m_sock.txSeq;
+}
+
+template <IoMode Mode, Strategy Strat, class Io>
+std::uint64_t DutSession<Mode, Strat, Io>::cmsgHwNs(msghdr& msg, std::uint32_t* key) noexcept {
+    std::uint64_t ns = 0;
+    for (cmsghdr* c = CMSG_FIRSTHDR(&msg); c != nullptr; c = CMSG_NXTHDR(&msg, c)) {
+        if (c->cmsg_level == SOL_SOCKET && c->cmsg_type == SCM_TIMESTAMPING) {
+            scm_timestamping ts{};
+            std::memcpy(&ts, CMSG_DATA(c), sizeof ts);
+            ns = static_cast<std::uint64_t>(ts.ts[2].tv_sec) * 1'000'000'000ull +
+                 static_cast<std::uint64_t>(ts.ts[2].tv_nsec);
+        } else if (key != nullptr && c->cmsg_level == SOL_IP && c->cmsg_type == IP_RECVERR) {
+            sock_extended_err ee{};
+            std::memcpy(&ee, CMSG_DATA(c), sizeof ee);
+            if (ee.ee_origin == SO_EE_ORIGIN_TIMESTAMPING) {
+                *key = ee.ee_data;
+            }
+        }
+    }
+    return ns;
+}
+
+template <IoMode Mode, Strategy Strat, class Io>
+std::uint64_t DutSession<Mode, Strat, Io>::socketRecvMd(std::span<std::byte> buf, std::size_t& len) noexcept
+    requires (Mode == IoMode::Socket)
+{
+    iovec  iov{.iov_base = buf.data(), .iov_len = buf.size()};
+    msghdr msg{};
+    msg.msg_iov        = &iov;
+    msg.msg_iovlen     = 1;
+    msg.msg_control    = m_sock.cmsg.data();
+    msg.msg_controllen = m_sock.cmsg.size();
+    const ssize_t n    = ::recvmsg(m_sock.mdFd.get(), &msg, MSG_DONTWAIT);
+    if (n <= 0) {
+        len = 0;
+        return 0;
+    }
+    len                    = static_cast<std::size_t>(n);
+    const std::uint64_t ns = m_sock.stamps.rxEnabled ? cmsgHwNs(msg, nullptr) : 0;
+    if (ns != 0) {
+        ++m_sock.stamps.rxStamped;
+    } else {
+        ++m_sock.stamps.rxUnstamped;
+    }
+    return ns;
+}
+
+template <IoMode Mode, Strategy Strat, class Io>
+void DutSession<Mode, Strat, Io>::socketDrainTxStamps() noexcept
+    requires (Mode == IoMode::Socket)
+{
+    std::array<std::byte, 64> scratch{};
+    for (;;) {
+        iovec  iov{.iov_base = scratch.data(), .iov_len = scratch.size()};
+        msghdr msg{};
+        msg.msg_iov        = &iov;
+        msg.msg_iovlen     = 1;
+        msg.msg_control    = m_sock.cmsg.data();
+        msg.msg_controllen = m_sock.cmsg.size();
+        if (::recvmsg(m_sock.oeFd.get(), &msg, MSG_ERRQUEUE | MSG_DONTWAIT) < 0) {
+            if (++m_sock.emptyErrq == 1u << 20) {
+                m_sock.stamps.txEnabled = false;
+            }
+            return;
+        }
+        m_sock.emptyErrq        = 0;
+        std::uint32_t       key = 0xFFFFFFFFu;
+        const std::uint64_t ns  = cmsgHwNs(msg, &key);
+        if (key != 0xFFFFFFFFu) {
+            socketCompleteTx(key, ns);
+        }
+    }
+}
+
+template <IoMode Mode, Strategy Strat, class Io>
+void DutSession<Mode, Strat, Io>::socketCompleteTx(std::uint32_t key, std::uint64_t txNs) noexcept
+    requires (Mode == IoMode::Socket)
+{
+    while (m_sock.txRead != m_sock.txSeq &&
+           static_cast<std::int32_t>(m_sock.txRefs[m_sock.txRead & (kTxRefs - 1)].key - key) < 0) {
+        ++m_sock.txRead;
+        ++m_sock.stamps.txSkipped;
+    }
+    if (m_sock.txRead == m_sock.txSeq || m_sock.txRefs[m_sock.txRead & (kTxRefs - 1)].key != key) {
+        ++m_sock.stamps.txUnmatched;
+        return;
+    }
+    const std::uint32_t userRef = m_sock.txRefs[m_sock.txRead & (kTxRefs - 1)].userRef;
+    ++m_sock.txRead;
+    if (userRef == kNoRef || txNs == 0) {
+        return;
+    }
+    InFlight& slot = m_inflight[userRef & (kInFlight - 1)];
+    if (!slot.live || slot.userRef != userRef) {
+        return;
+    }
+    slot.live = false;
+    if (slot.rxStamp != 0 && txNs > slot.rxStamp) {
+        ++m_sock.stamps.txMatched;
+        m_t2t.record(txNs - slot.rxStamp, slot.ctx);
+    }
+}
+
+template <IoMode Mode, Strategy Strat, class Io>
 template <class Periodic>
-void DutSession<Mode, Strat, Io>::run(volatile std::sig_atomic_t& stop, Periodic periodic)
+void DutSession<Mode, Strat, Io>::run(volatile std::sig_atomic_t& stop, std::string_view session,
+                                      std::string_view user, Periodic periodic)
     requires (Mode == IoMode::Socket)
 {
     std::vector<std::array<std::byte, 2048>> rxRing(kSocketRxRing);
     std::array<std::byte, 8192>              oeRx{};
-    std::size_t                              rxAt = 0;
+    std::size_t                              rxAt  = 0;
+    std::uint32_t                            spins = 0;
+    for (auto& slot : rxRing) {
+        std::memset(slot.data(), 0, slot.size());
+    }
+    {
+        std::size_t primed = 0;
+        (void)socketRecvMd(rxRing[0], primed);
+        (void)::recv(m_sock.oeFd.get(), oeRx.data(), oeRx.size(), MSG_DONTWAIT);
+    }
+    login(session, user);
     while (stop == 0) {
-        periodic();
-        pollfd pfds[2] = {{m_sock.mdFd.get(), POLLIN, 0}, {m_sock.oeFd.get(), POLLIN, 0}};
-        if (::poll(pfds, 2, 1) <= 0) {
+        auto&               rx    = rxRing[rxAt & (kSocketRxRing - 1)];
+        std::size_t         n     = 0;
+        const std::uint64_t rxTsc = swNow();
+        const std::uint64_t rxNs  = socketRecvMd(rx, n);
+        if (n != 0) {
+            ++rxAt;
+            onMarketData({rx.data(), n}, rxNs, rxTsc);
+            if (m_sock.stamps.txEnabled && m_sock.txRead != m_sock.txSeq) {
+                socketDrainTxStamps();
+            }
             continue;
         }
-        if ((pfds[0].revents & POLLIN) != 0) {
-            const std::uint64_t rxTsc = swNow();
-            auto&               rx    = rxRing[rxAt++ & (kSocketRxRing - 1)];
-            const ssize_t       n     = ::recv(m_sock.mdFd.get(), rx.data(), rx.size(), 0);
-            if (n > 0) {
-                onMarketData({rx.data(), static_cast<std::size_t>(n)}, monotonicNs(), rxTsc);
-            }
+        if (m_sock.stamps.txEnabled && m_sock.txRead != m_sock.txSeq) {
+            socketDrainTxStamps();
         }
-        if ((pfds[1].revents & POLLIN) != 0) {
-            const ssize_t n = ::recv(m_sock.oeFd.get(), oeRx.data(), oeRx.size(), 0);
-            if (n > 0) {
-                onOrderEntry({oeRx.data(), static_cast<std::size_t>(n)});
-            } else if (n == 0) {
-                fmt::print(stderr, "dut: venue closed order-entry connection\n");
-                break;
-            }
+        const ssize_t got = ::recv(m_sock.oeFd.get(), oeRx.data(), oeRx.size(), MSG_DONTWAIT);
+        if (got > 0) {
+            onOrderEntry({oeRx.data(), static_cast<std::size_t>(got)});
+        } else if (got == 0) {
+            fmt::print(stderr, "dut: venue closed order-entry connection\n");
+            break;
+        }
+        if ((++spins & 255u) == 0) {
+            periodic();
         }
     }
 }
@@ -1105,9 +1293,7 @@ bool DutSession<Mode, Strat, Io>::sendOrder(std::span<const std::byte> ouch) {
         m_cap.oe.emplace_back(ouch.begin(), ouch.end());
     } else if constexpr (Mode == IoMode::Socket) {
         const auto pkt = soup::packUnsequencedData(m_sock.soupBuf.data(), ouch);
-        if (::send(m_sock.oeFd.get(), pkt.data(), pkt.size(), MSG_NOSIGNAL) <= 0) {
-            return false;
-        }
+        socketSend(pkt);
     } else {
         const auto    frameLen = static_cast<std::uint32_t>(net::kL2L3L4Overhead + ouch.size());
         std::uint8_t* buf      = m_io.io->acquire(frameLen);
@@ -1146,6 +1332,11 @@ void DutSession<Mode, Strat, Io>::recordSend(std::uint32_t userRef, std::uint64_
         InFlight{.userRef = userRef, .rxStamp = rxStamp, .ctx = ctx, .sendTsc = sendTsc, .live = true};
     if constexpr (kHwStamps) {
         m_txRefs[m_txSeq & (kTxRefs - 1)].userRef = userRef;
+    }
+    if constexpr (Mode == IoMode::Socket) {
+        if (m_sock.txSeq != 0) {
+            m_sock.txRefs[(m_sock.txSeq - 1) & (kTxRefs - 1)].userRef = userRef;
+        }
     }
 }
 

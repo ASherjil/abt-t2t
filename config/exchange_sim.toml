@@ -18,11 +18,11 @@ md_max_payload = 400          # max MoldUDP64 payload per packet; verbs backend 
 # file is forwarded to the DUT byte-for-byte; the venue mirrors the configured symbol's book so the
 # DUT's orders trade against real liquidity (fills are shadowed on top of the recorded history).
 [replay]
-file           = "data/itch/01302020.NASDAQ_ITCH50.itch"   # full day (gunzip -k of the NASDAQ file) or an extract
+file           = "data/itch/itch50_05_15"   # 15 May 2026 full day (gunzip of the NASDAQ itch50_05_15.gz)
 speed          = 1.0          # 1.0 = real time-of-day pacing, 10.0 = 10x faster, 0 = as fast as possible
-loops          = 0            # replays of the file before exiting (0 = until stopped)
+loops          = 1            # replays of the file before exiting (0 = until stopped)
 skip_to        = "09:29:50"   # replayed AFAP up to here (builds the book), paced from here on ("" = none)
-stop_at        = "09:59:50"   # end the loop at this time-of-day ("" = end of file); 30 min keeps long benchmarks loop-free
+stop_at        = "09:34:50"   # end the loop at this time-of-day ("" = end of file); 30 min keeps long benchmarks loop-free
 preload_max_mb = 1024         # files up to this size are held in RAM; larger ones are streamed
 max_batch      = 64           # messages sent per pump before order entry is polled again
 wait_for_dut   = true         # hold the replay until the DUT's hello arrives on order entry
@@ -32,6 +32,7 @@ afap_max_msg_per_s = 1000000  # cap for the AFAP phases (pre-open catch-up, spee
 [transport]
 interface = "cx0"             # NIC the sim drives (ConnectX-4 Lx port 0)
 driver    = "mlx5_core"       # "mlx5_core" | "sfc" | "i40e" (dpdk backend devargs policy)
+backend   = "verbs"            # loopback_test.sh only: socket | verbs | dpdk | ef_vi
 cpu_core  = 4                 # isolated core the sim hot loop pins to
 
 # Shared L2/L3 addressing. local = this sim's NIC; peer = the DUT. No ARP — both hardcoded.
@@ -54,5 +55,5 @@ dst_port = 41001
 # Kernel-socket path, used by exchange_sim / dut (no NIC).
 [socket]
 oe_port = 5001               # TCP listen port for order entry
-md_host = "127.0.0.1"        # UDP market-data destination host
+md_host = "10.0.0.2"          # UDP market-data destination host
 md_port = 5002

@@ -105,6 +105,7 @@ public:
     void record(std::uint64_t raw, std::uint64_t ctx = 0, std::uint64_t stages = 0) noexcept;
     void setStageNames(const StageNames& names) noexcept;
     void setConverter(Converter convert, std::uint64_t param) noexcept;
+    void setHardwareClock() noexcept;
 
     bool        drainOne() noexcept;
     std::size_t drain() noexcept;
@@ -153,6 +154,7 @@ private:
     Converter                  m_convert      = nullptr;
     std::uint64_t              m_convertParam = 0;
     std::uint64_t              m_rejected     = 0;
+    bool                       m_hwClock      = false;
     std::atomic<std::uint64_t> m_dropped{0};
     Worst                      m_worstRun;
     Worst                      m_worstInterval;

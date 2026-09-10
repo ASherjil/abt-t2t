@@ -122,6 +122,11 @@ void LatencyRecorder::setStageNames(const StageNames& names) noexcept {
 void LatencyRecorder::setConverter(Converter convert, std::uint64_t param) noexcept {
     m_convert      = convert;
     m_convertParam = param;
+    m_hwClock      = true;
+}
+
+void LatencyRecorder::setHardwareClock() noexcept {
+    m_hwClock = true;
 }
 
 std::uint64_t LatencyRecorder::rejected() const noexcept {
@@ -129,7 +134,7 @@ std::uint64_t LatencyRecorder::rejected() const noexcept {
 }
 
 const char* LatencyRecorder::clockName() const noexcept {
-    return m_convert != nullptr ? "hw" : "rdtscp";
+    return m_hwClock ? "hw" : "rdtscp";
 }
 
 const StageNames& LatencyRecorder::stageNames() const noexcept {
