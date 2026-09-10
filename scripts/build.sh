@@ -10,14 +10,16 @@ read -rp "Choice [1/2] (default 2): " clean_choice
 clean_choice="${clean_choice:-2}"
 
 echo ""
-echo "1) Release  (-O3, -march=x86-64-v3)"
-echo "2) Debug    (ASan + UBSan)"
-read -rp "Build type [1/2] (default 1): " type_choice
+echo "1) Release    (-O3, -march=x86-64-v3, rdtscp stage timing)"
+echo "2) Release-hw (same, rdtscp timing off, NIC hardware timestamps on)"
+echo "3) Debug      (ASan + UBSan)"
+read -rp "Build type [1/2/3] (default 1): " type_choice
 type_choice="${type_choice:-1}"
 
 case "${type_choice}" in
-    1) preset="release" ;;
-    2) preset="debug"   ;;
+    1) preset="release"    ;;
+    2) preset="release-hw" ;;
+    3) preset="debug"      ;;
     *) echo "Invalid build type"; exit 1 ;;
 esac
 

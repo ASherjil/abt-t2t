@@ -128,6 +128,10 @@ std::uint64_t LatencyRecorder::rejected() const noexcept {
     return m_rejected;
 }
 
+const char* LatencyRecorder::clockName() const noexcept {
+    return m_convert != nullptr ? "hw" : "rdtscp";
+}
+
 const StageNames& LatencyRecorder::stageNames() const noexcept {
     return m_stageNames;
 }
@@ -231,14 +235,34 @@ void printDutStatus(const DutStatus& s) {
 }
 
 void LatencyRecorder::summary() {
-    fmt::print("[{}] ns: n={} dropped={} min={} p50={} p90={} p99={} p99.9={} p99.99={} p99.999={} max={}\n",
-               m_name, count(), dropped(), min(), percentile(50.0), percentile(90.0), percentile(99.0),
-               percentile(99.9), percentile(99.99), percentile(99.999), max());
-    if (m_rejected > 0) {
-        fmt::print("[{}] rejected={} (invalid hardware stamps)\n", m_name, m_rejected);
+    LatencyRecorder* self = this;
+    printSummary(std::span<LatencyRecorder* const>(&self, 1));
+}
+
+void LatencyRecorder::printSummary(std::span<LatencyRecorder* const> recorders) {
+    fmt::print(
+        "[latency] ns; clock hw = NIC rx/tx hardware timestamps, rdtscp = DUT core timestamp counter\n");
+    fmt::print("{:<12}{:<8}{:>10}{:>8}{:>8}{:>8}{:>8}{:>8}{:>9}{:>9}\n", "recorder", "clock", "samples",
+               "min", "p50", "p99", "p99.9", "p99.99", "p99.999", "max");
+    for (LatencyRecorder* r : recorders) {
+        if (r->count() == 0) {
+            fmt::print("{:<12}{:<8}{:>10}\n", r->name(), r->clockName(), "none");
+            continue;
+        }
+        fmt::print("{:<12}{:<8}{:>10}{:>8}{:>8}{:>8}{:>8}{:>8}{:>9}{:>9}\n", r->name(), r->clockName(),
+                   r->count(), r->min(), r->percentile(50.0), r->percentile(99.0), r->percentile(99.9),
+                   r->percentile(99.99), r->percentile(99.999), r->max());
     }
-    if (m_worstRun.n > 0) {
-        fmt::print("[{} worst] {}\n", m_name, describeWorst(worstRun(), m_stageNames));
+    for (LatencyRecorder* r : recorders) {
+        if (r->dropped() > 0) {
+            fmt::print("[{}] dropped={} (recorder queue full)\n", r->name(), r->dropped());
+        }
+        if (r->rejected() > 0) {
+            fmt::print("[{}] rejected={} (invalid hardware stamps)\n", r->name(), r->rejected());
+        }
+        if (r->count() > 0 && !r->worstRun().empty()) {
+            fmt::print("[{} worst] {}\n", r->name(), describeWorst(r->worstRun(), r->stageNames()));
+        }
     }
 }
 
@@ -311,9 +335,10 @@ void RecorderThread::flushInterval(util::HistogramLog& log, const std::vector<La
             (void)log.writeInterval(r->name(), startEpoch, intervalSec, h);
             (void)log.writeComment(
                 fmt::format("worst {}: {}", r->name(), describeWorst(r->worstInterval(), r->stageNames())));
-            fmt::print("[{} +{:.0f}s] ns: n={} p50={} p99={} p99.9={} p99.99={} max={}\n", r->name(),
-                       intervalSec, h.count(), h.percentile(50.0), h.percentile(99.0), h.percentile(99.9),
-                       h.percentile(99.99), h.max());
+            fmt::print("[{} +{:.0f}s {}] n={} min={} p50={} p99={} p99.9={} p99.99={} p99.999={} max={}\n",
+                       r->name(), intervalSec, r->clockName(), h.count(), h.min(), h.percentile(50.0),
+                       h.percentile(99.0), h.percentile(99.9), h.percentile(99.99), h.percentile(99.999),
+                       h.max());
         }
         r->resetInterval();
     }

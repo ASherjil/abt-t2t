@@ -53,13 +53,6 @@ std::int64_t Histogram::max() const noexcept {
     return hdr_max(m_h.get());
 }
 
-double Histogram::mean() const noexcept {
-    if (m_h == nullptr) {
-        return 0.0;
-    }
-    return hdr_mean(m_h.get());
-}
-
 std::int64_t Histogram::count() const noexcept {
     if (m_h == nullptr) {
         return 0;

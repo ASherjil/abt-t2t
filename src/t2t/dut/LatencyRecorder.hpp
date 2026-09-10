@@ -110,6 +110,7 @@ public:
     std::size_t drain() noexcept;
 
     [[nodiscard]] std::string_view         name() const noexcept;
+    [[nodiscard]] const char*              clockName() const noexcept;
     [[nodiscard]] const StageNames&        stageNames() const noexcept;
     [[nodiscard]] const util::Histogram&   histogram() const noexcept;
     [[nodiscard]] const util::Histogram&   interval() const noexcept;
@@ -125,6 +126,8 @@ public:
 
     void reset() noexcept;
     void summary();
+
+    static void printSummary(std::span<LatencyRecorder* const> recorders);
 
 private:
     struct Sample {

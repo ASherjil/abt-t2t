@@ -34,7 +34,6 @@ public:
     [[nodiscard]] std::int64_t percentile(double p) const noexcept;   // p in [0, 100]
     [[nodiscard]] std::int64_t min() const noexcept;
     [[nodiscard]] std::int64_t max() const noexcept;
-    [[nodiscard]] double       mean() const noexcept;
     [[nodiscard]] std::int64_t count() const noexcept;
 
     void reset() noexcept;

@@ -56,16 +56,19 @@ void printDutReport(Session& sess, util::ThreadCounters atStart, util::ThreadCou
         core, irqNow.tlbShootdowns - irqAtStart.tlbShootdowns,
         irqNow.functionCalls - irqAtStart.functionCalls, irqNow.reschedules - irqAtStart.reschedules,
         irqNow.timerTicks - irqAtStart.timerTicks);
-    sess.t2t().summary();
+    std::vector<LatencyRecorder*> recs{&sess.t2t()};
     if constexpr (build::kSwTiming) {
-        sess.t2tSw().summary();
-        sess.t2tHol().summary();
-        sess.proc().summary();
-        sess.ackRtt().summary();
-        sess.rxStage().summary();
+        recs.push_back(&sess.t2tSw());
+        recs.push_back(&sess.t2tHol());
+        recs.push_back(&sess.rxStage());
         for (auto& r : sess.stageCost()) {
-            r.summary();
+            recs.push_back(&r);
         }
+        recs.push_back(&sess.proc());
+        recs.push_back(&sess.ackRtt());
+    }
+    LatencyRecorder::printSummary(recs);
+    if constexpr (build::kSwTiming) {
         printCaptures(sess);
     }
     const OmsStats& s = sess.oms().stats();
