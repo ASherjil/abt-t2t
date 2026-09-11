@@ -92,3 +92,23 @@ The CPU Intel Core i9-11900k contains 8 cores, this is how the threads were pinn
 5. Core 7: Thread for the socket implementation Solarflare Onload. (Not used for the kernel bypass version).
 
 Core 0-2 are not isolated they are left for linux housekeeping. 
+
+## Methodology
+
+[`docs/measurement-methodology.md`](docs/measurement-methodology.md) documents the full
+measurement in detail: what is inside and outside the interval, the rig and its kernel
+configuration, how the hardware timestamps are taken and matched, the feed handler's data
+structures and their time complexity, the exchange simulator and how it decides fills by
+queue position, the kernel-bypass transports, the NASDAQ session used, every thread, and
+what is not claimed.
+
+Kernel bypass transports come from the sibling project
+[ABTRDA3](https://github.com/ASherjil/ABTRDA3), which benchmarks `ef_vi`, Verbs, DPDK and
+AF_XDP on this same rig.
+
+## License
+
+Apache-2.0. See [LICENSE](LICENSE) and [NOTICE](NOTICE).
+
+NASDAQ TotalView-ITCH data is the property of Nasdaq, Inc. and is not included in this
+repository.

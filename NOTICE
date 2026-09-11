@@ -1,0 +1,22 @@
+abt-t2t
+Copyright 2026 Areeb Sherjil
+
+Licensed under the Apache License, Version 2.0 (see LICENSE).
+
+This product bundles or fetches the following third-party components, each
+under its own license:
+
+  fmt                  MIT          https://github.com/fmtlib/fmt
+  toml++               MIT          https://github.com/marzer/tomlplusplus
+  SPSCQueue            MIT          https://github.com/rigtorp/SPSCQueue
+  HdrHistogram_c       CC0-1.0      https://github.com/HdrHistogram/HdrHistogram_c
+  ABTRDA3              Apache-2.0   https://github.com/ASherjil/ABTRDA3
+
+The kernel-bypass transports are built against vendor libraries that are not
+distributed with this project and are not covered by the Apache-2.0 licence of
+this work: AMD/Solarflare ef_vi and Onload (libciul, OpenOnload), and rdma-core
+(libibverbs, libmlx5).
+
+NASDAQ TotalView-ITCH 5.0 data is the property of Nasdaq, Inc. No market data
+is included in this repository. The file named in config/exchange_sim.toml must
+be obtained separately; see data/README.md.
