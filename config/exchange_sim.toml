@@ -34,6 +34,7 @@ interface = "cx0"             # NIC the sim drives (ConnectX-4 Lx port 0)
 driver    = "mlx5_core"       # "mlx5_core" | "sfc" | "i40e" (dpdk backend devargs policy)
 backend   = "verbs"            # loopback_test.sh only: socket | verbs | dpdk | ef_vi
 cpu_core  = 4                 # isolated core the sim hot loop pins to
+log_core  = 3                 # housekeeping core that writes the per-second status line (never the hot core: a write() can block on the journal)
 
 # Shared L2/L3 addressing. local = this sim's NIC; peer = the DUT. No ARP — both hardcoded.
 [network]

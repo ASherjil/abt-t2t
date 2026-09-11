@@ -93,7 +93,7 @@ HistogramLog::HistogramLog(const std::string& path) {
         std::error_code ec;
         std::filesystem::create_directories(p.parent_path(), ec);
     }
-    m_file.reset(std::fopen(path.c_str(), "a"));
+    m_file.reset(std::fopen(path.c_str(), "w"));
     if (!m_file) {
         return;
     }

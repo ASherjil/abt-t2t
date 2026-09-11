@@ -1,6 +1,7 @@
 #include "Backend.hpp"
 
 #include <csignal>
+#include <cstdio>
 #include <cstring>
 
 #include <fmt/core.h>
@@ -36,6 +37,7 @@ void installSignals() {
 }   // namespace
 
 int main() {
+    (void)std::setvbuf(stdout, nullptr, _IOLBF, 0);
     const dut::DutAppConfig cfg = dut::loadDutConfig(ABT_DUT_CONFIG_PATH);
     installSignals();
     if (const auto lock = util::lockAndPrefaultMemory(); !lock.locked) {

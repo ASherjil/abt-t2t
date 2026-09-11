@@ -66,11 +66,14 @@ target_link_libraries(abt_replay
     PRIVATE abt_flags fmt::fmt ZLIB::ZLIB)
 
 # ---------------------------------------------------------------------------
-# abt_sim : header-only venue glue (OUCH <-> matching engine <-> ITCH/OUCH) + market replay.
+# abt_sim : venue glue (OUCH <-> matching engine <-> ITCH/OUCH), market replay, status thread.
 # ---------------------------------------------------------------------------
-add_library(abt_sim INTERFACE)
+add_library(abt_sim STATIC
+    sim/SimStatus.cpp)
 add_library(abt::sim ALIAS abt_sim)
-target_link_libraries(abt_sim INTERFACE abt_protocol abt_lob abt_replay fmt::fmt)
+target_link_libraries(abt_sim
+    PUBLIC abt_protocol abt_lob abt_replay SPSCQueue::SPSCQueue Threads::Threads fmt::fmt
+    PRIVATE abt_flags)
 
 # ---------------------------------------------------------------------------
 # abt_config : TOML-driven runtime configuration loaders (toml++) for sim and DUT.

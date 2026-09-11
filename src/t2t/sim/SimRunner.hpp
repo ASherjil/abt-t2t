@@ -10,39 +10,13 @@
 #include "t2t/replay/SymbolFilter.hpp"
 #include "t2t/sim/ExchangeSession.hpp"
 #include "t2t/sim/SimConfig.hpp"
+#include "t2t/sim/SimStatus.hpp"
 #include "t2t/util/Memory.hpp"
 #include "t2t/util/Platform.hpp"
 
 namespace abt {
 
 inline constexpr std::uint64_t kSimLogPeriodNs = 1'000'000'000ull;
-
-template <class Session>
-void logSim(const Session& ex, std::uint64_t elapsedNs) {
-    const SessionStats& s = ex.stats();
-    fmt::print(
-        stderr,
-        "[sim +{:>4}s] md_pkts={} oe_pkts={} tx_drop={} enter={} replace={} cancel={} unknown={} trades={} "
-        "bid={} ask={} live={}\n",
-        elapsedNs / 1'000'000'000ull, s.mdPackets, s.oePackets, s.txDropped, s.enters, s.replaces, s.cancels,
-        s.unknown, ex.trades(), ex.bestBid(), ex.bestAsk(), ex.liveOrders());
-}
-
-template <class Session>
-void logReplay(const Session& ex, const ReplayProgress& p, std::uint64_t elapsedNs) {
-    const SessionStats& s = ex.stats();
-    const MirrorStats   m = ex.mirrorStats();
-    fmt::print(stderr,
-               "[sim +{:>5}s] loop={} t={} sent={} mir={} late_max={}us late>1ms={} md_pkts={} oe_pkts={} "
-               "tx_drop={} "
-               "enter={} replace={} cancel={} shadow={}/{} cross={} impact={} self={} unk={} over={} oob={} "
-               "rehash={} bid={} ask={} live={} clients={}\n",
-               elapsedNs / 1'000'000'000ull, p.loop, replay::formatTimeOfDay(p.virtualTs), p.sent, s.mirrored,
-               p.maxLateNs / 1000, p.lateOver1ms, s.mdPackets, s.oePackets, s.txDropped, s.enters, s.replaces,
-               s.cancels, m.shadowFills, m.shadowShares, m.crossFills, m.impactFills, m.selfTrades,
-               m.unknownRef, m.overReduce, m.outOfBand, m.rehashes, ex.bestBid(), ex.bestAsk(),
-               ex.liveOrders(), ex.clientOrders());
-}
 
 template <class Session>
 int runReplay(Session& ex, const SimConfig& cfg, volatile std::sig_atomic_t& stop) {
@@ -63,8 +37,11 @@ int runReplay(Session& ex, const SimConfig& cfg, volatile std::sig_atomic_t& sto
                 return 0;
             }
         }
-        fmt::print(stderr, "exchange-sim: DUT session logged in, starting replay\n");
+        fmt::print(stderr,
+                   "exchange-sim: DUT session logged in, starting replay (status lines from core {})\n",
+                   cfg.transport.logCore);
     }
+    SimStatusThread     status(cfg.transport.logCore, cfg.transport.cpuCore);
     const std::uint64_t start   = monotonicNs();
     std::uint64_t       nextLog = start + kSimLogPeriodNs;
     while (stop == 0) {
@@ -76,12 +53,13 @@ int runReplay(Session& ex, const SimConfig& cfg, volatile std::sig_atomic_t& sto
             break;
         }
         if (now >= nextLog) {
-            logReplay(ex, rp.progress(), now - start);
+            (void)status.push(simStatus(ex, rp.progress(), now - start));
             nextLog += kSimLogPeriodNs;
         }
     }
     ex.flushMarketData();
-    logReplay(ex, rp.progress(), monotonicNs() - start);
+    status.stop();
+    printSimStatus(simStatus(ex, rp.progress(), monotonicNs() - start));
     const util::ProcessMemory mem = util::processMemory();
     fmt::print(stderr, "[sim mem] rss={} MB peak={} MB hugetlb={} MB (mapped replay file counts in rss)\n",
                mem.rssMb, mem.peakRssMb, mem.hugetlbMb);

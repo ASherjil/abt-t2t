@@ -23,6 +23,7 @@ struct TransportConfig {
     std::string    interface = "cx0";
     std::string    driver    = "mlx5_core";
     int            cpuCore   = 2;
+    int            logCore   = -1;
     net::Endpoints marketData{};
     net::Endpoints orderEntry{};
 };

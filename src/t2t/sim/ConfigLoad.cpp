@@ -60,6 +60,7 @@ SimConfig loadConfig(const std::string& path) {
     c.transport.interface = t["transport"]["interface"].value_or(c.transport.interface);
     c.transport.driver    = t["transport"]["driver"].value_or(c.transport.driver);
     c.transport.cpuCore   = t["transport"]["cpu_core"].value_or(c.transport.cpuCore);
+    c.transport.logCore   = t["transport"]["log_core"].value_or(c.transport.logCore);
 
     const net::MacAddr  lmac = config::parseMac(t["network"]["local_mac"].value_or(std::string{}));
     const net::MacAddr  pmac = config::parseMac(t["network"]["peer_mac"].value_or(std::string{}));

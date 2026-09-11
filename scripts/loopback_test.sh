@@ -269,6 +269,10 @@ else
 fi
 stop_all
 
+hlog=$(sed -n 's/^log_file *= *"\([^"]*\)".*/\1/p' config/dut.toml)
+if [[ -n "${hlog}" && -f "${hlog}" ]]; then
+    mv "${hlog}" "${out}/dut.hlog"
+fi
 chown -R "${SUDO_UID:-0}:${SUDO_GID:-0}" results 2>/dev/null || true
 
 echo ""

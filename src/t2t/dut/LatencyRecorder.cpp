@@ -340,7 +340,8 @@ void RecorderThread::flushInterval(util::HistogramLog& log, const std::vector<La
             (void)log.writeInterval(r->name(), startEpoch, intervalSec, h);
             (void)log.writeComment(
                 fmt::format("worst {}: {}", r->name(), describeWorst(r->worstInterval(), r->stageNames())));
-            fmt::print("[{} +{:.0f}s {}] n={} min={} p50={} p99={} p99.9={} p99.99={} p99.999={} max={}\n",
+            fmt::print(stderr,
+                       "[{} +{:.0f}s {}] n={} min={} p50={} p99={} p99.9={} p99.99={} p99.999={} max={}\n",
                        r->name(), intervalSec, r->clockName(), h.count(), h.min(), h.percentile(50.0),
                        h.percentile(99.0), h.percentile(99.9), h.percentile(99.99), h.percentile(99.999),
                        h.max());
