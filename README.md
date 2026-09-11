@@ -1,98 +1,94 @@
-# abt-t2t
+# Ultra Low Latency Order Book (abt-t2t)
 
-**A wire-to-wire, hardware-timestamped tick-to-trade engine.** An ITCH/OUCH limit order
-book driven over kernel bypass, with an exchange simulator on the other end of a 25 GbE
-link, measuring the full path a real trading system pays — not an in-process microbenchmark.
+A NASDAQ ITCH 5.0 feed handler that measures tick-to-trade using HW timestamping. The ITCH 5.0 data is replayed by the exchange
+simulator that plays real data. Since GitHub is littered with "Order books", this one is different because it implements the full thing: a real exchange simulator,
+linux kernel bypass(Solarflare `ef_vi`) and HW timestamped measurements all the way up to P99.999 and max. 
 
-## Why this is different
+## Tick-to-trade, full trading day 
 
-Almost every order-book repo measures **in-process**: `rdtsc` before the match, `rdtsc`
-after. That number omits everything that dominates real latency — NIC RX, PCIe, the
-kernel-bypass path, parsing, serialization, NIC TX. It benchmarks a data structure.
+[Todo]
 
-`abt-t2t` measures the **full wire-to-wire path** on the NIC's own PHC:
+## What is measured ?
 
-```
- Exchange simulator                          Device Under Test (DUT)
- [Intel XXV710-DA2 / ConnectX-4 Lx] ──25G DAC── [Solarflare X2522-PLUS]
-   DPDK: ITCH 5.0 out / OUCH 5.0 in               ef_vi: ITCH in / OUCH out
-                                                  t2t = TX_hwts − RX_hwts   (one PHC, no sync)
-```
-
-- **Real exchange protocols** — Nasdaq TotalView-ITCH 5.0 market data and OUCH 5.0 order
-  entry, over MoldUDP64 / SoupBinTCP. Not a toy struct.
-- **Kernel bypass** — the DPDK / AF_XDP / Verbs / ef_vi transports benchmarked in the
-  sibling [`abtrda3`](../abtrda3) repo, reused behind a common `TxRing`/`RxRing` concept.
-- **Hardware-timestamped tick-to-trade** — `TX_hwts − RX_hwts` on a single Solarflare
-  X2522 PHC, so the number needs no clock sync and survives interview scrutiny. See
-  [`docs/measurement-methodology.md`](docs/measurement-methodology.md).
-
-## Status
-
-Built incrementally. Current state:
-
-| Component | Status |
-|---|---|
-| Project scaffold (C++20, CMake, Ninja presets) | ✅ |
-| ITCH 5.0 wire layer (12 core messages, zero-copy overlay) | ✅ tested |
-| OUCH 5.0 wire layer (9 core messages + TagValue appendages) | ✅ tested |
-| Limit order book / matching engine (price-time, O(1) hot path) | ✅ tested |
-| Venue glue: OUCH ↔ matching engine ↔ ITCH/OUCH events | ✅ tested |
-| MoldUDP64 (market data) + SoupBinTCP (order entry) framing | ✅ tested |
-| ExchangeSession: full SoupBin ⇄ OUCH ⇄ match ⇄ ITCH ⇄ MoldUDP64 loop | ✅ tested |
-| Synthetic order-flow generator (deterministic) | ✅ tested |
-| Kernel-socket transport + runnable `exchange_sim` binary (config 1) | ✅ tested + live smoke |
-| **← exchange simulator runs over real TCP (order entry) + UDP (market data)** | |
-| Manual Ethernet/IPv4/UDP framing (needed for ef_vi/DPDK paths) | ⏳ next — L3/L4 by hand |
-| DUT transports: Onload (TCP) · ef_vi (UDP) · DPDK-sfc (UDP) | ⏳ hardware |
-| HW-timestamped tick-to-trade harness + transport comparison | ⏳ hardware |
-
-## Layout
+Feed handler:
 
 ```
-src/t2t/                library code, headers and sources side by side (include root is src/)
-  protocol/             ITCH 5.0 / OUCH 5.0 / MoldUDP64 / SoupBinTCP wire structs and framers
-  lob/                  limit order book / matching engine
-  util/                 TSC clock, affinity, flat hash map, HdrHistogram binding
-  replay/               NASDAQ ITCH file readers and symbol filter
-  sim/                  exchange simulator: venue, session, synthetic flow, real-data replay
-  dut/                  DUT: feed builder, sequence tracker, OMS, quoter, latency recorder
-  config/               NIC/backend traits and TOML config loaders
-src/third_party/        vendored code (ABTRDA3 ring concepts)
-src/apps/               exchange_sim, dut, itch_replay binaries (+ per-backend transport glue)
-test/                   unit tests (in-tree harness; ctest)
-config/                 runtime TOML configs
-scripts/                build / loopback / format / tidy helpers
-docs/                   measurement methodology & design notes
-cmake/                  shared warning/arch/opt flags
-format/                 .clang-format / .clang-tidy (scripts pass these explicitly)
+               ┌────────────── t2t = tx stamp − rx stamp ──────────────┐
+               │                                                       │
+          rx hw stamp                                             tx hw stamp
+               │                                                       │
+               ▼                                                       ▼
+ ITCH   ┌─────────────┐  DMA   ┌──────┐  load  ┌────────┐ CTPIO ┌─────────────┐  OUCH
+ ──────►│   NIC rx    │───────►│ DDR4 │───────►│ core 6 │──────►│   NIC tx    │──────►
+        └─────────────┘hugepage└──────┘  DRAM  └────────┘  PIO  └─────────────┘
+                                                    │
+                                                    └──► MoldUDP64 frame, sequence check
+                                                         ITCH 5.0 decode in place
+                                                         order book update
+                                                         quote decision
+                                                         OUCH 5.0 build
 ```
 
-## Build & test
+Both timestamps are taken using a Solarflare X2522-Plus. The recieve timestamp is written when the ITCH market-data arrives on the 
+wire. The transmit timestamp is written when the OUCH response leaves the NIC. 
 
-```bash
-cmake --preset release
-cmake --build --preset release
-ctest --preset release
-```
+### C++ code architecture
 
-Requires a C++20 compiler (GCC 13+/Clang 16+), CMake ≥ 3.21, Ninja. Kernel-bypass
-components additionally require DPDK and the corresponding NIC setup (added as they land).
+Ultra low latency is achieved by using kernel bypass combined with busy-polling. 
 
-## Run the simulator (config 1: kernel sockets)
+The sequence is as follows: 
 
-```bash
-# exchange_sim [order_entry_tcp_port] [market_data_host] [market_data_udp_port]
-./build/release/apps/exchange_sim 5001 127.0.0.1 5002
-```
+1. Poll the receive ring, the CPU spinning at 100%.
+2. Read the MoldUDP64 header and check the sequence against the tracker. Gaps are counted
+   and surfaced, never silently absorbed.
+3. Decode each ITCH 5.0 message in place, as a big-endian overlay on the received bytes.
+   Nothing is copied into a parsed structure.
+4. If the message belongs to a quoted symbol, apply it to that book here: add, execute,
+   cancel, delete and replace are all constant-time on this path.
+5. If it belongs to any other symbol, hand the frame to the second core and move on.
+6. Ask the quoter whether the new top of book has moved its own quote out of position.
+7. If it has, build the OUCH 5.0 order and write it into the card with CTPIO.
+8. Only after the order is on the wire, push the latency sample onto a lock-free SPSC for
+   the histogram thread.
+9. The histogram thread is pinned on another CPU core where it stores the latency using HdrHistogram. 
 
-It waits for an order-entry client on the TCP port (SoupBinTCP), then publishes ITCH
-market data over MoldUDP64/UDP and runs a synthetic market. Order entry is plain kernel
-TCP with `TCP_NODELAY`; running the same binary under Onload accelerates both sockets
-with no code change (that is the DUT's config-1 path).
+**The strategy.** A resting two-sided quote on each quoted symbol, one level per side,
+held near the touch. When the book moves, the order manager replaces the side that is now
+mispriced, and it tracks the in-flight state of each side so a second order is never sent
+against an unacknowledged one. The point of the strategy is not that it is profitable. It
+is that it is a real decision made from a real book on every tick, so the measured path
+includes a branch that has to be right.
 
-## Design principles
+**Hot and cold.** Eight symbols are quoted. Every other symbol on the tape, roughly twelve
+and a half thousand of them, is still fully booked, on a second isolated core fed by a
+lock-free ring of frame references. Those frames are read in place out of the receive
+buffers, so nothing is copied to hand them over, and the ring is sized against the buffer
+pool so a frame can never be recycled while the second core is still reading it. At the
+busiest point of the session that side is carrying several million live orders.
 
-Zero hot-path allocation, cache-line-aware layout, big-endian overlay structs decoded in
-place, compile-time-sized messages, busy-poll on isolated cores. Conventions mirror the
-sibling `abtrda3` transport benchmark repo.
+### The quoted set
+
+| symbol | what it is | top of book | resting orders |
+|---|---|---|---|
+| AAPL | Apple, mega-cap single stock | $297.25 | 37,603 |
+| MSFT | Microsoft, deepest book of the eight | $415.14 | 86,364 |
+| AMD | semiconductor, heavy message rate | $432.12 | 36,427 |
+| INTC | low-priced semiconductor, heavy churn | $108.91 | 32,428 |
+| QQQ | NASDAQ-100 ETF, NASDAQ-listed | $709.04 | 27,175 |
+| SPY | S&P 500 ETF, NYSE Arca-listed | $739.95 | 768 |
+| TQQQ | 3x leveraged NASDAQ-100 ETF | $75.36 | 26,909 |
+| GOOGL | Alphabet, mega-cap single stock | $393.66 | 27,934 |
+
+### Threads and CPU isolation
+
+The application is multi-threaded with only one thread pinned to a specific isolated CPU core. The breakdown is as follows:
+
+The CPU Intel Core i9-11900k contains 8 cores, this is how the threads were pinned. 
+
+1. Core 3: Thread 1 Histogram thread for latency measurements. Thread 2 status thread for the exchange simulator status. These are not latency critical.
+2. Core 4: Thread for the exchange simulator. 
+3. Core 5: Thread for booking the cold symbols. 
+4. Core 6: Thread for the feed handler. The most latency critical where tick-to-trade lives. 
+5. Core 7: Thread for the socket implementation Solarflare Onload. (Not used for the kernel bypass version).
+
+Core 0-2 are not isolated they are left for linux housekeeping. 
