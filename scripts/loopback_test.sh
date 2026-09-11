@@ -89,14 +89,14 @@ stop_at="$(toml_value "${sim_cfg}" stop_at)"
 speed="$(toml_value "${sim_cfg}" speed)"
 loops="$(toml_value "${sim_cfg}" loops)"
 window=""
-if [[ -n "${skip_to}" && -n "${stop_at}" ]]; then
-    window=$(( $(tod_seconds "${stop_at}") - $(tod_seconds "${skip_to}") ))
+if [[ -n "${stop_at}" ]]; then
+    window=$(( $(tod_seconds "${stop_at}") - $(tod_seconds "${skip_to:-00:00:00}") ))
     if [[ -n "${speed}" && "${speed}" != "0" ]]; then
         window="$(awk -v w="${window}" -v s="${speed}" 'BEGIN { printf "%d", w / s + 0.5 }')"
     fi
 fi
 if [[ -z "${duration}" && -z "${window}" ]]; then
-    echo "no seconds given and ${sim_cfg} has no skip_to/stop_at window"; exit 1
+    echo "no seconds given and ${sim_cfg} has no stop_at (the window runs from skip_to, or the first message when skip_to is empty, to stop_at)"; exit 1
 fi
 
 if [[ ( "${backend}" != "socket" || "${dut_backend}" != "socket" ) && "${EUID}" -ne 0 ]]; then
