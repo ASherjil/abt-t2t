@@ -13,6 +13,31 @@ tick. `abt-t2t` measures the full wire-to-wire path on the network card's own cl
 
 ---
 
+## Contents
+
+1. [What tick-to-trade means here](#1-what-tick-to-trade-means-here)
+2. [The rig](#2-the-rig)
+3. [The measurement: one clock, no synchronisation](#3-the-measurement-one-clock-no-synchronisation)
+4. [The ruler and the runner](#4-the-ruler-and-the-runner)
+5. [How production firms measure, and how this compares](#5-how-production-firms-measure-and-how-this-compares)
+6. [Kernel bypass](#6-kernel-bypass)
+7. [The feed handler](#7-the-feed-handler)
+   - [7.1 Dispatch: from packet to symbol](#71-dispatch-from-packet-to-symbol)
+   - [7.2 The per-symbol book](#72-the-per-symbol-book)
+   - [7.3 The decision](#73-the-decision)
+   - [7.4 The cold shard](#74-the-cold-shard)
+8. [The exchange simulator](#8-the-exchange-simulator)
+   - [8.1 One book per symbol, holding both sides of the fiction](#81-one-book-per-symbol-holding-both-sides-of-the-fiction)
+   - [8.2 Two paths into the same book](#82-two-paths-into-the-same-book)
+   - [8.3 How the DUT gets filled](#83-how-the-dut-gets-filled)
+   - [8.4 Pacing, and how fidelity is proven](#84-pacing-and-how-fidelity-is-proven)
+9. [Threads and cores](#9-threads-and-cores)
+10. [The market data](#10-the-market-data)
+11. [Reporting](#11-reporting)
+12. [What is not claimed](#12-what-is-not-claimed)
+
+---
+
 ## 1. What tick-to-trade means here
 
 Tick-to-trade is the elapsed time from the market-data packet that triggers a decision
@@ -345,7 +370,72 @@ without hard position limits.
 The strategy keeps the fair-value interval that would produce its current quote, so a
 market-data update that moves fair value within that interval returns "no change" without
 touching the order manager. The work is a handful of floating-point operations and two
-comparisons, O(1).
+comparisons, O(1). The published run quotes 100 shares a side, one tick either side of fair
+value, with a skew of one tick per thousand shares of inventory.
+
+This is the decision, as it runs on the hot core (`src/t2t/dut/QuoterStrategy.cpp`):
+
+```cpp
+bool QuoterStrategy::onBook(const BookBuilder& book, const Account& acct, QuoteTargets& out) noexcept {
+    const Price bb = book.bestBid();
+    const Price ba = book.bestAsk();
+    if (bb == kNoPrice || ba == kNoPrice) {
+        forget();
+        out = QuoteTargets{};
+        return true;
+    }
+    const std::uint64_t bidSz = book.sizeAt(Side::Buy, bb);
+    const std::uint64_t askSz = book.sizeAt(Side::Sell, ba);
+    const std::uint64_t total = bidSz + askSz;
+    const double        num   = total == 0 ? static_cast<double>(bb) + static_cast<double>(ba)
+                                           : static_cast<double>(static_cast<std::uint64_t>(bb) * askSz +
+                                                                 static_cast<std::uint64_t>(ba) * bidSz);
+    const double        den   = total == 0 ? 2.0 : static_cast<double>(total);
+    if (num > m_fairLo * den && num < m_fairHi * den) {
+        return false;
+    }
+    const double fair = num / den;
+    const double tick = static_cast<double>(m_cfg.tickWire);
+    const double half = static_cast<double>(m_cfg.halfSpreadTicks) * tick;
+    const double skew = -static_cast<double>(acct.position) * m_cfg.skewTicksPerUnit * tick;
+
+    const Price origin   = book.bandLow();
+    Price       bidPrice = roundDownToTick(fair - half + skew, origin);
+    Price       askPrice = roundUpToTick(fair + half + skew, origin);
+    const bool  plain    = bidPrice > origin && askPrice > origin && bidPrice < askPrice &&
+                       bidPrice >= book.bandLow() && askPrice <= book.bandHigh();
+    if (plain) {
+        m_fairLo = std::max(static_cast<double>(bidPrice) + half - skew,
+                            static_cast<double>(askPrice - m_cfg.tickWire) - half - skew);
+        m_fairHi = std::min(static_cast<double>(bidPrice + m_cfg.tickWire) + half - skew,
+                            static_cast<double>(askPrice) - half - skew);
+    } else {
+        forget();
+    }
+    if (bidPrice >= askPrice) {
+        bidPrice = askPrice - m_cfg.tickWire;
+    }
+    bidPrice = clampToBand(bidPrice, book);
+    askPrice = clampToBand(askPrice, book);
+
+    out.quoteBid = true;
+    out.bidPrice = bidPrice;
+    out.bidQty   = m_cfg.quoteQty;
+    out.quoteAsk = true;
+    out.askPrice = askPrice;
+    out.askQty   = m_cfg.quoteQty;
+    return true;
+}
+```
+
+Reading it top to bottom: the micro-price weights each side's best price by the *other*
+side's resting size, so a thin ask pulls fair value up. The early `return false` is the
+hysteresis: `m_fairLo` and `m_fairHi` bound the fair values that round to the quote already
+resting, and most updates land inside them. The skew term moves both quotes against the
+inventory. Rounding is asymmetric, bid down and ask up, so the quote never narrows past the
+configured spread by rounding. The interval is only kept when the quote is "plain", meaning
+neither side touched the band edge, because a clamped quote no longer corresponds to a
+clean fair-value interval.
 
 `OrderManager` holds one slot per symbol per side with an explicit state machine: idle,
 pending-new, live, pending-replace, pending-cancel. Reconciling a desired quote against the
@@ -563,6 +653,27 @@ should be read together with the counters that say the measurement was not distu
 involuntary context switches on the hot core, zero packet gaps, zero card receive discards,
 zero CTPIO fallbacks, zero ring drops, zero map rehashes, and simulator lateness in the
 microseconds.
+
+For the published full-session run (15 May 2026, 03:02 to 16:00, `ef_vi`), those counters
+were:
+
+| check | value |
+|---|---|
+| samples | 5,413,430 |
+| market-data packets received | 936,773,700 |
+| sequence gaps, missed, stale | 0, 0, 0 |
+| card receive discards, drops | 0, 0 |
+| hot-core context switches, involuntary and voluntary | 0, 0 |
+| hot-thread page faults during the run | 0 |
+| CTPIO wins, fallbacks | 12,460,232, 0 |
+| transmit hardware stamps lost | 0 |
+| hot-book rehashes, re-anchors | 0, 0 |
+| cold-shard ring drops, stale frames, peak depth | 0, 0, 4 of 8,192 |
+| simulator maximum lateness, messages over 1 ms late | 149 µs, 0 |
+| simulator transmit drops | 0 |
+
+The latency table for that run, in nanoseconds: min 966, p50 1,089, p99 1,312, p99.9 1,504,
+p99.99 1,709, p99.999 1,992, max 2,703.
 
 ---
 

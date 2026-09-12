@@ -6,7 +6,27 @@ linux kernel bypass(Solarflare `ef_vi`) and HW timestamped measurements all the 
 
 ## Tick-to-trade, full trading day 
 
-[Todo]
+NASDAQ, 15 May 2026, the whole session from the first message at 03:02 to the 16:00 close,
+replayed at wall-clock pace. Solarflare X2522-Plus, `ef_vi`, one order timed per quote update.
+
+![Tick-to-trade histogram, full session](docs/images/t2t_full_day.png)
+
+| | ns |
+|---|---|
+| samples | 5,413,430 |
+| min | 966 |
+| median | 1,089 |
+| p99 | 1,312 |
+| p99.9 | 1,504 |
+| p99.99 | 1,709 |
+| p99.999 | 1,992 |
+| max | 2,703 |
+
+Every sample is the NIC's receive stamp of the market-data packet subtracted from the NIC's
+transmit stamp of the order it caused, on one clock. The run was clean: 936.8 million market
+data packets, no gaps, no dropped or stale frames, zero context switches on the hot core,
+zero CTPIO fallbacks, zero map rehashes, and the simulator never fell more than 149 µs behind
+the tape.
 
 ## What is measured ?
 
