@@ -1,5 +1,6 @@
 #include "t2t/dut/OrderManager.hpp"
 
+#include <algorithm>
 #include <cstring>
 #include <string_view>
 
@@ -177,6 +178,7 @@ int OrderManager::onAck(std::span<const std::byte> ouch) noexcept {
     if (ouch.empty()) {
         return m_ackSym;
     }
+    m_curAck = ouch;
     switch (static_cast<ouch::OutType>(static_cast<char>(ouch[0]))) {
         case ouch::OutType::Accepted: {
             ouch::Accepted m{};
@@ -223,6 +225,14 @@ int OrderManager::onAck(std::span<const std::byte> ouch) noexcept {
         default: {
             break;
         }
+    }
+    if (ouch.size() >= 13) {
+        std::uint32_t ref = 0;
+        std::memcpy(&ref, ouch.data() + 9, sizeof ref);
+        ref                        = __builtin_bswap32(ref);
+        m_recentAcks[m_recentHead] = (static_cast<std::uint64_t>(static_cast<std::uint8_t>(ouch[0])) << 32) |
+                                     ref;
+        m_recentHead = (m_recentHead + 1) % m_recentAcks.size();
     }
     return m_ackSym;
 }
@@ -386,7 +396,7 @@ void OrderManager::onAccepted(const ouch::Accepted& m) noexcept {
     std::size_t sym = 0;
     QuoteSlot*  s   = slotByRef(m.userRefNum.value(), sym);
     if (s == nullptr || s->state != QuoteState::PendingNew) {
-        ++m_stats.unknown;
+        unknownAck('A', m.userRefNum.value(), m.quantity.value());
         return;
     }
     ++m_stats.accepts;
@@ -403,7 +413,7 @@ void OrderManager::onAccepted(const ouch::Accepted& m) noexcept {
 void OrderManager::onReplaced(const ouch::Replaced& m) noexcept {
     QuoteSlot* s = slotByPending(m.userRefNum.value());
     if (s == nullptr) {
-        ++m_stats.unknown;
+        unknownAck('U', m.userRefNum.value(), m.quantity.value());
         return;
     }
     ++m_stats.accepts;
@@ -420,23 +430,20 @@ void OrderManager::onReplaced(const ouch::Replaced& m) noexcept {
 }
 
 void OrderManager::onExecuted(const ouch::Executed& m) noexcept {
-    const std::uint32_t ref  = m.userRefNum.value();
-    const Quantity      qty  = m.quantity.value();
-    Side                side = Side::Buy;
-    std::size_t         sym  = 0;
-    if (!lookupRef(ref, sym, side)) {
-        ++m_stats.unknown;
+    const std::uint32_t ref = m.userRefNum.value();
+    const Quantity      qty = m.quantity.value();
+    std::size_t         sym = 0;
+    QuoteSlot*          s   = slotByRef(ref, sym);
+    if (s == nullptr) {
+        unknownAck('E', ref, qty);
         return;
     }
+    const Side side = s == &m_slots[sym][idx(Side::Sell)] ? Side::Sell : Side::Buy;
     ++m_stats.fills;
     if (side == Side::Buy) {
         m_acct[sym].position += static_cast<std::int64_t>(qty);
     } else {
         m_acct[sym].position -= static_cast<std::int64_t>(qty);
-    }
-    QuoteSlot* s = slotByRef(ref, sym);
-    if (s == nullptr) {
-        return;
     }
     s->leaves = qty >= s->leaves ? 0 : s->leaves - qty;
     if (s->leaves == 0 && s->state == QuoteState::Live) {
@@ -448,7 +455,7 @@ void OrderManager::onCanceled(const ouch::Canceled& m) noexcept {
     std::size_t sym = 0;
     QuoteSlot*  s   = slotByRef(m.userRefNum.value(), sym);
     if (s == nullptr) {
-        ++m_stats.unknown;
+        unknownAck('C', m.userRefNum.value(), m.quantity.value());
         return;
     }
     const Quantity qty = m.quantity.value();
@@ -496,7 +503,7 @@ void OrderManager::onRejected(const ouch::Rejected& m) noexcept {
     std::size_t sym = 0;
     QuoteSlot*  s   = slotByRef(ref, sym);
     if (s == nullptr) {
-        ++m_stats.unknown;
+        unknownAck('J', ref, 0);
         return;
     }
     s->leaves = 0;
@@ -507,7 +514,7 @@ void OrderManager::onCancelReject(const ouch::CancelReject& m) noexcept {
     std::size_t sym = 0;
     QuoteSlot*  s   = slotByRef(m.userRefNum.value(), sym);
     if (s == nullptr || s->state != QuoteState::PendingCancel) {
-        ++m_stats.unknown;
+        unknownAck('I', m.userRefNum.value(), 0);
         return;
     }
     if (s->leaves > 0) {
@@ -515,6 +522,38 @@ void OrderManager::onCancelReject(const ouch::CancelReject& m) noexcept {
     } else {
         settle(*s);
     }
+}
+
+void OrderManager::unknownAck(char type, std::uint32_t userRef, std::uint32_t qty) noexcept {
+    ++m_stats.unknown;
+    if (m_unknownCount < m_unknownLog.size()) {
+        UnknownAck& u       = m_unknownLog[m_unknownCount];
+        u.type              = type;
+        u.userRef           = userRef;
+        u.qty               = qty;
+        u.len               = static_cast<std::uint16_t>(m_curAck.size());
+        const std::size_t n = std::min(m_curAck.size(), u.bytes.size());
+        for (std::size_t i = 0; i < n; ++i) {
+            u.bytes[i] = static_cast<std::uint8_t>(m_curAck[i]);
+        }
+        for (std::size_t i = 0; i < u.recent.size(); ++i) {
+            u.recent[i] = m_recentAcks[(m_recentHead + i) % m_recentAcks.size()];
+        }
+        const RefSide& r = m_refs[userRef % kRefRing];
+        if (r.userRef == userRef && r.sym != kTestSym && r.sym < m_slots.size()) {
+            const QuoteSlot& s = m_slots[r.sym][idx(r.side)];
+            u.sym              = static_cast<std::int16_t>(r.sym);
+            u.side             = r.side;
+            u.state            = s.state;
+            u.slotRef          = s.userRef;
+            u.pending          = s.pendingRef;
+        }
+    }
+    ++m_unknownCount;
+}
+
+std::span<const UnknownAck> OrderManager::unknownAcks() const noexcept {
+    return {m_unknownLog.data(), std::min(m_unknownCount, m_unknownLog.size())};
 }
 
 void OrderManager::settle(QuoteSlot& s) noexcept {

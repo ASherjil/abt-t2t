@@ -60,6 +60,8 @@ struct SessionStats {
     std::uint64_t forwarded = 0;
     std::uint64_t mirrored  = 0;
     std::uint64_t logins    = 0;
+    std::uint64_t refScans  = 0;
+    std::uint64_t refMisses = 0;
 };
 
 template <IoMode Mode, class Tx = NoTransport>
@@ -161,7 +163,7 @@ private:
     void                      mirror(std::size_t venue, std::span<const std::byte> msg, std::uint64_t ts);
     void                      bindDirectory(std::span<const std::byte> msg, std::uint16_t locate);
     [[nodiscard]] std::size_t venueForSymbol(std::string_view symbol) const noexcept;
-    [[nodiscard]] std::size_t venueForUserRef(std::uint32_t userRef) const noexcept;
+    [[nodiscard]] std::size_t venueForUserRef(std::uint32_t userRef) noexcept;
     void                      rememberUserRef(std::uint32_t userRef, std::size_t venue) noexcept;
     [[nodiscard]] std::size_t mdCapacity() const noexcept;
     void                      sendOrderEntry(std::span<const std::byte> ouch);
@@ -252,9 +254,19 @@ std::size_t ExchangeSession<Mode, Tx>::venueForSymbol(std::string_view symbol) c
 }
 
 template <IoMode Mode, class Tx>
-std::size_t ExchangeSession<Mode, Tx>::venueForUserRef(std::uint32_t userRef) const noexcept {
+std::size_t ExchangeSession<Mode, Tx>::venueForUserRef(std::uint32_t userRef) noexcept {
     const RefVenue& r = m_refVenue[userRef % kRefRing];
-    return r.userRef == userRef ? r.venue : 0;
+    if (r.userRef == userRef) {
+        return r.venue;
+    }
+    ++m_stats.refScans;
+    for (std::size_t i = 0; i < m_venues.size(); ++i) {
+        if (m_venues[i].hasUserRef(userRef)) {
+            return i;
+        }
+    }
+    ++m_stats.refMisses;
+    return 0;
 }
 
 template <IoMode Mode, class Tx>

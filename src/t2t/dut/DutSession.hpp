@@ -201,7 +201,8 @@ private:
     static constexpr std::ptrdiff_t kTxStrideMax   = 1 << 16;
     static constexpr std::size_t    kGuardOffset   = net::kL2L3L4Overhead + mold::kCountOffset;
     static constexpr std::size_t    kGuardedFrame  = kGuardOffset + sizeof(std::uint16_t);
-    static constexpr std::uint32_t  kDirtyTop      = 0xFFFFFFFFu;
+    static constexpr std::size_t    kAckGuard = net::kL2L3L4Overhead + sizeof(char) + sizeof(std::uint64_t);
+    static constexpr std::uint32_t  kDirtyTop = 0xFFFFFFFFu;
 
     struct TxRef {
         std::uint32_t seq     = 0;
@@ -996,6 +997,12 @@ void DutSession<Mode, Strat, Io>::poll()
         if (len > 0) {
             const std::span<const std::byte> payload{p + net::kL2L3L4Overhead, len};
             if (udpDstPort(frame) == m_io.ackPort) {
+                if constexpr (kHwStamps) {
+                    const volatile std::uint32_t* ackGuard = reinterpret_cast<const volatile std::uint32_t*>(
+                        frame + kAckGuard);
+                    while (*ackGuard == 0 && !m_io.io->rxFrameComplete()) {
+                    }
+                }
                 if (payload[0] == std::byte{0}) [[unlikely]] {
                     soup::Packet sp{};
                     if (soup::parse(payload, sp) != 0 && sp.type == soup::Type::LoginAccepted) {
@@ -1021,6 +1028,7 @@ void DutSession<Mode, Strat, Io>::poll()
             if (guarded) {
                 std::memset(const_cast<std::uint8_t*>(frame) + kGuardOffset, 0, sizeof(std::uint16_t));
             }
+            std::memset(const_cast<std::uint8_t*>(frame) + kAckGuard, 0, sizeof(std::uint32_t));
         }
         m_io.io->release();
     }

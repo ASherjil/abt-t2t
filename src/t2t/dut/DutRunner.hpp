@@ -2,6 +2,7 @@
 
 #include <csignal>
 #include <cstdint>
+#include <string>
 #include <vector>
 
 #include <fmt/core.h>
@@ -86,6 +87,23 @@ void printDutReport(Session& sess, util::ThreadCounters atStart, util::ThreadCou
                sess.ordersSent(), s.enters, s.replaces, s.cancels, s.accepts, s.fills, s.rejects,
                s.rejReplace, s.rejPrice, s.rejQty, s.rejOther, s.unknown, s.tests, sess.oms().netPosition(),
                s.pendingSkips, s.unchanged);
+    for (const UnknownAck& u : sess.oms().unknownAcks()) {
+        fmt::print("[oms unknown] type={} ref={} qty={} sym={} side={} slot: state={} user={} pend={}\n",
+                   u.type, u.userRef, u.qty,
+                   u.sym >= 0 ? sess.books().hot(static_cast<std::size_t>(u.sym)).name : "?",
+                   u.side == Side::Sell ? "ask" : "bid", static_cast<int>(u.state), u.slotRef, u.pending);
+        std::string hex;
+        for (std::size_t i = 0; i < std::min<std::size_t>(u.len, u.bytes.size()); ++i) {
+            hex += fmt::format("{:02x}", u.bytes[i]);
+        }
+        std::string recent;
+        for (const std::uint64_t r : u.recent) {
+            if (r != 0) {
+                recent += fmt::format(" {}:{}", static_cast<char>(r >> 32), static_cast<std::uint32_t>(r));
+            }
+        }
+        fmt::print("[oms unknown]   len={} bytes={} preceded by{}\n", u.len, hex, recent);
+    }
     for (std::size_t h = 0; h < sess.books().hotCount(); ++h) {
         const HotSymbol& hs = sess.books().hot(h);
         const QuoteSlot& qb = sess.oms().slot(h, Side::Buy);

@@ -125,6 +125,7 @@ done
 # ef_vi: the in-order CTPIO writer (sfence per 64 B block) makes fallbacks architectural instead of a
 # per-process lottery (abtrda3 Known_driver_issues.md 4.1). sudo resets the environment, so export here.
 export EF_VI_CTPIO_MODE="${EF_VI_CTPIO_MODE:-in_order}"
+export EF_VI_RXQ_SIZE="${EF_VI_RXQ_SIZE:-4096}"
 
 # Both ports sit in one host, so with kernel sockets the peer address would be local and the traffic
 # would take the loopback instead of the cable. The sim's port moves into its own network namespace
@@ -183,6 +184,7 @@ mkdir -p "${out}"
     echo "sim backend ${backend}  dut backend ${dut_backend}  preset ${preset}  duration ${duration:-window}${duration:+s}  window ${skip_to:-none}..${stop_at:-none} (${window:-?}s at speed ${speed:-1}, loops ${loops:-0})  host $(hostname)  $(date -Is)"
     echo "sw_timing $(sed -n 's/^ABT_SW_TIMING:BOOL=//p' "build/${preset}/CMakeCache.txt")"
     echo "ef_vi_ctpio_mode ${EF_VI_CTPIO_MODE}"
+    echo "ef_vi_rxq_size ${EF_VI_RXQ_SIZE}"
     if [[ "${dut_backend}" == "onload" ]]; then
         echo "onload $(onload --version 2>/dev/null | head -1) profile latency-best ${onload_env[*]}"
     fi
@@ -235,6 +237,8 @@ if ! kill -0 "${sim_pid}" 2>/dev/null; then
     echo "exchange_sim exited early:"; cat "${sim_log}"; exit 1
 fi
 
+dut_nic="$(toml_value "${dut_cfg}" interface)"
+nodesc_before=$(ethtool -S "${dut_nic}" 2>/dev/null | awk '/port_rx_nodesc_drops/ {print $2}')
 "${dut_launch[@]}" "${dut_bin}" > "${dut_log}" 2>&1 &
 dut_pid=$!
 sleep 1
@@ -268,6 +272,7 @@ else
     fi
 fi
 stop_all
+nodesc_after=$(ethtool -S "${dut_nic}" 2>/dev/null | awk '/port_rx_nodesc_drops/ {print $2}')
 
 hlog=$(sed -n 's/^log_file *= *"\([^"]*\)".*/\1/p' config/dut.toml)
 if [[ -n "${hlog}" && -f "${hlog}" ]]; then
@@ -275,6 +280,9 @@ if [[ -n "${hlog}" && -f "${hlog}" ]]; then
 fi
 chown -R "${SUDO_UID:-0}:${SUDO_GID:-0}" results 2>/dev/null || true
 
+echo ""
+echo "── nic ──"
+echo "${dut_nic} rx_nodesc_drops during run: $(( ${nodesc_after:-0} - ${nodesc_before:-0} ))"
 echo ""
 echo "── dut (${dut_log}) ──"
 grep -E "^\[dut \+" "${dut_log}" | tail -3

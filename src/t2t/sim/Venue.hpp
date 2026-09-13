@@ -58,6 +58,7 @@ public:
     [[nodiscard]] std::uint16_t      stockLocate() const noexcept;
     [[nodiscard]] const MirrorStats& mirrorStats() const noexcept;
     [[nodiscard]] std::size_t        clientOrders() const noexcept;
+    [[nodiscard]] bool               hasUserRef(std::uint32_t user) const noexcept;
 
     [[nodiscard]] const OrderBook& book() const noexcept;
     [[nodiscard]] Price            bestBid() const noexcept;
@@ -443,6 +444,11 @@ void Venue<Sink>::resetDay(std::uint64_t ts) {
 template <class Sink>
 const MirrorStats& Venue<Sink>::mirrorStats() const noexcept {
     return m_mirror;
+}
+
+template <class Sink>
+bool Venue<Sink>::hasUserRef(std::uint32_t user) const noexcept {
+    return m_byUserRef.find(user) != nullptr;
 }
 
 template <class Sink>

@@ -19,12 +19,12 @@ void printSimStatus(const SimStatus& st) {
                "[sim +{:>5}s] loop={} t={} sent={} mir={} late_max={}us late>1ms={} md_pkts={} oe_pkts={} "
                "tx_drop={} "
                "enter={} replace={} cancel={} shadow={}/{} cross={} impact={} self={} unk={} over={} oob={} "
-               "rehash={} bid={} ask={} live={} clients={}\n",
+               "rehash={} route={}/{} bid={} ask={} live={} clients={}\n",
                st.elapsedNs / 1'000'000'000ull, p.loop, replay::formatTimeOfDay(p.virtualTs), p.sent,
                s.mirrored, p.maxLateNs / 1000, p.lateOver1ms, s.mdPackets, s.oePackets, s.txDropped, s.enters,
                s.replaces, s.cancels, m.shadowFills, m.shadowShares, m.crossFills, m.impactFills,
-               m.selfTrades, m.unknownRef, m.overReduce, m.outOfBand, m.rehashes, st.bid, st.ask, st.live,
-               st.clients);
+               m.selfTrades, m.unknownRef, m.overReduce, m.outOfBand, m.rehashes, s.refScans, s.refMisses,
+               st.bid, st.ask, st.live, st.clients);
 }
 
 SimStatusThread::SimStatusThread(int core, int hotCore)

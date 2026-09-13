@@ -51,6 +51,20 @@ struct QuoteSlot {
     Quantity      leaves     = 0;
 };
 
+struct UnknownAck {
+    char                         type    = 0;
+    std::uint32_t                userRef = 0;
+    std::uint32_t                qty     = 0;
+    std::int16_t                 sym     = -1;
+    Side                         side    = Side::Buy;
+    QuoteState                   state   = QuoteState::Idle;
+    std::uint32_t                slotRef = 0;
+    std::uint32_t                pending = 0;
+    std::uint16_t                len     = 0;
+    std::array<std::uint8_t, 48> bytes{};
+    std::array<std::uint64_t, 8> recent{};
+};
+
 struct OmsStats {
     std::uint64_t enters       = 0;
     std::uint64_t replaces     = 0;
@@ -91,13 +105,14 @@ public:
     void        warmReconcile(std::size_t sym, Outbound& out) noexcept;
     void        prefetch(std::size_t sym) const noexcept;
 
-    [[nodiscard]] std::size_t      symbolCount() const noexcept;
-    [[nodiscard]] const Account&   account(std::size_t sym = 0) const noexcept;
-    [[nodiscard]] std::int64_t     netPosition() const noexcept;
-    [[nodiscard]] const QuoteSlot& slot(std::size_t sym, Side side) const noexcept;
-    [[nodiscard]] const QuoteSlot& slot(Side side) const noexcept;
-    [[nodiscard]] const OmsStats&  stats() const noexcept;
-    [[nodiscard]] std::uint32_t    nextUserRef() const noexcept;
+    [[nodiscard]] std::size_t                 symbolCount() const noexcept;
+    [[nodiscard]] const Account&              account(std::size_t sym = 0) const noexcept;
+    [[nodiscard]] std::int64_t                netPosition() const noexcept;
+    [[nodiscard]] const QuoteSlot&            slot(std::size_t sym, Side side) const noexcept;
+    [[nodiscard]] const QuoteSlot&            slot(Side side) const noexcept;
+    [[nodiscard]] const OmsStats&             stats() const noexcept;
+    [[nodiscard]] std::span<const UnknownAck> unknownAcks() const noexcept;
+    [[nodiscard]] std::uint32_t               nextUserRef() const noexcept;
 
 private:
     static constexpr std::size_t kRefRing = 4096;
@@ -142,6 +157,7 @@ private:
     void        onRejected(const ouch::Rejected& m) noexcept;
     void        onCancelReject(const ouch::CancelReject& m) noexcept;
     static void settle(QuoteSlot& s) noexcept;
+    void        unknownAck(char type, std::uint32_t userRef, std::uint32_t qty) noexcept;
 
     OmsConfig                     m_cfg;
     OmsStats                      m_stats{};
@@ -152,6 +168,11 @@ private:
     std::array<RefSide, kRefRing> m_refs{};
     std::vector<EnterTemplates>   m_enter;
     ouch::ReplaceOrder            m_replace{};
+    std::array<UnknownAck, 16>    m_unknownLog{};
+    std::size_t                   m_unknownCount = 0;
+    std::span<const std::byte>    m_curAck{};
+    std::array<std::uint64_t, 8>  m_recentAcks{};
+    std::size_t                   m_recentHead = 0;
 };
 
 }   // namespace abt::dut
