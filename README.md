@@ -51,6 +51,9 @@ Feed handler:
 Both timestamps are taken using a Solarflare X2522-Plus. The recieve timestamp is written when the ITCH market-data arrives on the 
 wire. The transmit timestamp is written when the OUCH response leaves the NIC. 
 
+Photos of the rig (large files, open on click): [the two cards cabled back to back with the
+25G DACs](docs/images/20260912_120013.jpg) and [the X2522-25G Plus](docs/images/20260912_120116.jpg).
+
 ### C++ code architecture
 
 Ultra low latency is achieved by using kernel bypass combined with busy-polling. 
@@ -143,6 +146,18 @@ arguments. Everything comes from `config/exchange_sim.toml`.
 
    It waits for the DUT to log in, then replays. It prints one status line per second and a
    summary at the end.
+
+**Using the simulator on its own, without the DUT.** It works as a standalone ITCH replayer:
+it reads the day and puts every message on the wire as MoldUDP64, at the real time of day or
+as fast as it can. Set `wait_for_dut = false` under `[replay]` and start one of the
+kernel-bypass binaries (`exchange_sim_verbs`, `exchange_sim_dpdk`, `exchange_sim_ef_vi`). It
+sends to the `peer_mac`, `peer_ip` and `dst_port` in the config and needs nothing on the other
+end. `speed = 0` replays as fast as possible, about a million messages a second. `loops = 0`
+repeats the day until you stop it. Every message on the tape is sent, not just the symbols in
+`[venue]`. The kernel-socket binary (`exchange_sim`) also needs one TCP connection on
+`oe_port` before it starts, `nc <sim ip> 5001` is enough, then it streams UDP to
+`md_host:md_port`. There is no retransmission server, so a receiver that drops a packet has
+to handle the gap itself.
 
 ## How to run the DUT
 
