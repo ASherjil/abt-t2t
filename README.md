@@ -11,22 +11,21 @@ replayed at wall-clock pace. Solarflare X2522-Plus, `ef_vi`, one order timed per
 
 ![Tick-to-trade histogram, full session](docs/images/t2t_full_day.png)
 
-| | ns |
-|---|---|
-| samples | 5,413,430 |
-| min | 966 |
-| median | 1,089 |
-| p99 | 1,312 |
-| p99.9 | 1,504 |
-| p99.99 | 1,709 |
-| p99.999 | 1,992 |
-| max | 2,703 |
-
 Every sample is the NIC's receive stamp of the market-data packet subtracted from the NIC's
-transmit stamp of the order it caused, on one clock. The run was clean: 936.8 million market
-data packets, no gaps, no dropped or stale frames, zero context switches on the hot core,
-zero CTPIO fallbacks, zero map rehashes, and the simulator never fell more than 149 µs behind
-the tape.
+transmit stamp of the order it caused, on one clock. 5,371,047 samples, nothing dropped. The
+run was clean: 937.7 million market data packets, no gaps, no dropped or stale frames, zero
+context switches on the hot core, zero CTPIO fallbacks, zero map rehashes, and the simulator
+never fell more than 158 µs behind the tape. The single worst sample, 3,095 ns, is the
+simulator's close-of-day packet; the worst sample the market produced was 2,600 ns.
+
+## Tick-to-trade against the number of quoted symbols
+
+Same tape, same binary, same 90 minutes over the open (09:29:50 to 11:00:00), quoting 8, 16,
+32, 64 and 128 symbols. Every other symbol on the tape is booked in every run. The 8-symbol
+point is cut from the full-day run above. Sixteen times the quoted set costs 10 ns at the
+median and about 300 ns at p99.999.
+
+![Tick-to-trade against quoted symbols](docs/images/t2t_scaling.png)
 
 ## What is measured ?
 
@@ -113,6 +112,73 @@ The CPU Intel Core i9-11900k contains 8 cores, this is how the threads were pinn
 
 Core 0-2 are not isolated they are left for linux housekeeping. 
 
+## How to run the exchange simulator
+
+The simulator replays a real NASDAQ ITCH 5.0 day. It sends every message on the tape to the
+DUT over MoldUDP64 on UDP, and takes the DUT's OUCH orders back. There are no command-line
+arguments. Everything comes from `config/exchange_sim.toml`.
+
+1. Get a day of NASDAQ TotalView-ITCH 5.0 data in BinaryFILE format, unzip it, and put it in
+   `data/itch/`. The data is not in this repo, see `data/README.md`.
+2. Build with `scripts/build.sh`. It asks three questions: clean or not, the build type
+   (`release`, `release-hw` for hardware timestamps, `debug`), and which transports to build.
+   Binaries land in `build/<type>/apps/`.
+3. Edit `config/exchange_sim.toml`:
+   - `[replay]`: `file` is the ITCH file. `skip_to` and `stop_at` pick the time-of-day window.
+     `speed = 1.0` replays at real time. `loops = 1` plays the window once.
+   - `[venue]`: `symbols` are the symbols the DUT is allowed to trade. Every symbol on the tape
+     is still sent; these are the ones with a matching engine behind them.
+   - Pick the transport. `[socket]` is for plain kernel sockets: market data goes to
+     `md_host:md_port` over UDP and orders come in on TCP port `oe_port`. `[transport]`,
+     `[network]`, `[market_data]` and `[order_entry]` are for the kernel-bypass binaries: the
+     NIC, both MAC and IP addresses, and the UDP ports.
+4. Run the binary for the transport you picked, from the repo root:
+
+   ```bash
+   build/release/apps/exchange_sim          # kernel sockets
+   build/release/apps/exchange_sim_verbs    # ConnectX, libibverbs
+   build/release/apps/exchange_sim_dpdk     # DPDK
+   build/release/apps/exchange_sim_ef_vi    # Solarflare ef_vi
+   ```
+
+   It waits for the DUT to log in, then replays. It prints one status line per second and a
+   summary at the end.
+
+## How to run the DUT
+
+The DUT is the feed handler and market maker. It receives ITCH over MoldUDP64, keeps the
+books, quotes the configured symbols and sends OUCH orders. No command-line arguments.
+Everything comes from `config/dut.toml`.
+
+1. Build as above. Use `release-hw` for hardware-timestamped results. `release` adds software
+   timers for development.
+2. Edit `config/dut.toml`:
+   - `[venue]`: `symbols` are the quoted symbols. The list must match the simulator's. Every
+     other symbol on the tape is booked but not traded.
+   - `[venue]`: `profile` points at a per-symbol profile that sizes the books before the session
+     starts. Make it once with
+     `build/release/apps/itch_replay data/itch/<file> --all --write-profile data/symbols.profile`.
+     Leave it empty to size the books on the fly.
+   - Pick the transport, the same way as the simulator. `[socket]` for kernel sockets:
+     `md_bind_host:md_port` is where market data arrives, `oe_host:oe_port` is where orders go.
+     `[transport]`, `[network]`, `[market_data]` and `[order_entry]` for kernel bypass.
+   - `[measure]`: `log_file` is where the HdrHistogram log is written.
+3. Start the simulator first, then run the DUT from the repo root:
+
+   ```bash
+   build/release-hw/apps/dut          # kernel sockets; the same binary under onload is the Onload row
+   build/release-hw/apps/dut_verbs    # ConnectX, libibverbs
+   build/release-hw/apps/dut_dpdk     # DPDK
+   build/release-hw/apps/dut_ef_vi    # Solarflare ef_vi, the headline
+   ```
+
+   It prints one status line per second, a percentile line per minute, and the full report at
+   the end: the latency table, per-symbol positions, and every counter a run is judged by.
+
+To run both on one machine and collect the logs into `results/`, use
+`sudo scripts/loopback_test.sh release-hw`. It reads both config files, launches both binaries,
+and stops when the replay window ends.
+
 ## Methodology
 
 [`docs/measurement-methodology.md`](docs/measurement-methodology.md) documents the full
@@ -125,6 +191,10 @@ what is not claimed.
 Kernel bypass transports come from the sibling project
 [ABTRDA3](https://github.com/ASherjil/ABTRDA3), which benchmarks `ef_vi`, Verbs, DPDK and
 AF_XDP on this same rig.
+
+[`docs/bugs-found-by-benchmarking.md`](docs/bugs-found-by-benchmarking.md) lists every bug the
+benchmarks exposed, how each one was found, what it did to the numbers, and how the fix was
+verified.
 
 ## License
 
