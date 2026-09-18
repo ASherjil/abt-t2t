@@ -230,6 +230,23 @@ else
     echo "── loopback: ${sim_bin} <-> ${dut_bin}, replay window ${skip_to}..${stop_at} (${window}s), logs in ${out}/ ──"
 fi
 
+snmp_snap() {
+    if uses_ip_stack "${backend}"; then
+        ip netns exec "${sim_netns}" cat /proc/net/snmp > "${out}/snmp_sim_$1.txt"
+    fi
+    if uses_ip_stack "${dut_backend}"; then
+        cat /proc/net/snmp > "${out}/snmp_dut_$1.txt"
+    fi
+}
+snmp_delta() {
+    local pre="${out}/$1_before.txt" post="${out}/$1_after.txt"
+    [[ -f "${pre}" && -f "${post}" ]] || return 0
+    echo "$2 kernel Udp counters during run:"
+    awk 'FNR==NR { if ($1=="Udp:") { if (nb==0) { for (i=2;i<=NF;i++) name[i]=$i } else { for (i=2;i<=NF;i++) base[i]=$i }; nb++ }; next }
+         $1=="Udp:" { na++; if (na==2) { for (i=2;i<=NF;i++) printf "  %s=%d", name[i], $i-base[i]; print "" } }' "${pre}" "${post}"
+}
+snmp_snap before
+
 "${sim_launch[@]}" "${sim_bin}" > "${sim_log}" 2>&1 &
 sim_pid=$!
 sleep 1
@@ -262,6 +279,9 @@ else
             echo "replay window did not finish within ${window}s + 15 min, stopping"
             break
         fi
+        if [[ "${dut_backend}" == "onload" ]] && (( SECONDS % 10 == 0 )); then
+            onload_stackdump lots > "${out}/onload_stackdump.tmp" 2>&1 && mv "${out}/onload_stackdump.tmp" "${out}/onload_stackdump.txt"
+        fi
         sleep 1
     done
     if ! kill -0 "${sim_pid}" 2>/dev/null; then
@@ -271,7 +291,11 @@ else
         echo "dut exited before the replay window finished:"; tail -5 "${dut_log}"
     fi
 fi
+if [[ "${dut_backend}" == "onload" ]] && kill -0 "${dut_pid}" 2>/dev/null; then
+    onload_stackdump lots > "${out}/onload_stackdump.tmp" 2>&1 && mv "${out}/onload_stackdump.tmp" "${out}/onload_stackdump.txt"
+fi
 stop_all
+snmp_snap after
 nodesc_after=$(ethtool -S "${dut_nic}" 2>/dev/null | awk '/port_rx_nodesc_drops/ {print $2}')
 
 hlog=$(sed -n 's/^log_file *= *"\([^"]*\)".*/\1/p' config/dut.toml)
@@ -283,6 +307,12 @@ chown -R "${SUDO_UID:-0}:${SUDO_GID:-0}" results 2>/dev/null || true
 echo ""
 echo "── nic ──"
 echo "${dut_nic} rx_nodesc_drops during run: $(( ${nodesc_after:-0} - ${nodesc_before:-0} ))"
+snmp_delta snmp_dut dut
+snmp_delta snmp_sim sim
+if [[ -f "${out}/onload_stackdump.txt" ]]; then
+    echo "onload stack (${out}/onload_stackdump.txt):"
+    grep -E "^ *(rx_evs|tx_evs|ctpio_pkts|tx_dma_doorbells|interrupt_evs|timeout_evs|periodic_evs|rx_discard|oflow_drop|memory_pressure|udp_recv_os|rx_no_desc|rx_desc)" "${out}/onload_stackdump.txt" | sort -u | tr -s " " | paste -sd " " | fold -s -w 110
+fi
 echo ""
 echo "── dut (${dut_log}) ──"
 grep -E "^\[dut \+" "${dut_log}" | tail -3

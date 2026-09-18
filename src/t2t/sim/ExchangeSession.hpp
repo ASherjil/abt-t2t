@@ -463,11 +463,7 @@ std::size_t ExchangeSession<Mode, Tx>::clientOrders() const noexcept {
 
 template <IoMode Mode, class Tx>
 bool ExchangeSession<Mode, Tx>::clientSeen() const noexcept {
-    if constexpr (Mode == IoMode::Transport) {
-        return m_stats.logins > 0;
-    } else {
-        return true;
-    }
+    return m_stats.logins > 0;
 }
 
 template <IoMode Mode, class Tx>
@@ -645,6 +641,7 @@ template <IoMode Mode, class Tx>
 void ExchangeSession<Mode, Tx>::handleSoup(const soup::Packet& p, std::uint64_t ts) {
     switch (p.type) {
         case soup::Type::LoginRequest: {
+            ++m_stats.logins;
             const auto pkt = soup::packLoginAccepted(m_oeBuf.data(), m_cfg.session, m_outSeq);
             orderEntryOut(pkt);
             break;

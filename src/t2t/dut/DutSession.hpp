@@ -644,7 +644,12 @@ bool DutSession<Mode, Strat, Io>::run(volatile std::sig_atomic_t& stop, std::str
                                       std::string_view user, int orderCore, Periodic periodic)
     requires (Mode == IoMode::Socket)
 {
-    m_sock.threaded    = true;
+    m_sock.threaded = true;
+    std::vector<std::array<std::byte, 2048>> rxRing(kSocketRxRing);
+    for (auto& slot : rxRing) {
+        std::memset(slot.data(), 0, slot.size());
+    }
+    (void)socketRecvBatch(rxRing, 0);
     m_sock.orderThread = std::jthread(
         [this, s = std::string(session), u = std::string(user), orderCore](const std::stop_token& st) {
             orderLoop(st, s, u, orderCore);
@@ -663,11 +668,6 @@ bool DutSession<Mode, Strat, Io>::run(volatile std::sig_atomic_t& stop, std::str
     }
     fmt::print(stderr, "dut: order entry {}:{} on core {}, market data on this thread\n", m_sock.oeHost,
                m_sock.oePort, orderCore);
-    std::vector<std::array<std::byte, 2048>> rxRing(kSocketRxRing);
-    for (auto& slot : rxRing) {
-        std::memset(slot.data(), 0, slot.size());
-    }
-    (void)socketRecvBatch(rxRing, 0);
     m_sock.go.store(true, std::memory_order_release);
     std::size_t   rxAt  = 0;
     std::uint32_t spins = 0;
