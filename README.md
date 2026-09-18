@@ -51,8 +51,9 @@ Feed handler:
 Both timestamps are taken using a Solarflare X2522-Plus. The recieve timestamp is written when the ITCH market-data arrives on the 
 wire. The transmit timestamp is written when the OUCH response leaves the NIC. 
 
-Photos of the rig (large files, open on click): [the two cards cabled back to back with the
-25G DACs](docs/images/20260912_120013.jpg) and [the X2522-25G Plus](docs/images/20260912_120116.jpg).
+Photos of the rig: [the two cards cabled back to back with the 25G DACs](docs/images/Server_backside.jpg),
+[the X2522-25G Plus](docs/images/Solarflare_X2522_Plus.jpg) and [both cards seated in the
+board, each under its own fan](docs/images/Upside_motherboard_shot.jpg).
 
 ### C++ code architecture
 
