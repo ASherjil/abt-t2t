@@ -60,66 +60,77 @@ Photos of the rig: [the two cards cabled back to back with the 25G DACs](docs/im
 [the X2522-25G Plus](docs/images/Solarflare_X2522_Plus.jpg) and [both cards seated in the
 board, each under its own fan](docs/images/Upside_motherboard_shot.jpg).
 
-### C++ code architecture
+## The latency critical tick-to-trade path 
 
-Ultra low latency is achieved by using kernel bypass combined with busy-polling. 
+Everything between the two hardware stamps runs on one thread, on one isolated core, with no
+syscall, no lock, no allocation and no branch to code that is not on this path. This is the
+`ef_vi` receive-to-send loop from `src/t2t/dut/DutSession.hpp`, trimmed of the
+software-timing counters.
 
-The sequence is as follows: 
+```cpp
+void DutSession<Mode, Strat, Io>::poll()
+    requires (Mode == IoMode::Transport && RxRing<Io> && TxRing<Io>)
+{
+    for (;;) {
+        const auto raw = m_io.io->tryReceive();          // 1. next frame in the rx ring, or empty
+        if (raw.empty()) {
+            drainTxStamps();                             //    idle: collect tx stamps, keep spinning
+            break;
+        }
+        const auto*       frame = raw.data();
+        const auto*       p     = reinterpret_cast<const std::byte*>(raw.data());
+        const std::size_t len   = net::udpPayloadLen(p, raw.size());
+        prefetchFrame(frame, net::kL2L3L4Overhead + len);
+        const std::uint64_t rxStamp = m_io.io->hwRxTimestamp();   // 2. NIC rx stamp from the 14-byte prefix
+        const std::span<const std::byte> payload{p + net::kL2L3L4Overhead, len};
+        if (udpDstPort(frame) == m_io.ackPort) {
+            applyAck(payload);                           //    order-entry ack: update the slot state
+        } else {
+            if (raw.size() >= kGuardedFrame) {           // 3. payload-poll: the frame is read while the
+                const volatile std::uint16_t* guard =    //    DMA is still landing, so spin on a word in
+                    reinterpret_cast<const volatile std::uint16_t*>(frame + kGuardOffset);
+                while (*guard == 0 && !m_io.io->rxFrameComplete()) {}   //    the second cache line
+            }
+            applyPacket(payload, rxStamp);               // 4. MoldUDP64 header, ITCH decode, book, quote
+        }
+        std::memset(const_cast<std::uint8_t*>(frame) + kGuardOffset, 0, sizeof(std::uint16_t));
+        m_io.io->release();                              //    buffer back to the ring
+    }
+}
+```
 
-1. Poll the receive ring, the CPU spinning at 100%.
-2. Read the MoldUDP64 header and check the sequence against the tracker. Gaps are counted
-   and surfaced, never silently absorbed.
-3. Decode each ITCH 5.0 message in place, as a big-endian overlay on the received bytes.
-   Nothing is copied into a parsed structure.
-4. If the message belongs to a quoted symbol, apply it to that book here: add, execute,
-   cancel, delete and replace are all constant-time on this path.
-5. If it belongs to any other symbol, hand the frame to the second core and move on.
-6. Ask the quoter whether the new top of book has moved its own quote out of position.
-7. If it has, build the OUCH 5.0 order and write it into the card with CTPIO.
-8. Only after the order is on the wire, push the latency sample onto a lock-free SPSC for
-   the histogram thread.
-9. The histogram thread is pinned on another CPU core where it stores the latency using HdrHistogram. 
+Inside `applyPacket` each ITCH message is applied to its book in place. When a quoted symbol's
+top of book changes, the quote decision and the send happen before the next message is read:
 
-**The strategy.** A resting two-sided quote on each quoted symbol, one level per side,
-held near the touch. When the book moves, the order manager replaces the side that is now
-mispriced, and it tracks the in-flight state of each side so a second order is never sent
-against an unacknowledged one. The point of the strategy is not that it is profitable. It
-is that it is a real decision made from a real book on every tick, so the measured path
-includes a branch that has to be right.
+```cpp
+const auto quote = [&](std::size_t h) {
+    const BookBuilder& book = m_books.hotBook(h);
+    QuoteTargets       targets{};
+    if (!m_strats[h].onBook(book, m_oms.account(h), targets)) {   // 5. strategy: is our quote mispriced?
+        return;                                                    //    no: nothing to send
+    }
+    const std::size_t n = m_oms.reconcile(h, targets, m_out);     // 6. OMS: which side to replace, build OUCH
+    for (std::size_t i = 0; i < n; ++i) {
+        sendOrder({m_out[i].buf.data(), m_out[i].len});           // 7. straight into the NIC
+    }
+};
+```
 
-**Hot and cold.** Eight symbols are quoted. Every other symbol on the tape, roughly twelve
-and a half thousand of them, is still fully booked, on a second isolated core fed by a
-lock-free ring of frame references. Those frames are read in place out of the receive
-buffers, so nothing is copied to hand them over, and the ring is sized against the buffer
-pool so a frame can never be recycled while the second core is still reading it. At the
-busiest point of the session that side is carrying several million live orders.
+```cpp
+bool DutSession<Mode, Strat, Io>::sendOrder(std::span<const std::byte> ouch) {
+    const auto    frameLen = static_cast<std::uint32_t>(net::kL2L3L4Overhead + ouch.size());
+    std::uint8_t* buf      = m_io.io->acquire(frameLen);           // 8. next CTPIO tx slot
+    std::memcpy(buf, m_io.oeHeaders[headerKind(ouch.size())].data(), net::kL2L3L4Overhead);
+    std::memcpy(buf + net::kL2L3L4Overhead, ouch.data(), ouch.size());   //    prebuilt Ethernet/IP/UDP header
+    m_txSeq                           = m_io.io->txSequence();
+    m_txRefs[m_txSeq & (kTxRefs - 1)] = TxRef{.seq = m_txSeq, .userRef = kNoRef};   // 9. remember which order
+    m_io.io->commit();                                             // 10. 64-byte posted writes to the card
+    return true;                                                   //     tx stamp arrives later, matched by seq
+}
+```
 
-### The quoted set
-
-| symbol | what it is | top of book | resting orders |
-|---|---|---|---|
-| AAPL | Apple, mega-cap single stock | $297.25 | 37,603 |
-| MSFT | Microsoft, deepest book of the eight | $415.14 | 86,364 |
-| AMD | semiconductor, heavy message rate | $432.12 | 36,427 |
-| INTC | low-priced semiconductor, heavy churn | $108.91 | 32,428 |
-| QQQ | NASDAQ-100 ETF, NASDAQ-listed | $709.04 | 27,175 |
-| SPY | S&P 500 ETF, NYSE Arca-listed | $739.95 | 768 |
-| TQQQ | 3x leveraged NASDAQ-100 ETF | $75.36 | 26,909 |
-| GOOGL | Alphabet, mega-cap single stock | $393.66 | 27,934 |
-
-### Threads and CPU isolation
-
-The application is multi-threaded with only one thread pinned to a specific isolated CPU core. The breakdown is as follows:
-
-The CPU Intel Core i9-11900k contains 8 cores, this is how the threads were pinned. 
-
-1. Core 3: Thread 1 Histogram thread for latency measurements. Thread 2 status thread for the exchange simulator status. These are not latency critical.
-2. Core 4: Thread for the exchange simulator. 
-3. Core 5: Thread for booking the cold symbols. 
-4. Core 6: Thread for the feed handler. The most latency critical where tick-to-trade lives. 
-5. Core 7: Thread for the socket implementation Solarflare Onload. (Not used for the kernel bypass version).
-
-Core 0-2 are not isolated they are left for linux housekeeping. 
+The functions for Rx(`tryReceive()`, `release()`) and Tx(`acquire()`, `commit()`) come from [ABTRDA3](https://github.com/ASherjil/ABTRDA3), 
+which benchmarks `ef_vi`, Verbs, DPDK and AF_XDP on this same rig.
 
 ## How to run the exchange simulator
 
@@ -208,10 +219,6 @@ configuration, how the hardware timestamps are taken and matched, the feed handl
 structures and their time complexity, the exchange simulator and how it decides fills by
 queue position, the kernel-bypass transports, the NASDAQ session used, every thread, and
 what is not claimed.
-
-Kernel bypass transports come from the sibling project
-[ABTRDA3](https://github.com/ASherjil/ABTRDA3), which benchmarks `ef_vi`, Verbs, DPDK and
-AF_XDP on this same rig.
 
 [`docs/bugs-found-by-benchmarking.md`](docs/bugs-found-by-benchmarking.md) lists every bug the
 benchmarks exposed, how each one was found, what it did to the numbers, and how the fix was
