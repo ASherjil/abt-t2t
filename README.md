@@ -4,28 +4,33 @@ A NASDAQ ITCH 5.0 feed handler that measures tick-to-trade using HW timestamping
 simulator that plays real data. Since GitHub is littered with "Order books", this one is different because it implements the full thing: a real exchange simulator,
 linux kernel bypass(Solarflare `ef_vi`) and HW timestamped measurements all the way up to P99.999 and max. 
 
-## Tick-to-trade, full trading day 
+## Tick-to-trade, full trading day
 
 NASDAQ, 15 May 2026, the whole session from the first message at 03:02 to the 16:00 close,
-replayed at wall-clock pace. Solarflare X2522-Plus, `ef_vi`, one order timed per quote update.
+replayed at wall-clock pace, quoting eight symbols. Every sample is the NIC's receive stamp of
+the market-data packet subtracted from the NIC's transmit stamp of the order it caused, on one
+clock. Same tape, same rig, same DUT logic on both rows; only the transport differs.
 
-![Tick-to-trade histogram, full session](docs/images/t2t_full_day.png)
+### Solarflare X2522-Plus, `ef_vi`
 
-Every sample is the NIC's receive stamp of the market-data packet subtracted from the NIC's
-transmit stamp of the order it caused, on one clock. 5,371,047 samples, nothing dropped. The
-run was clean: 937.7 million market data packets, no gaps, no dropped or stale frames, zero
-context switches on the hot core, zero CTPIO fallbacks, zero map rehashes, and the simulator
-never fell more than 158 µs behind the tape. The single worst sample, 3,095 ns, is the
-simulator's close-of-day packet; the worst sample the market produced was 2,600 ns.
+![Tick-to-trade histogram, full session, ef_vi](docs/images/t2t_full_day_efvi.png)
 
-## Tick-to-trade against the number of quoted symbols
+5,370,758 samples, nothing dropped. 937.6 million market data packets, no gaps, no dropped or
+stale frames, zero context switches on the hot core, zero CTPIO fallbacks, zero map rehashes,
+and the simulator never fell more than 158 µs behind the tape. The single worst sample,
+3,197 ns, is the simulator's close-of-day packet; the worst sample the market produced was
+3,004 ns.
 
-Same tape, same binary, same 90 minutes over the open (09:29:50 to 11:00:00), quoting 8, 16,
-32, 64 and 128 symbols. Every other symbol on the tape is booked in every run. The 8-symbol
-point is cut from the full-day run above. Sixteen times the quoted set costs 10 ns at the
-median and about 300 ns at p99.999.
+### Solarflare X2522-Plus, Onload
 
-![Tick-to-trade against quoted symbols](docs/images/t2t_scaling.png)
+![Tick-to-trade histogram, full session, Onload](docs/images/t2t_full_day_onload.png)
+
+The same DUT built against plain BSD sockets and run under Onload with the low-latency
+profile: spinning, interrupt-free, one stack per thread, CTPIO sends, hardware stamps through
+`SO_TIMESTAMPING`. 5,117,062 samples, 854.6 million packets, no gaps, no drops in the Onload
+stack or the kernel, every order matched to a transmit stamp. Fewer samples than the `ef_vi`
+row because the longer acknowledgement path leaves more quote updates skipped while a replace
+is still in flight.
 
 ## What is measured ?
 

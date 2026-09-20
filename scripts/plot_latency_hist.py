@@ -14,13 +14,13 @@ from matplotlib.ticker import MultipleLocator
 
 
 def fmt_count(n):
-    """Sample count -> compact label, rounded UP: 15.6M->16M, 47.3B->48B."""
+    """Sample count -> compact label to one decimal: 5,370,758 -> 5.4M, 47.3B -> 47.3B."""
     if n >= 1e9:
-        return f"{math.ceil(n / 1e9)}B"
+        return f"{n / 1e9:.1f}B"
     if n >= 1e6:
-        return f"{math.ceil(n / 1e6)}M"
+        return f"{n / 1e6:.1f}M"
     if n >= 1e3:
-        return f"{math.ceil(n / 1e3)}K"
+        return f"{n / 1e3:.1f}K"
     return str(int(n))
 
 ap = argparse.ArgumentParser()
