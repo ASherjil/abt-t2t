@@ -232,12 +232,41 @@ runs at 64 and 128 symbols, 90-minute runs at 16, 32, 64 and 128, and the full d
 
 ---
 
+## 13. The socket DUT threw away its first receive batch
+
+**Seen.** The first Onload smoke run on the fixed binary quoted seven symbols. AAPL ended the
+run with `locate=0 resolved=false`, the simulator had sent 16 more packets than the DUT
+counted, and the feed reported zero gaps.
+
+**Traced.** Sixteen is the socket receive batch size. The sequence tracker starts from the
+first packet it sees, so a loss before that packet is invisible to it. The simulator's log
+was missing its "waiting for the DUT to log in" line.
+
+**Cause.** Two halves. In socket mode the simulator's "client seen" check returned true
+unconditionally, so it began replaying on the TCP accept rather than on the OUCH login. On
+the DUT, the feed thread allocated and zeroed its receive ring and made one warm-up
+`recvmmsg`, discarding the result, after the order thread had connected. By then the
+simulator had been sending the stock directory at full speed for several milliseconds, and
+the warm-up call ate the first 16 packets, including AAPL's directory entry at locate 32.
+The earlier Onload comparison runs had almost certainly been seven-symbol runs too.
+
+**Fix.** The DUT faults in its receive ring before the order thread connects, so nothing can
+be on the wire when the warm-up call runs. The socket simulator now counts the login and
+waits for it, as the kernel-bypass simulator always did. Neither change touches the `ef_vi`
+path, which uses a different `run()` overload.
+
+**Checked.** A three-minute smoke: simulator sent and DUT received the same 18,414,890
+packets, all eight symbols resolved with live quotes, the login line present. Then the
+published Onload day: 854,634,260 packets sent and received, every symbol resolved.
+
+---
+
 ## Artifacts that are not bugs
 
 **The close-of-window packet.** When the simulator reaches `stop_at` it resets its venues and
 emits one packet of 15 to 18 messages. The DUT decodes all of them before its first order
 leaves, and that packet is the worst sample of every windowed run. The published full-day
-figures include it (max 3,095 ns; the worst market-driven sample was 2,600 ns). The scaling
+figures include it (max 3,197 ns; the worst market-driven sample was 3,004 ns). The scaling
 chart plots percentiles only, since one packet per run says nothing about symbol count.
 
 **Rejected replaces at 0.1%.** After fixes 10 to 12 the remaining rejects are orders filled
@@ -264,3 +293,7 @@ simulator counts as out of band and drops. They never reach the touch.
 - Simulator: maximum lateness and the count over a millisecond, rehashes, routing scans and
   misses, and the fill breakdown by mechanism.
 - Environment: commit, build preset, transport, CTPIO mode, ring size, replay window.
+- Socket and Onload rows: receive stamps present and missing, transmit stamps matched,
+  skipped and unmatched; a dump of the Onload stacks refreshed every ten seconds, with its
+  overflow, memory-pressure and discard counters; and the kernel's UDP counters before and
+  after the run in both network namespaces.

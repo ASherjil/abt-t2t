@@ -34,7 +34,8 @@ tick. `abt-t2t` measures the full wire-to-wire path on the network card's own cl
 9. [Threads and cores](#9-threads-and-cores)
 10. [The market data](#10-the-market-data)
 11. [Reporting](#11-reporting)
-12. [What is not claimed](#12-what-is-not-claimed)
+12. [Scaling with the number of quoted symbols](#12-scaling-with-the-number-of-quoted-symbols)
+13. [What is not claimed](#13-what-is-not-claimed)
 
 ---
 
@@ -142,6 +143,17 @@ control message. Transmit stamps come back on the socket error queue with
 the byte offset of the order in the stream, which is how a transmit stamp is matched to the
 order that produced it over a byte-stream protocol.
 
+**Both stamps refer to the wire, not to the card.** The X2522 latches a receive
+timestamp a fixed distance inside the MAC after the frame's start-of-frame delimiter, and a
+transmit timestamp likewise. The firmware reports both offsets once per virtual interface,
+in the card's quarter-nanosecond ticks, and the same values feed the kernel driver's PTP
+path. The receive correction on this card is -76 ticks, 19 ns, and the transport applies it
+to every receive stamp exactly as the ef_vi library does; the transmit correction is applied
+by the library inside the event poll before the DUT sees the stamp. Both are constants, so
+they shift every sample by the same amount and cannot change the shape of a distribution or
+the difference between two rows. What they do is make the interval wire-to-wire, which is
+19 ns longer than a MAC-to-MAC interval would read.
+
 **The measurement does not perturb what it measures.** In the shipped hardware-timestamp
 build there is no timestamp-counter instruction anywhere on the packet path. That is
 verified by disassembling the binary that produced the numbers and confirming that no
@@ -247,6 +259,27 @@ used and the card's own counters, and a published run shows: packets received in
 with essentially none taking the kernel path, transmit events all served by CTPIO, zero
 transmit DMA doorbells, and interrupt counts in the low single digits across tens of
 millions of packets, all of which come from startup and shutdown.
+
+The published Onload day was run with `onload --profile=latency-best` and `EF_POLL_USEC=-1`,
+`EF_INT_DRIVEN=0`, `EF_STACK_PER_THREAD=1`, `EF_CTPIO_MODE=sf`, `EF_EVS_PER_POLL=8`,
+`EF_RXQ_SIZE=4096`, `EF_MAX_PACKETS` and `EF_PREFAULT_PACKETS` at 65,536 on 2 MiB pages,
+`EF_UDP_RCVBUF` at 32 MB, and hardware timestamping on both sockets. The DUT is the same
+order manager, books and strategy split across two threads: the feed thread on core 6 owns
+the UDP socket and the books, the order thread on core 7 owns the TCP socket, sends, reads
+acks and matches transmit stamps, and the two exchange work over lock-free rings. The
+simulator on that row runs on kernel sockets inside its own network namespace, so that
+traffic between two addresses on one machine crosses the cable instead of the loopback
+device.
+
+Three things differ from the `ef_vi` row by construction and should be read into the
+comparison. The row has 4.7% fewer samples, because the DUT never sends against an
+unacknowledged order and the longer acknowledgement path leaves three times as many quote
+updates skipped while a replace is in flight. The kernel-socket simulator packs 1.11
+messages per packet against 1.01 on verbs, so the DUT sees 9% fewer, larger packets. And
+the tail is spread across the whole day rather than concentrated anywhere: 372 of the 391
+one-minute intervals contain a sample above 5 µs, which is receive-side queueing behind the
+socket API, roughly 300 ns per packet through `recvmsg` and its control message against
+about 80 ns for a frame read in place on the `ef_vi` ring.
 
 **Where the transports come from.** The ring abstractions and the ef_vi, Verbs, DPDK and
 AF_XDP backends were built and benchmarked in the sibling project
@@ -593,7 +626,7 @@ its own drops, and a published run shows none.
 
 | | |
 |---|---|
-| Source | NASDAQ TotalView-ITCH 5.0, BinaryFILE format |
+| Source | NASDAQ TotalView-ITCH 5.0, BinaryFILE format, `itch50_05_15.gz` from [NASDAQ's public sample directory](https://emi.nasdaq.com/ITCH/Nasdaq%20ITCH/) |
 | Session | 15 May 2026, full day |
 | Messages | 960,764,857 |
 | Symbols | 12,655 in the stock directory |
@@ -654,30 +687,69 @@ involuntary context switches on the hot core, zero packet gaps, zero card receiv
 zero CTPIO fallbacks, zero ring drops, zero map rehashes, and simulator lateness in the
 microseconds.
 
-For the published full-session run (15 May 2026, 03:02 to 16:00, `ef_vi`), those counters
-were:
+For the two published full-session runs (15 May 2026, 03:02 to 16:00), those counters were:
 
-| check | value |
-|---|---|
-| samples | 5,413,430 |
-| market-data packets received | 936,773,700 |
-| sequence gaps, missed, stale | 0, 0, 0 |
-| card receive discards, drops | 0, 0 |
-| hot-core context switches, involuntary and voluntary | 0, 0 |
-| hot-thread page faults during the run | 0 |
-| CTPIO wins, fallbacks | 12,460,232, 0 |
-| transmit hardware stamps lost | 0 |
-| hot-book rehashes, re-anchors | 0, 0 |
-| cold-shard ring drops, stale frames, peak depth | 0, 0, 4 of 8,192 |
-| simulator maximum lateness, messages over 1 ms late | 149 µs, 0 |
-| simulator transmit drops | 0 |
+| check | `ef_vi` | Onload |
+|---|---|---|
+| samples | 5,370,758 | 5,117,062 |
+| market-data packets sent by the simulator, received by the DUT | 937,630,924, 937,630,924 | 854,634,260, 854,634,260 |
+| sequence gaps, missed, stale | 0, 0, 0 | 0, 0, 0 |
+| card receive discards, drops | 0, 0 | 0, 0 (Onload stack: overflow 0, memory pressure 0, discards 0) |
+| hot-core context switches, involuntary and voluntary | 0, 0 | 1, 1 (at start-up, identical on every run) |
+| hot-thread page faults during the run | 0 | 6,176 minor (start-up, ring and stack) |
+| orders sent by CTPIO, fallbacks or DMA doorbells | 12,975,366, 0 | 11,360,290, 0 |
+| receive stamps missing, transmit stamps lost or unmatched | 0, 0 | 0, 0 |
+| unknown acknowledgements, slots left pending | 0, 0 | 0, 0 |
+| rejected replaces (fill in flight), trend through the day | 7,123 (0.05%), falling | 53,856 (0.56%), falling |
+| hot-book rehashes, re-anchors | 0, 0 | 0, 0 |
+| cold-shard ring drops, stale frames, peak depth | 0, 0, 4 of 8,192 | 0, 0, 157 of 8,192 |
+| simulator maximum lateness, messages over 1 ms late | 158 µs, 0 | 352 µs, 0 |
+| simulator transmit drops | 0 | 0 |
 
-The latency table for that run, in nanoseconds: min 966, p50 1,089, p99 1,312, p99.9 1,504,
-p99.99 1,709, p99.999 1,992, max 2,703.
+The latency tables for those runs, in nanoseconds:
+
+| row | min | p50 | p99 | p99.9 | p99.99 | p99.999 | max |
+|---|---|---|---|---|---|---|---|
+| `ef_vi` | 982 | 1,095 | 1,334 | 1,544 | 1,807 | 2,125 | 3,197 |
+| Onload | 1,408 | 1,671 | 2,357 | 3,305 | 7,171 | 11,431 | 21,727 |
+
+The `ef_vi` day was run twice on the same binary, five days apart. The two agree within 15 ns
+at every percentile from the minimum to p99.999 (the earlier run: 979, 1,095, 1,346, 1,558,
+1,806, 2,137, max 3,095), which is the repeatability of the measurement.
 
 ---
 
-## 12. What is not claimed
+## 12. Scaling with the number of quoted symbols
+
+The same binary, the same tape and the same 90 minutes over the open, 09:29:50 to 11:00:00,
+quoting 8, 16, 32, 64 and 128 symbols. The sets are nested, ranked by peak resting orders in
+the symbol profile, so each run quotes everything the previous one did. Every other symbol on
+the tape is booked on the cold core in every run. The 8-symbol point is cut from the
+full-day `ef_vi` log by time range; the others are their own runs.
+
+![Tick-to-trade against quoted symbols](images/t2t_scaling.png)
+
+| symbols | samples | min | p50 | p99 | p99.9 | p99.99 | p99.999 | max |
+|---|---|---|---|---|---|---|---|---|
+| 8 | 2,493,799 | 984 | 1,088 | 1,316 | 1,500 | 1,728 | 2,053 | 2,539 |
+| 16 | 3,617,677 | 988 | 1,089 | 1,304 | 1,503 | 1,782 | 2,093 | 2,699 |
+| 32 | 4,719,994 | 975 | 1,091 | 1,316 | 1,533 | 1,834 | 2,155 | 5,511 |
+| 64 | 5,999,753 | 985 | 1,093 | 1,331 | 1,552 | 1,894 | 2,237 | 4,055 |
+| 128 | 7,352,017 | 985 | 1,098 | 1,351 | 1,577 | 1,937 | 2,367 | 4,339 |
+
+Sixteen times the quoted set costs 10 ns at the median and about 300 ns at p99.999. The
+chart plots percentiles only: the maximum of every windowed run is the simulator's
+close-of-window packet, and one packet per run says nothing about symbol count. Every
+interval is kept.
+
+Memory is flat across the series. The DUT's resident set is 32 MB plus a 2 GB hugepage
+arena in every run; the hot books grow from 25 MB at 8 symbols to 58, 78, 114 and 186 MB
+at 16, 32, 64 and 128, holding up to 1.6 million live orders at 128, while the cold books
+stay between 616 and 723 MB.
+
+---
+
+## 13. What is not claimed
 
 - SoupBinTCP is implemented to the extent the measurement needs: login, sequenced and
   unsequenced data. There are no heartbeats and no recovery session.
