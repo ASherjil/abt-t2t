@@ -134,82 +134,104 @@ which benchmarks `ef_vi`, Verbs, DPDK and AF_XDP on this same rig.
 
 ## How to run the exchange simulator
 
-The simulator replays a real NASDAQ ITCH 5.0 day. It sends every message on the tape to the
-DUT over MoldUDP64 on UDP, and takes the DUT's OUCH orders back. There are no command-line
-arguments. Everything comes from `config/exchange_sim.toml`.
+No command-line arguments. Everything is in `config/exchange_sim.toml`. Put a NASDAQ
+TotalView-ITCH 5.0 day in `data/itch/` (see `data/README.md`), build with
+`scripts/build.sh`, then set these:
 
-1. Get a day of NASDAQ TotalView-ITCH 5.0 data in BinaryFILE format, unzip it, and put it in
-   `data/itch/`. The data is not in this repo, see `data/README.md`.
-2. Build with `scripts/build.sh`. It asks three questions: clean or not, the build type
-   (`release`, `release-hw` for hardware timestamps, `debug`), and which transports to build.
-   Binaries land in `build/<type>/apps/`.
-3. Edit `config/exchange_sim.toml`:
-   - `[replay]`: `file` is the ITCH file. `skip_to` and `stop_at` pick the time-of-day window.
-     `speed = 1.0` replays at real time. `loops = 1` plays the window once.
-   - `[venue]`: `symbols` are the symbols the DUT is allowed to trade. Every symbol on the tape
-     is still sent; these are the ones with a matching engine behind them.
-   - Pick the transport. `[socket]` is for plain kernel sockets: market data goes to
-     `md_host:md_port` over UDP and orders come in on TCP port `oe_port`. `[transport]`,
-     `[network]`, `[market_data]` and `[order_entry]` are for the kernel-bypass binaries: the
-     NIC, both MAC and IP addresses, and the UDP ports.
-4. Run the binary for the transport you picked, from the repo root:
+```toml
+[venue]
+symbols  = ["AAPL", "MSFT", "AMD", "INTC", "QQQ", "SPY", "TQQQ", "GOOGL"]   # symbols with a matching engine behind them; every symbol on the tape is still sent
 
-   ```bash
-   build/release/apps/exchange_sim          # kernel sockets
-   build/release/apps/exchange_sim_verbs    # ConnectX, libibverbs
-   build/release/apps/exchange_sim_dpdk     # DPDK
-   build/release/apps/exchange_sim_ef_vi    # Solarflare ef_vi
-   ```
+[replay]
+file     = "data/itch/itch50_05_15"   # the unpacked ITCH day
+speed    = 1.0                        # real time-of-day pacing; 0 = as fast as possible
+loops    = 1                          # play the window once; 0 = repeat until stopped
+skip_to  = "09:29:50"                 # fast-forward to here (books are built), then pace; "" = from the first message
+stop_at  = "11:00:00"                 # stop here; "" = end of file
+wait_for_dut = true                   # hold the replay until the DUT logs in
 
-   It waits for the DUT to log in, then replays. It prints one status line per second and a
-   summary at the end.
+[transport]
+interface = "cx0"                     # the NIC the simulator drives
+cpu_core  = 4                         # isolated core for the replay thread
+log_core  = 3                         # housekeeping core for the status line
 
-**Using the simulator on its own, without the DUT.** It works as a standalone ITCH replayer:
-it reads the day and puts every message on the wire as MoldUDP64, at the real time of day or
-as fast as it can. Set `wait_for_dut = false` under `[replay]` and start one of the
-kernel-bypass binaries (`exchange_sim_verbs`, `exchange_sim_dpdk`, `exchange_sim_ef_vi`). It
-sends to the `peer_mac`, `peer_ip` and `dst_port` in the config and needs nothing on the other
-end. `speed = 0` replays as fast as possible, about a million messages a second. `loops = 0`
-repeats the day until you stop it. Every message on the tape is sent, not just the symbols in
-`[venue]`. The kernel-socket binary (`exchange_sim`) also needs one TCP connection on
-`oe_port` before it starts, `nc <sim ip> 5001` is enough, then it streams UDP to
-`md_host:md_port`. There is no retransmission server, so a receiver that drops a packet has
-to handle the gap itself.
+[network]                             # no ARP, both ends hardcoded
+local_mac = "b8:83:03:9c:d4:5c"
+local_ip  = "10.0.0.1"
+peer_mac  = "00:0f:53:ad:3c:91"       # the DUT's NIC
+peer_ip   = "10.0.0.2"
+```
+
+Run the binary for the transport, from the repo root:
+
+```bash
+build/release/apps/exchange_sim_verbs    # ConnectX, libibverbs (the headline runs)
+build/release/apps/exchange_sim_ef_vi    # Solarflare ef_vi
+build/release/apps/exchange_sim_dpdk     # DPDK
+build/release/apps/exchange_sim          # kernel sockets, uses [socket] instead of [network]
+```
+
+It waits for the DUT, replays, prints one status line per second and a summary at the end.
+
+**Standalone ITCH replayer.** Set `wait_for_dut = false` and start a kernel-bypass binary. It
+puts every message on the wire as MoldUDP64 to `peer_mac`/`peer_ip` with nothing on the other
+end, at real time or as fast as it can (`speed = 0`, about a million messages a second). No
+retransmission server: a receiver that drops a packet handles the gap itself.
 
 ## How to run the DUT
 
-The DUT is the feed handler and market maker. It receives ITCH over MoldUDP64, keeps the
-books, quotes the configured symbols and sends OUCH orders. No command-line arguments.
-Everything comes from `config/dut.toml`.
+No command-line arguments. Everything is in `config/dut.toml`. Build with `release-hw` for
+hardware-timestamped results, then set these:
 
-1. Build as above. Use `release-hw` for hardware-timestamped results. `release` adds software
-   timers for development.
-2. Edit `config/dut.toml`:
-   - `[venue]`: `symbols` are the quoted symbols. The list must match the simulator's. Every
-     other symbol on the tape is booked but not traded.
-   - `[venue]`: `profile` points at a per-symbol profile that sizes the books before the session
-     starts. Make it once with
-     `build/release/apps/itch_replay data/itch/<file> --all --write-profile data/symbols.profile`.
-     Leave it empty to size the books on the fly.
-   - Pick the transport, the same way as the simulator. `[socket]` for kernel sockets:
-     `md_bind_host:md_port` is where market data arrives, `oe_host:oe_port` is where orders go.
-     `[transport]`, `[network]`, `[market_data]` and `[order_entry]` for kernel bypass.
-   - `[measure]`: `log_file` is where the HdrHistogram log is written.
-3. Start the simulator first, then run the DUT from the repo root:
+```toml
+[venue]
+symbols  = ["AAPL", "MSFT", "AMD", "INTC", "QQQ", "SPY", "TQQQ", "GOOGL"]   # quoted symbols, must match the simulator's list
+profile  = "data/symbols.profile"     # per-symbol book sizing from a previous session; "" = size on the fly
+cold_core = 5                         # isolated core that books every other symbol on the tape
 
-   ```bash
-   build/release-hw/apps/dut          # kernel sockets; the same binary under onload is the Onload row
-   build/release-hw/apps/dut_verbs    # ConnectX, libibverbs
-   build/release-hw/apps/dut_dpdk     # DPDK
-   build/release-hw/apps/dut_ef_vi    # Solarflare ef_vi, the headline
-   ```
+[quoter]
+half_spread_ticks   = 1               # ticks from fair value to each quote
+quote_qty           = 100             # shares per side
+skew_ticks_per_unit = 0.001           # quote shift per share of inventory
 
-   It prints one status line per second, a percentile line per minute, and the full report at
-   the end: the latency table, per-symbol positions, and every counter a run is judged by.
+[measure]
+histogram_core = 3                    # core of the HdrHistogram thread
+log_file       = "results/dut.hlog"   # HdrHistogram interval log
 
-To run both on one machine and collect the logs into `results/`, use
-`sudo scripts/loopback_test.sh release-hw`. It reads both config files, launches both binaries,
-and stops when the replay window ends.
+[transport]
+interface = "enp1s0f1"                # X2522-Plus port 1
+cpu_core  = 6                         # isolated core for the tick-to-trade thread
+order_core = 7                        # socket/Onload build only: the TCP order thread
+
+[network]
+local_mac = "00:0f:53:ad:3c:91"
+local_ip  = "10.0.0.2"
+peer_mac  = "b8:83:03:9c:d4:5c"       # the simulator's NIC
+peer_ip   = "10.0.0.1"
+```
+
+The profile is made once with
+`build/release/apps/itch_replay data/itch/<file> --all --write-profile data/symbols.profile`.
+Start the simulator first, then the DUT from the repo root:
+
+```bash
+build/release-hw/apps/dut_ef_vi    # Solarflare ef_vi, the headline
+build/release-hw/apps/dut_verbs    # ConnectX, libibverbs
+build/release-hw/apps/dut_dpdk     # DPDK
+build/release-hw/apps/dut          # kernel sockets; the same binary under onload is the Onload row
+```
+
+It prints one status line per second, a percentile line per minute, and the full report at
+the end: the latency table, per-symbol positions, and every counter a run is judged by.
+
+To run both on one machine and collect the logs into `results/`:
+
+```bash
+sudo scripts/loopback_test.sh release-hw
+```
+
+It reads both config files, picks the binaries from the `backend` key in each `[transport]`
+section, launches both, and stops when the replay window ends.
 
 ## Methodology
 
